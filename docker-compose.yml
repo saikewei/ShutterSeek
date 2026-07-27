@@ -1,0 +1,23 @@
+services:
+  shutterseek:
+    image: ghcr.io/shutterseek/shutterseek:latest
+    container_name: shutterseek
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - /volume1/Main/Photos:/photos:ro
+      - /volume1/Main/thumbnails:/thumbnails
+    environment:
+      SHUTTERSEEK_DB_USER: ${DB_USER}
+      SHUTTERSEEK_DB_PASSWORD: ${DB_PASSWORD}
+      SHUTTERSEEK_DB_NAME: ${DB_NAME}
+      SHUTTERSEEK_REDIS_HOST: ${REDIS_HOST:-172.18.0.3}
+      SHUTTERSEEK_REDIS_PASSWORD: ${REDIS_PASSWORD}
+      SHUTTERSEEK_SERVER_MODE: release
+      SHUTTERSEEK_THUMBNAILS_DIR: /thumbnails/.thumbnails_1080
+
+networks:
+  default:
+    name: postgres-main_default
+    external: true

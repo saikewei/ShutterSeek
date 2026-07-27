@@ -1,0 +1,22 @@
+# 密钥
+.env.local
+.env.production
+
+# 前端构建产物
+frontend/dist/
+frontend/node_modules/
+
+# 缩略图 (不提交)
+thumbnails/
+
+# 编译产物
+server
+
+# IDE
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
