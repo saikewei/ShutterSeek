@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -41,6 +42,9 @@ type ThumbnailConfig struct {
 }
 
 func Load(path string) (*Config, error) {
+	// Load .env.local if present (development)
+	loadDotEnv(".env.local")
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read config: %w", err)
@@ -114,6 +118,28 @@ func applyEnv(cfg *Config) {
 	}
 	if v := os.Getenv("SHUTTERSEEK_THUMBNAILS_DIR"); v != "" {
 		cfg.Thumbnail.OutputDir = v
+	}
+}
+
+func loadDotEnv(path string) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return // file doesn't exist, skip
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		val := strings.TrimSpace(parts[1])
+		if os.Getenv(key) == "" {
+			os.Setenv(key, val)
+		}
 	}
 }
 
