@@ -5,6 +5,7 @@
 # 前端构建产物
 frontend/dist/
 frontend/node_modules/
+*.tsbuildinfo
 
 # 缩略图 (不提交)
 thumbnails/
