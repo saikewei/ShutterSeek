@@ -12,6 +12,9 @@ thumbnails/
 # 编译产物
 server
 
+# Claude
+.claude/
+
 # IDE
 .idea/
 *.swp
