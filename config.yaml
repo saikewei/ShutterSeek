@@ -1,0 +1,20 @@
+# ShutterSeek 配置文件
+# 密钥通过 SHUTTERSEEK_ 环境变量注入，不在此文件中
+
+server:
+  port: 8080
+  mode: debug
+
+database:
+  host: postgres-main
+  port: 5432
+  sslmode: disable
+  max_connections: 20
+
+redis:
+  host: redis
+  port: 6379
+  db: 2
+
+thumbnail:
+  output_dir: /thumbnails/.thumbnails_1080
