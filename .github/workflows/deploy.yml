@@ -11,6 +11,8 @@ env:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    env:
+      DOCKER_BUILDKIT: 0
     permissions:
       contents: read
       packages: write
