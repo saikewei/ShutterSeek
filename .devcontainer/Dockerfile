@@ -15,6 +15,7 @@ RUN if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
     libvips42 \
     curl \
     git \
+    gh \
  && rm -rf /var/lib/apt/lists/*
 
 # Node 22
