@@ -1,6 +1,6 @@
 services:
   shutterseek:
-    image: ghcr.io/shutterseek/shutterseek:latest
+    image: ghcr.io/saikewei/shutterseek:latest
     container_name: shutterseek
     restart: unless-stopped
     ports:
