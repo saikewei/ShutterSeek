@@ -1,0 +1,9 @@
+node_modules/
+frontend/node_modules/
+frontend/dist/
+tools/
+docs/
+.git/
+.env.local
+.env.production
+thumbnails/
