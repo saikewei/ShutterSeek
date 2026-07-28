@@ -17,6 +17,9 @@ thumbnails/
 # Claude
 .claude/
 
+# 设计文档
+docs/
+
 # IDE
 .idea/
 *.swp
