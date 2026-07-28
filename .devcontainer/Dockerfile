@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/devcontainers/go:1.24-bookworm
+FROM mcr.microsoft.com/devcontainers/go:1.25-bookworm
 
 ENV GOPROXY=https://goproxy.cn,direct
 ENV GOTOOLCHAIN=auto
