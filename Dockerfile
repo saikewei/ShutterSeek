@@ -21,5 +21,6 @@ RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 COPY --from=backend-builder /app/server .
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
+COPY config.yaml .
 EXPOSE 8080
 CMD ["./server"]
