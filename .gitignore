@@ -11,6 +11,10 @@ frontend/node_modules/
 # 缩略图 (不提交)
 thumbnails/
 
+# 热重载
+.air.toml
+tmp/
+
 # 编译产物
 /server
 
