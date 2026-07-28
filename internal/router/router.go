@@ -7,18 +7,30 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 
 	"shutterseek/internal/handler"
 )
 
 // Setup registers all routes and returns the Gin engine.
-func Setup(pool *pgxpool.Pool, rdb *redis.Client, thumbDir string) *gin.Engine {
+func Setup(pool *pgxpool.Pool, rdb *redis.Client, thumbDir, dsn string) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
 
-	h := &handler.Handler{Pool: pool, Redis: rdb}
+	// GORM from pgx pool's DSN
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		log.Printf("⚠ GORM: %v (API unavailable)", err)
+	}
 
-	// API
+	h := &handler.Handler{Pool: pool, Redis: rdb, DB: db}
+
+	// API v1
+	v1 := r.Group("/api/v1")
+	{
+		v1.GET("/photos", h.ListPhotos)
+	}
 	r.GET("/api/health", h.Health)
 
 	// Thumbnails static
