@@ -13,7 +13,7 @@
           class="group cursor-pointer relative rounded-lg overflow-hidden bg-neutral-800"
         >
           <img
-            :src="photo.thumbnail_url"
+            :src="THUMB_BASE + '/' + photo.id + '.jpg'"
             :alt="photo.camera_model || 'Photo'"
             loading="lazy"
             class="w-full aspect-square object-cover"
@@ -22,6 +22,7 @@
           <div class="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
             <p class="text-xs truncate">{{ photo.camera_make }} {{ photo.camera_model }}</p>
             <p class="text-xs text-neutral-300">{{ photo.focal_length }} {{ photo.aperture }} ISO{{ photo.iso }}</p>
+            <p class="text-xs text-neutral-400">{{ photo.width }}×{{ photo.height }}</p>
           </div>
         </div>
       </div>
@@ -37,6 +38,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { fetchPhotos, type Photo } from '@/api/photos'
+import { THUMB_BASE } from '@/api/client'
 
 const photos = ref<Photo[]>([])
 const total = ref(0)
