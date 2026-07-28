@@ -49,7 +49,7 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	r := router.Setup(pool, rdb, cfg.Thumbnail.OutputDir)
+	r := router.Setup(pool, rdb, cfg.Thumbnail.OutputDir, cfg.Database.DSN())
 
 	// ── HTTP Server ───────────────────────────────────────
 	srv := &http.Server{
