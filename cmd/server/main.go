@@ -15,6 +15,7 @@ import (
 	"shutterseek/internal/config"
 	"shutterseek/internal/db"
 	myredis "shutterseek/internal/redis"
+	"shutterseek/internal/router"
 )
 
 func main() {
@@ -25,7 +26,6 @@ func main() {
 
 	ctx := context.Background()
 
-	// Database
 	pool, err := db.NewPGPool(ctx, cfg.Database.DSN())
 	if err != nil {
 		log.Fatalf("db: %v", err)
@@ -33,7 +33,6 @@ func main() {
 	defer pool.Close()
 	log.Println("✓ PostgreSQL connected")
 
-	// Redis
 	rdb := myredis.NewClient(cfg.Redis)
 	if err := myredis.Ping(ctx, rdb); err != nil {
 		log.Printf("⚠ Redis unavailable: %v (continuing without cache)", err)
@@ -42,40 +41,12 @@ func main() {
 		log.Println("✓ Redis connected")
 	}
 
-	// Gin
 	if cfg.Server.Mode == "release" {
 		gin.SetMode(gin.ReleaseMode)
 	}
-	r := gin.New()
-	r.Use(gin.Logger(), gin.Recovery())
 
-	// Health check
-	r.GET("/api/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
-	})
+	r := router.Setup(pool, rdb, cfg.Thumbnail.OutputDir)
 
-	// Thumbnails static
-	thumbDir := cfg.Thumbnail.OutputDir
-	if _, err := os.Stat(thumbDir); err == nil {
-		r.Static("/thumbnails", thumbDir)
-		log.Printf("✓ Thumbnails: %s", thumbDir)
-	} else {
-		log.Printf("⚠ Thumbnails dir not found: %s", thumbDir)
-	}
-
-	// SPA frontend
-	frontendDir := "frontend/dist"
-	if _, err := os.Stat(frontendDir); err == nil {
-		r.StaticFile("/", frontendDir+"/index.html")
-		r.Static("/assets", frontendDir+"/assets")
-		r.Static("/favicon.ico", frontendDir+"/favicon.ico")
-		r.NoRoute(func(c *gin.Context) {
-			c.File(frontendDir + "/index.html")
-		})
-		log.Printf("✓ Frontend: %s", frontendDir)
-	}
-
-	// Server
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.Server.Port),
 		Handler: r,
