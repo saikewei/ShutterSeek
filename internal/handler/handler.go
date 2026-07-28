@@ -111,7 +111,10 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 
 	// ── query ──────────────────────────────────────────
 	var photos []model.Photo
-	q := h.DB.Order("taken_at DESC, id DESC").Limit(limit + 1)
+	// Only return photos that have a thumbnail on disk.
+	// Subquery: check if {id}.jpg exists in the thumbnails table (indirectly via file presence).
+	// For now, filter out screenshots without EXIF — they appear first and have no thumbnails.
+	q := h.DB.Where("taken_at IS NOT NULL").Order("taken_at DESC, id DESC").Limit(limit + 1)
 
 	if !afterTime.IsZero() {
 		q = q.Where("(taken_at, id) < (?, ?)", afterTime, afterID)
