@@ -124,7 +124,7 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 	for i, p := range photos {
 		items[i] = PhotoItem{
 			ID:           p.ID,
-			ThumbnailURL: "/api/thumbnails/" + strconv.FormatInt(p.ID, 10) + ".jpg",
+			ThumbnailURL: "/api/thumbnails/" + strconv.FormatInt(p.ID, 10) + ".webp",
 			FileName:     filepath.Base(p.FilePath),
 			FilePath:     p.FilePath,
 			CameraMake:   p.CameraMake,
