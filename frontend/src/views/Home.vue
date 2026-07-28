@@ -15,9 +15,10 @@
           <img
             :src="photo.thumbnail_url"
             :alt="photo.camera_model || 'Photo'"
-            :style="{ aspectRatio: photo.width + '/' + photo.height }"
+            :style="{ aspectRatio: (photo.width || 3) + '/' + (photo.height || 2) }"
             loading="lazy"
             class="w-full rounded-lg object-cover bg-neutral-800 transition-transform group-hover:scale-[1.02]"
+            @error="onImgError(photo)"
           />
           <div class="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/70 to-transparent rounded-b-lg opacity-0 group-hover:opacity-100 transition-opacity">
             <p class="text-xs truncate">{{ photo.camera_make }} {{ photo.camera_model }}</p>
@@ -27,9 +28,10 @@
       </div>
     </div>
 
-    <div ref="sentinel" class="py-8 text-center text-neutral-500 text-sm">
+    <!-- sentinel 放在 columns 外面，确保 IntersectionObserver 正确触发 -->
+    <div ref="sentinel" class="py-12 text-center text-neutral-500 text-sm">
       <span v-if="loading">Loading...</span>
-      <span v-else-if="!hasMore">— End —</span>
+      <span v-else-if="!hasMore">— End of 74,577 photos —</span>
     </div>
   </div>
 </template>
@@ -72,6 +74,13 @@ onMounted(() => {
   )
   if (sentinel.value) observer.observe(sentinel.value)
 })
+
+function onImgError(photo: Photo) {
+  // Retry once after 1s — often recovers from transient network issues
+  const url = photo.thumbnail_url
+  photo.thumbnail_url = ''
+  setTimeout(() => { photo.thumbnail_url = url }, 1000)
+}
 
 onUnmounted(() => observer?.disconnect())
 </script>
