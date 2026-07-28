@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -42,7 +43,9 @@ type ThumbnailConfig struct {
 }
 
 func Load(path string) (*Config, error) {
-	// Load .env.local if present (development)
+	// Try .env.local next to config file first, then in cwd
+	configDir := filepath.Dir(path)
+	loadDotEnv(filepath.Join(configDir, ".env.local"))
 	loadDotEnv(".env.local")
 
 	data, err := os.ReadFile(path)
