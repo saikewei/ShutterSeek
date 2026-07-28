@@ -11,9 +11,12 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 
 	"shutterseek/internal/config"
 	"shutterseek/internal/db"
+	"shutterseek/internal/handler"
 	myredis "shutterseek/internal/redis"
 	"shutterseek/internal/router"
 )
@@ -35,6 +38,13 @@ func main() {
 	defer pool.Close()
 	log.Println("✓ PostgreSQL connected")
 
+	// ── GORM ──────────────────────────────────────────────
+	gormDB, err := gorm.Open(postgres.Open(cfg.Database.DSN()), &gorm.Config{})
+	if err != nil {
+		log.Fatalf("gorm: %v", err)
+	}
+	log.Println("✓ GORM ready")
+
 	// ── Redis (可选，失败不阻塞) ──────────────────────────
 	rdb := myredis.NewClient(cfg.Redis)
 	if err := myredis.Ping(ctx, rdb); err != nil {
@@ -49,7 +59,8 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	r := router.Setup(pool, rdb, cfg.Thumbnail.OutputDir, cfg.Database.DSN())
+	h := &handler.Handler{Pool: pool, Redis: rdb, DB: gormDB}
+	r := router.Setup(h, cfg.Thumbnail.OutputDir)
 
 	// ── HTTP Server ───────────────────────────────────────
 	srv := &http.Server{
