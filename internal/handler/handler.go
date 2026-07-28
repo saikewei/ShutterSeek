@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -43,12 +44,12 @@ type PhotoItem struct {
 // PhotoListResponse is the paginated response.
 type PhotoListResponse struct {
 	Items      []PhotoItem `json:"items"`
-	NextCursor *int64      `json:"next_cursor"` // null if no more pages
+	NextCursor string      `json:"next_cursor"` // empty if no more pages
 	Total      int64       `json:"total"`
 }
 
-// ListPhotos returns a paginated list of photos, cursor-based for infinite scroll.
-// Query: ?after=<id>&limit=<n> (default limit=50)
+// ListPhotos returns photos sorted by shooting time (newest first), cursor-based for infinite scroll.
+// Query: ?cursor=<taken_at>,<id>&limit=<n> (default limit=50)
 func (h *Handler) ListPhotos(c *gin.Context) {
 	limit := 50
 	if l := c.Query("limit"); l != "" {
@@ -57,17 +58,30 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 		}
 	}
 
-	var afterID int64
-	if a := c.Query("after"); a != "" {
-		if n, err := strconv.ParseInt(a, 10, 64); err == nil {
-			afterID = n
+	var (
+		afterTime time.Time
+		afterID   int64
+	)
+	if cur := c.Query("cursor"); cur != "" {
+		parts := split2(cur, ",")
+		if len(parts) == 2 {
+			if t, err := time.Parse("2006-01-02T15:04:05", parts[0]); err == nil && !t.IsZero() {
+				afterTime = t
+			}
+			if n, err := strconv.ParseInt(parts[1], 10, 64); err == nil {
+				afterID = n
+			}
 		}
 	}
 
 	var photos []model.Photo
-	q := h.DB.Order("id ASC").Limit(limit + 1)
-	if afterID > 0 {
-		q = q.Where("id > ?", afterID)
+	q := h.DB.Order("taken_at DESC, id DESC").Limit(limit + 1)
+
+	if !afterTime.IsZero() {
+		q = q.Where("(taken_at, id) < (?, ?)", afterTime, afterID)
+	} else if afterID > 0 {
+		// cursor from NULL-time photos — paginate by id only
+		q = q.Where("taken_at IS NULL AND id < ?", afterID)
 	}
 
 	if err := q.Find(&photos).Error; err != nil {
@@ -75,7 +89,6 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 		return
 	}
 
-	// Check if there are more
 	hasMore := len(photos) > limit
 	if hasMore {
 		photos = photos[:limit]
@@ -101,14 +114,27 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 	resp := PhotoListResponse{
 		Items:      items,
 		Total:      h.totalPhotoCount(),
-		NextCursor: nil,
+		NextCursor: "",
 	}
 	if hasMore && len(items) > 0 {
-		last := items[len(items)-1].ID
-		resp.NextCursor = &last
+		last := items[len(items)-1]
+		// TakenAt may be empty (zero); use zero-time as cursor for those
+		t := last.TakenAt
+		if t == "" {
+			t = "0001-01-01T00:00:00"
+		}
+		resp.NextCursor = t + "," + strconv.FormatInt(last.ID, 10)
 	}
 
 	c.JSON(http.StatusOK, resp)
+}
+
+func split2(s, sep string) []string {
+	idx := strings.LastIndex(s, sep)
+	if idx < 0 {
+		return nil
+	}
+	return []string{s[:idx], s[idx+1:]}
 }
 
 func (h *Handler) totalPhotoCount() int64 {
