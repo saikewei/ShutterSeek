@@ -16,7 +16,7 @@
             :src="THUMB_BASE + '/' + photo.id + '.jpg'"
             :alt="photo.camera_model || 'Photo'"
             loading="lazy"
-            class="w-full aspect-square object-cover"
+            :class="['w-full aspect-square object-cover', photo.height > photo.width ? 'rotate-90 scale-150' : '']"
             @error="onImgError(photo)"
           />
           <div class="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
