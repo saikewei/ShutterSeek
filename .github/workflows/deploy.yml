@@ -52,6 +52,6 @@ jobs:
           username: ${{ secrets.NAS_USER }}
           key: ${{ secrets.NAS_SSH_KEY }}
           script: |
-            cd /volume1/docker/shutterseek
+            cd /volume1/docker/ShutterSeek
             docker compose pull
             docker compose up -d
