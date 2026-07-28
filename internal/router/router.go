@@ -21,9 +21,10 @@ func Setup(h *handler.Handler, thumbDir string) *gin.Engine {
 	}
 	r.GET("/api/health", h.Health)
 
-	// Thumbnails static
+	// Thumbnails — served under /api/thumbnails/ to avoid Vite proxy issues
 	if _, err := os.Stat(thumbDir); err == nil {
-		r.Static("/thumbnails", thumbDir)
+		r.Static("/api/thumbnails", thumbDir)
+		r.Static("/thumbnails", thumbDir) // keep old path for direct backend access
 		log.Printf("✓ Thumbnails: %s", thumbDir)
 	} else {
 		log.Printf("⚠ Thumbnails dir not found: %s", thumbDir)
