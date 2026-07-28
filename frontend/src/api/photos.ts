@@ -27,7 +27,7 @@ export interface PhotoListParams {
   cursor?: string
 }
 
-export async function fetchPhotos(params?: PhotoListParams): Promise<PhotoListResponse> {
-  const { data } = await api.get<PhotoListResponse>('/photos', { params })
+export async function fetchPhotos(params?: PhotoListParams, signal?: AbortSignal): Promise<PhotoListResponse> {
+  const { data } = await api.get<PhotoListResponse>('/photos', { params, signal })
   return data
 }
