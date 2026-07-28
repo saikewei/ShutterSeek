@@ -19,6 +19,7 @@ import (
 )
 
 func main() {
+	// ── 配置 ──────────────────────────────────────────────
 	cfg, err := config.Load("config.yaml")
 	if err != nil {
 		log.Fatalf("load config: %v", err)
@@ -26,6 +27,7 @@ func main() {
 
 	ctx := context.Background()
 
+	// ── PostgreSQL ────────────────────────────────────────
 	pool, err := db.NewPGPool(ctx, cfg.Database.DSN())
 	if err != nil {
 		log.Fatalf("db: %v", err)
@@ -33,6 +35,7 @@ func main() {
 	defer pool.Close()
 	log.Println("✓ PostgreSQL connected")
 
+	// ── Redis (可选，失败不阻塞) ──────────────────────────
 	rdb := myredis.NewClient(cfg.Redis)
 	if err := myredis.Ping(ctx, rdb); err != nil {
 		log.Printf("⚠ Redis unavailable: %v (continuing without cache)", err)
@@ -41,12 +44,14 @@ func main() {
 		log.Println("✓ Redis connected")
 	}
 
+	// ── Gin 引擎 ──────────────────────────────────────────
 	if cfg.Server.Mode == "release" {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
 	r := router.Setup(pool, rdb, cfg.Thumbnail.OutputDir)
 
+	// ── HTTP Server ───────────────────────────────────────
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.Server.Port),
 		Handler: r,
@@ -59,6 +64,7 @@ func main() {
 		}
 	}()
 
+	// ── 优雅退出 ──────────────────────────────────────────
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
