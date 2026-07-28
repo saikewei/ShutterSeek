@@ -6,20 +6,20 @@
     </header>
 
     <div class="p-2">
-      <div class="columns-2 md:columns-3 lg:columns-4 gap-2 space-y-2">
+      <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
         <div
           v-for="photo in photos"
           :key="photo.id"
-          class="break-inside-avoid group cursor-pointer relative"
+          class="group cursor-pointer relative rounded-lg overflow-hidden bg-neutral-800"
         >
           <img
             :src="photo.thumbnail_url"
             :alt="photo.camera_model || 'Photo'"
             loading="lazy"
-            class="w-full rounded-lg object-cover bg-neutral-800 transition-transform group-hover:scale-[1.02]"
+            class="w-full block"
             @error="onImgError(photo)"
           />
-          <div class="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/70 to-transparent rounded-b-lg opacity-0 group-hover:opacity-100 transition-opacity">
+          <div class="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
             <p class="text-xs truncate">{{ photo.camera_make }} {{ photo.camera_model }}</p>
             <p class="text-xs text-neutral-300">{{ photo.focal_length }} {{ photo.aperture }} ISO{{ photo.iso }}</p>
           </div>
@@ -27,10 +27,9 @@
       </div>
     </div>
 
-    <!-- sentinel 放在 columns 外面，确保 IntersectionObserver 正确触发 -->
     <div ref="sentinel" class="py-12 text-center text-neutral-500 text-sm">
       <span v-if="loading">Loading...</span>
-      <span v-else-if="!hasMore">— End of 74,577 photos —</span>
+      <span v-else-if="!hasMore">— End of {{ total.toLocaleString() }} photos —</span>
     </div>
   </div>
 </template>
@@ -56,32 +55,35 @@ async function loadPage() {
     total.value = data.total
     cursor = data.next_cursor
     hasMore.value = data.next_cursor !== ''
+    console.log('loadPage:', { received: data.items.length, cursor, hasMore: hasMore.value, total: data.total })
   } catch (e) {
-    console.error('load photos failed', e)
+    console.error('load failed', e)
   } finally {
     loading.value = false
   }
 }
 
-onMounted(async () => {
-  await loadPage()
-  // Observe sentinel only after first page loads so it's below the fold
-  if (sentinel.value) {
-    observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasMore.value && !loading.value) loadPage()
-      },
-      { rootMargin: '200px' }
-    )
-    observer.observe(sentinel.value)
-  }
+onMounted(() => {
+  loadPage()
+  observer = new IntersectionObserver(
+    (entries) => {
+      if (entries[0].isIntersecting && hasMore.value && !loading.value) {
+        console.log('observer triggered, loading more...')
+        loadPage()
+      }
+    },
+    { rootMargin: '400px' }
+  )
+  // Observe after next tick so DOM is painted
+  setTimeout(() => {
+    if (sentinel.value) observer?.observe(sentinel.value)
+  }, 1000)
 })
 
 function onImgError(photo: Photo) {
-  // Retry once after 1s — often recovers from transient network issues
   const url = photo.thumbnail_url
   photo.thumbnail_url = ''
-  setTimeout(() => { photo.thumbnail_url = url }, 1000)
+  setTimeout(() => { photo.thumbnail_url = url }, 2000)
 }
 
 onUnmounted(() => observer?.disconnect())
