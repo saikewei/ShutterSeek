@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -17,7 +18,6 @@ import (
 	"shutterseek/internal/model"
 )
 
-// Redis key prefixes and TTLs for cache.
 const (
 	keyTotalPhotos = "cache:total_photos"
 	keyFirstPage   = "cache:first_page:"
@@ -28,23 +28,22 @@ const (
 // Handler holds shared dependencies for all HTTP handlers.
 type Handler struct {
 	Pool  *pgxpool.Pool
-	Redis *goredis.Client // may be nil if Redis unavailable
+	Redis *goredis.Client
 	DB    *gorm.DB
 }
 
 // ── Health ──────────────────────────────────────────────
 
-// Health returns a simple health check.
 func (h *Handler) Health(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
-// ── Photo List (paginated) ──────────────────────────────
+// ── Photo List ──────────────────────────────────────────
 
-// PhotoItem is the JSON response for a single photo in the list view.
 type PhotoItem struct {
 	ID           int64  `json:"id"`
 	ThumbnailURL string `json:"thumbnail_url"`
+	FileName     string `json:"file_name,omitempty"`
 	CameraMake   string `json:"camera_make,omitempty"`
 	CameraModel  string `json:"camera_model,omitempty"`
 	LensModel    string `json:"lens_model,omitempty"`
@@ -54,9 +53,9 @@ type PhotoItem struct {
 	TakenAt      string `json:"taken_at,omitempty"`
 	Width        int32  `json:"width"`
 	Height       int32  `json:"height"`
+	FilePath     string `json:"file_path,omitempty"`
 }
 
-// PhotoListResponse wraps a page of photos for the list endpoint.
 type PhotoListResponse struct {
 	Items      []PhotoItem `json:"items"`
 	NextCursor string      `json:"next_cursor"`
@@ -64,14 +63,7 @@ type PhotoListResponse struct {
 }
 
 // ListPhotos returns photos sorted by shooting time (newest first),
-// with cursor-based pagination for infinite scroll.
-//
-// The first page (no cursor) is cached in Redis for 60s because it
-// receives ~90% of traffic. Subsequent pages with unique cursors
-// are not cached (hit rate ~0%).
-//
-//	GET /api/v1/photos?limit=50
-//	GET /api/v1/photos?limit=50&cursor=2023-06-15T14:30:00,1234
+// cursor-based pagination for infinite scroll.
 func (h *Handler) ListPhotos(c *gin.Context) {
 	limit := 50
 	if l := c.Query("limit"); l != "" {
@@ -80,7 +72,6 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 		}
 	}
 
-	// ── parse cursor ───────────────────────────────────
 	var (
 		afterTime time.Time
 		afterID   int64
@@ -90,7 +81,8 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 		hasCursor = true
 		parts := split2(cur, ",")
 		if len(parts) == 2 {
-			if t, err := time.Parse("2006-01-02T15:04:05", strings.Replace(parts[0], " ", "T", 1)); err == nil && !t.IsZero() {
+			ts := strings.Replace(parts[0], " ", "T", 1)
+			if t, err := time.Parse("2006-01-02T15:04:05", ts); err == nil && !t.IsZero() {
 				afterTime = t
 			}
 			if n, err := strconv.ParseInt(parts[1], 10, 64); err == nil {
@@ -99,7 +91,7 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 		}
 	}
 
-	// ── Redis cache: first page only ───────────────────
+	// Redis cache for first page only
 	cacheKey := ""
 	if !hasCursor {
 		cacheKey = keyFirstPage + strconv.Itoa(limit)
@@ -109,11 +101,7 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 		}
 	}
 
-	// ── query ──────────────────────────────────────────
 	var photos []model.Photo
-	// Only return photos that have a thumbnail on disk.
-	// Subquery: check if {id}.jpg exists in the thumbnails table (indirectly via file presence).
-	// For now, filter out screenshots without EXIF — they appear first and have no thumbnails.
 	q := h.DB.Where("taken_at IS NOT NULL").Order("taken_at DESC, id DESC").Limit(limit + 1)
 
 	if !afterTime.IsZero() {
@@ -127,7 +115,6 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 		return
 	}
 
-	// ── build response ─────────────────────────────────
 	hasMore := len(photos) > limit
 	if hasMore {
 		photos = photos[:limit]
@@ -138,6 +125,8 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 		items[i] = PhotoItem{
 			ID:           p.ID,
 			ThumbnailURL: "/api/thumbnails/" + strconv.FormatInt(p.ID, 10) + ".jpg",
+			FileName:     filepath.Base(p.FilePath),
+			FilePath:     p.FilePath,
 			CameraMake:   p.CameraMake,
 			CameraModel:  p.CameraModel,
 			LensModel:    p.LensModel,
@@ -165,7 +154,6 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 		resp.NextCursor = t + "," + strconv.FormatInt(last.ID, 10)
 	}
 
-	// ── Write to Redis cache (first page only, async) ──
 	if cacheKey != "" && h.Redis != nil {
 		data, _ := json.Marshal(resp)
 		h.Redis.Set(context.Background(), cacheKey, data, ttlFirstPage)
@@ -174,10 +162,8 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// ── Redis helpers ────────────────────────────────────────
+// ── Redis ───────────────────────────────────────────────
 
-// redisGet reads a cached JSON response from Redis.
-// Returns false if the key doesn't exist or Redis is unavailable.
 func (h *Handler) redisGet(key string) (PhotoListResponse, bool) {
 	if h.Redis == nil {
 		return PhotoListResponse{}, false
@@ -193,20 +179,14 @@ func (h *Handler) redisGet(key string) (PhotoListResponse, bool) {
 	return resp, true
 }
 
-// ── Total count (Redis cached) ───────────────────────────
-
-// totalPhotoCountCached returns the total number of photos,
-// cached in Redis for ttlTotal (5 min).
 func (h *Handler) totalPhotoCountCached() int64 {
 	if h.Redis != nil {
 		if val, err := h.Redis.Get(context.Background(), keyTotalPhotos).Int64(); err == nil {
 			return val
 		}
 	}
-	// Miss or Redis down — query DB
 	var count int64
 	h.DB.Model(&model.Photo{}).Count(&count)
-	// Write back asynchronously
 	if h.Redis != nil {
 		h.Redis.Set(context.Background(), keyTotalPhotos, count, ttlTotal)
 	}

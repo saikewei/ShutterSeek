@@ -3,6 +3,8 @@ import { api } from './client'
 export interface Photo {
   id: number
   thumbnail_url: string
+  file_name: string
+  file_path: string
   camera_make: string
   camera_model: string
   lens_model: string
