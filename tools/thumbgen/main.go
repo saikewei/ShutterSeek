@@ -7,9 +7,9 @@ import (
 	"log"
 	"time"
 
-	"shutterseek/tools/importer/internal/config"
-	"shutterseek/tools/importer/internal/db"
-	"shutterseek/tools/importer/internal/thumbnail"
+	"shutterseek/tools/thumbgen/internal/config"
+	"shutterseek/tools/thumbgen/internal/db"
+	"shutterseek/tools/thumbgen/internal/thumbnail"
 )
 
 func main() {
