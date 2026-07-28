@@ -62,24 +62,25 @@ function calcLimit(): number {
 
 // ── Fetch page with abort support ───────────────────
 async function loadPage() {
-  if (loading.value || !hasMore.value) return
+  if (!hasMore.value) return
 
-  // Abort any in-flight request so old regions don't queue up
+  // Abort the previous in-flight request — user scrolled past it
   controller?.abort()
   controller = new AbortController()
+  const { signal } = controller
 
   loading.value = true
   try {
     const data = await fetchPhotos(
       { limit: calcLimit(), cursor: cursor || undefined },
-      controller.signal
+      signal
     )
     photos.value.push(...data.items)
     total.value = data.total
     cursor = data.next_cursor
     hasMore.value = data.next_cursor !== ''
   } catch (e: any) {
-    if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return // aborted, ok
+    if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return
     console.error('load failed', e)
   } finally {
     loading.value = false
