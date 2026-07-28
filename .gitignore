@@ -12,7 +12,7 @@ frontend/node_modules/
 thumbnails/
 
 # 编译产物
-server
+/server
 
 # Claude
 .claude/

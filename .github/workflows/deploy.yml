@@ -21,14 +21,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Debug files
-        run: |
-          ls -la
-          echo "---cmd---"
-          ls -la cmd/ 2>/dev/null || echo "NO cmd/"
-          echo "---internal---"
-          ls -la internal/ 2>/dev/null || echo "NO internal/"
-
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
