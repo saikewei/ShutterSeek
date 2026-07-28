@@ -1,7 +1,6 @@
-const BASE = '/api/v1'
+import axios from 'axios'
 
-export async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`)
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
-  return res.json()
-}
+export const api = axios.create({
+  baseURL: '/api/v1',
+  timeout: 10000,
+})
