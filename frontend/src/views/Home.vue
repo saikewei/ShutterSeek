@@ -92,7 +92,7 @@ onMounted(() => {
     (entries) => {
       if (entries[0].isIntersecting && hasMore.value && !loading.value) loadPage()
     },
-    { rootMargin: '400px' }
+    { rootMargin: `${window.innerHeight * 2}px` }
   )
   setTimeout(() => {
     if (sentinel.value) observer?.observe(sentinel.value)
