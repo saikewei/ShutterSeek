@@ -49,6 +49,7 @@ const sentinel = ref<HTMLElement | null>(null)
 let cursor = ''
 let observer: IntersectionObserver | null = null
 let controller: AbortController | null = null
+let wasInterrupted = false // user scrolled past before page finished
 
 // ── Dynamic batch size based on viewport ────────────
 function calcLimit(): number {
@@ -64,15 +65,21 @@ function calcLimit(): number {
 async function loadPage() {
   if (!hasMore.value) return
 
-  // Abort the previous in-flight request — user scrolled past it
+  // User scrolled past before previous page finished — use max batch next time
+  if (loading.value) wasInterrupted = true
+
   controller?.abort()
   controller = new AbortController()
   const { signal } = controller
 
+  // Bump to max batch if user is scrolling faster than we can load
+  const limit = wasInterrupted ? 200 : calcLimit()
+  wasInterrupted = false
+
   loading.value = true
   try {
     const data = await fetchPhotos(
-      { limit: calcLimit(), cursor: cursor || undefined },
+      { limit, cursor: cursor || undefined },
       signal
     )
     photos.value.push(...data.items)
