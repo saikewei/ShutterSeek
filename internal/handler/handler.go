@@ -90,7 +90,7 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 		hasCursor = true
 		parts := split2(cur, ",")
 		if len(parts) == 2 {
-			if t, err := time.Parse("2006-01-02T15:04:05", parts[0]); err == nil && !t.IsZero() {
+			if t, err := time.Parse("2006-01-02T15:04:05", strings.Replace(parts[0], " ", "T", 1)); err == nil && !t.IsZero() {
 				afterTime = t
 			}
 			if n, err := strconv.ParseInt(parts[1], 10, 64); err == nil {
@@ -241,5 +241,5 @@ func formatTime(t time.Time) string {
 	if t.IsZero() {
 		return ""
 	}
-	return t.Format("2006-01-02 15:04:05")
+	return t.Format("2006-01-02T15:04:05")
 }
