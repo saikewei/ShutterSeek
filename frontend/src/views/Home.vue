@@ -15,7 +15,6 @@
           <img
             :src="photo.thumbnail_url"
             :alt="photo.camera_model || 'Photo'"
-            :style="{ aspectRatio: (photo.width || 3) + '/' + (photo.height || 2) }"
             loading="lazy"
             class="w-full rounded-lg object-cover bg-neutral-800 transition-transform group-hover:scale-[1.02]"
             @error="onImgError(photo)"
@@ -64,15 +63,18 @@ async function loadPage() {
   }
 }
 
-onMounted(() => {
-  loadPage()
-  observer = new IntersectionObserver(
-    (entries) => {
-      if (entries[0].isIntersecting && hasMore.value && !loading.value) loadPage()
-    },
-    { rootMargin: '400px' }
-  )
-  if (sentinel.value) observer.observe(sentinel.value)
+onMounted(async () => {
+  await loadPage()
+  // Observe sentinel only after first page loads so it's below the fold
+  if (sentinel.value) {
+    observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore.value && !loading.value) loadPage()
+      },
+      { rootMargin: '200px' }
+    )
+    observer.observe(sentinel.value)
+  }
 })
 
 function onImgError(photo: Photo) {
