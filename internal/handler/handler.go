@@ -16,6 +16,7 @@ import (
 	"gorm.io/gorm"
 
 	"shutterseek/internal/model"
+	"shutterseek/internal/service"
 )
 
 const (
@@ -27,9 +28,10 @@ const (
 
 // Handler holds shared dependencies for all HTTP handlers.
 type Handler struct {
-	Pool  *pgxpool.Pool
-	Redis *goredis.Client
-	DB    *gorm.DB
+	Pool    *pgxpool.Pool
+	Redis   *goredis.Client
+	DB      *gorm.DB
+	OrigSvc *service.OriginalService
 }
 
 // ── Health ──────────────────────────────────────────────
@@ -160,6 +162,32 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, resp)
+}
+
+// ── Original Photo ───────────────────────────────────────
+
+// GetOriginal serves the original photo file as JPEG.
+// RAW files have their embedded preview extracted; TIFFs are decoded and re-encoded.
+// GET /api/v1/photos/:id/original
+func (h *Handler) GetOriginal(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+
+	var photo model.Photo
+	if err := h.DB.Where("id = ?", id).First(&photo).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "photo not found"})
+		return
+	}
+
+	c.Header("Content-Type", "image/jpeg")
+	c.Header("Cache-Control", "public, max-age=86400")
+	if err := h.OrigSvc.ServeOriginal(c.Writer, photo.FilePath); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	}
 }
 
 // ── Redis ───────────────────────────────────────────────
