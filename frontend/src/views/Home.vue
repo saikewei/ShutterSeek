@@ -5,8 +5,8 @@
       <p class="text-xs text-neutral-500">{{ total.toLocaleString() }} photos</p>
     </header>
 
-    <div class="p-2">
-      <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
+    <div class="p-1">
+      <div class="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-1">
         <div
           v-for="photo in photos"
           :key="photo.id"
