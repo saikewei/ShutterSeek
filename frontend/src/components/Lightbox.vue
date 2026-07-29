@@ -23,7 +23,8 @@
       <!-- Photo container -->
       <div
         ref="container"
-        class="w-full h-full flex items-center justify-center overflow-hidden"
+        :style="{ paddingRight: photo ? '288px' : '0' }"
+        class="w-full h-full flex items-center justify-center overflow-hidden transition-[padding] duration-200"
         @wheel.prevent="onWheel"
         @mousedown="onMouseDown"
         @mousemove="onMouseMove"
