@@ -7,7 +7,8 @@
 
       <!-- Close -->
       <button @click="$emit('close')"
-        class="absolute top-4 right-4 z-10 text-white/70 hover:text-white text-2xl w-10 h-10">✕</button>
+        class="absolute top-4 z-10 text-white/70 hover:text-white text-2xl w-10 h-10"
+        :style="{ right: photo ? '308px' : '16px' }">✕</button>
 
       <!-- Reset zoom -->
       <button v-if="scale !== 1" @click="resetZoom"
