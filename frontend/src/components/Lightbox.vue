@@ -36,6 +36,8 @@
           :style="{
             transform: `translate(${x}px, ${y}px) scale(${scale})`,
             transformOrigin: 'center center',
+            maxHeight: scale === 1 ? '85vh' : 'none',
+            maxWidth: scale === 1 ? '95vw' : 'none',
           }"
           :class="[
             'select-none',
