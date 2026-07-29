@@ -36,6 +36,7 @@
           :style="{
             transform: `translate(${x}px, ${y}px) scale(${scale})`,
             transformOrigin: 'center center',
+            transition: dragging ? 'none' : 'transform 0.08s ease-out',
             maxHeight: scale === 1 ? '85vh' : 'none',
             maxWidth: scale === 1 ? '95vw' : 'none',
           }"
@@ -104,7 +105,7 @@ function onWheel(e: WheelEvent) {
   const cx = e.clientX - rect.left - rect.width / 2
   const cy = e.clientY - rect.top - rect.height / 2
 
-  const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15
+  const factor = e.deltaY < 0 ? 1.06 : 1 / 1.06
   const newScale = Math.max(0.3, Math.min(10, scale.value * factor))
 
   // Adjust pan so the point under cursor stays fixed
