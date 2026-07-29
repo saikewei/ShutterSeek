@@ -37,11 +37,9 @@
             transform: `translate(${x}px, ${y}px) scale(${scale})`,
             transformOrigin: 'center center',
             transition: dragging ? 'none' : 'transform 0.08s ease-out',
-            maxHeight: scale === 1 ? '85vh' : 'none',
-            maxWidth: scale === 1 ? '95vw' : 'none',
           }"
           :class="[
-            'select-none',
+            'select-none max-h-[85vh] max-w-[95vw]',
             photo.height > photo.width ? 'rotate-270' : '',
             dragging ? 'cursor-grabbing' : scale > 1 ? 'cursor-grab' : 'cursor-zoom-in',
           ]"
