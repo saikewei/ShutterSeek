@@ -40,6 +40,7 @@ type RedisConfig struct {
 
 type ThumbnailConfig struct {
 	OutputDir string `yaml:"output_dir"`
+	PhotosDir string `yaml:"photos_dir"`
 }
 
 func Load(path string) (*Config, error) {
@@ -63,6 +64,7 @@ func Load(path string) (*Config, error) {
 		},
 		Thumbnail: ThumbnailConfig{
 			OutputDir: "/thumbnails/.thumbnails_1080",
+			PhotosDir: "/photos",
 		},
 	}
 

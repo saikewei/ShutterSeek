@@ -19,6 +19,7 @@ import (
 	"shutterseek/internal/handler"
 	myredis "shutterseek/internal/redis"
 	"shutterseek/internal/router"
+	"shutterseek/internal/service"
 )
 
 func main() {
@@ -59,7 +60,8 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	h := &handler.Handler{Pool: pool, Redis: rdb, DB: gormDB}
+	origSvc := service.NewOriginalService(cfg.Thumbnail.PhotosDir, "/tmp/shutterseek_previews")
+	h := &handler.Handler{Pool: pool, Redis: rdb, DB: gormDB, OrigSvc: origSvc}
 	r := router.Setup(h, cfg.Thumbnail.OutputDir)
 
 	// ── HTTP Server ───────────────────────────────────────
