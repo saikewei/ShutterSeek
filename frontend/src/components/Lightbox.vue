@@ -2,51 +2,48 @@
   <Dialog :open="open" @close="$emit('close')" class="relative z-50">
     <div class="fixed inset-0 bg-black/95" aria-hidden="true" />
 
-    <div class="fixed inset-0 flex items-center justify-center"
-         @click.self="$emit('close')" @keydown="onKey">
+    <div class="fixed inset-0 flex items-center justify-center overflow-hidden"
+         @click.self="$emit('close')">
 
-      <!-- Close button -->
+      <!-- Close -->
       <button @click="$emit('close')"
-        class="absolute top-4 right-4 z-10 text-white/70 hover:text-white text-2xl w-10 h-10">
-        ✕
-      </button>
+        class="absolute top-4 right-4 z-10 text-white/70 hover:text-white text-2xl w-10 h-10">✕</button>
 
-      <!-- Prev -->
+      <!-- Reset zoom -->
+      <button v-if="scale !== 1" @click="resetZoom"
+        class="absolute top-4 left-4 z-10 text-white/50 hover:text-white text-sm px-2 py-1">Reset</button>
+
+      <!-- Prev / Next -->
       <button v-if="hasPrev" @click.stop="$emit('prev')"
-        class="absolute left-2 top-1/2 -translate-y-1/2 z-10 text-white/50 hover:text-white text-4xl w-12 h-12 flex items-center justify-center">
-        ‹
-      </button>
-
-      <!-- Next -->
+        class="absolute left-2 top-1/2 -translate-y-1/2 z-10 text-white/50 hover:text-white text-4xl w-12 h-12 flex items-center justify-center">‹</button>
       <button v-if="hasNext" @click.stop="$emit('next')"
-        class="absolute right-2 top-1/2 -translate-y-1/2 z-10 text-white/50 hover:text-white text-4xl w-12 h-12 flex items-center justify-center">
-        ›
-      </button>
+        class="absolute right-2 top-1/2 -translate-y-1/2 z-10 text-white/50 hover:text-white text-4xl w-12 h-12 flex items-center justify-center">›</button>
 
-      <!-- Zoom button -->
-      <button @click="fitScreen = !fitScreen"
-        class="absolute top-4 left-4 z-10 text-white/50 hover:text-white text-sm px-2 py-1">
-        {{ fitScreen ? '1:1' : 'Fit' }}
-      </button>
-
-      <!-- Photo area -->
+      <!-- Photo container -->
       <div
-        v-if="photo"
-        :class="[
-          'max-h-full max-w-full',
-          fitScreen ? 'overflow-auto' : 'overflow-hidden flex items-center justify-center'
-        ]"
-        @click.self="fitScreen = false"
+        ref="container"
+        class="w-full h-full flex items-center justify-center overflow-hidden"
+        @wheel.prevent="onWheel"
+        @mousedown="onMouseDown"
+        @mousemove="onMouseMove"
+        @mouseup="onMouseUp"
+        @mouseleave="onMouseUp"
       >
         <img
+          v-if="photo"
           :src="`/api/v1/photos/${photo.id}/original`"
           :alt="photo.file_name || 'Original'"
+          :style="{
+            transform: `translate(${x}px, ${y}px) scale(${scale})`,
+            transformOrigin: 'center center',
+          }"
           :class="[
+            'select-none',
             photo.height > photo.width ? 'rotate-270' : '',
-            fitScreen ? 'max-w-none max-h-none cursor-grab active:cursor-grabbing' : 'max-h-[85vh] max-w-full object-contain cursor-zoom-in'
+            dragging ? 'cursor-grabbing' : scale > 1 ? 'cursor-grab' : 'cursor-zoom-in',
           ]"
           @load="loading = false"
-          @click.stop="fitScreen = !fitScreen"
+          draggable="false"
         />
         <div v-if="loading" class="text-white/50 text-sm absolute">Loading...</div>
       </div>
@@ -78,19 +75,55 @@ const props = defineProps<{
   hasNext: boolean
 }>()
 
-defineEmits<{
-  close: []
-  prev: []
-  next: []
-}>()
+defineEmits<{ close: []; prev: []; next: [] }>()
 
 const loading = ref(true)
-const fitScreen = ref(false)
+const container = ref<HTMLElement | null>(null)
 
-watch(() => props.photo, () => { loading.value = true; fitScreen.value = false })
+// zoom + pan state
+const scale = ref(1)
+const x = ref(0)
+const y = ref(0)
+const dragging = ref(false)
+let lastX = 0, lastY = 0
 
-function onKey(e: KeyboardEvent) {
-  if (e.key === 'ArrowLeft' && props.hasPrev) { e.preventDefault(); /* handled */ }
-  if (e.key === 'ArrowRight' && props.hasNext) { e.preventDefault(); /* handled */ }
+function resetZoom() {
+  scale.value = 1; x.value = 0; y.value = 0
 }
+
+watch(() => props.photo, () => {
+  loading.value = true
+  resetZoom()
+})
+
+// ── Wheel zoom: scale toward cursor ──────────────────
+function onWheel(e: WheelEvent) {
+  const rect = container.value!.getBoundingClientRect()
+  const cx = e.clientX - rect.left - rect.width / 2
+  const cy = e.clientY - rect.top - rect.height / 2
+
+  const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15
+  const newScale = Math.max(0.3, Math.min(10, scale.value * factor))
+
+  // Adjust pan so the point under cursor stays fixed
+  x.value = cx - (cx - x.value) * (newScale / scale.value)
+  y.value = cy - (cy - y.value) * (newScale / scale.value)
+  scale.value = newScale
+}
+
+// ── Pan drag ──────────────────────────────────────────
+function onMouseDown(e: MouseEvent) {
+  if (e.button !== 0) return
+  dragging.value = true
+  lastX = e.clientX; lastY = e.clientY
+}
+
+function onMouseMove(e: MouseEvent) {
+  if (!dragging.value) return
+  x.value += e.clientX - lastX
+  y.value += e.clientY - lastY
+  lastX = e.clientX; lastY = e.clientY
+}
+
+function onMouseUp() { dragging.value = false }
 </script>
