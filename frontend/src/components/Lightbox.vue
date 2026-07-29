@@ -23,31 +23,44 @@
         ›
       </button>
 
-      <!-- Photo with zoom -->
-      <div class="max-h-full max-w-full p-4 flex flex-col items-center"
-           @wheel.prevent="onWheel">
+      <!-- Zoom button -->
+      <button @click="fitScreen = !fitScreen"
+        class="absolute top-4 left-4 z-10 text-white/50 hover:text-white text-sm px-2 py-1">
+        {{ fitScreen ? '1:1' : 'Fit' }}
+      </button>
+
+      <!-- Photo area -->
+      <div
+        v-if="photo"
+        :class="[
+          'max-h-full max-w-full',
+          fitScreen ? 'overflow-auto' : 'overflow-hidden flex items-center justify-center'
+        ]"
+        @click.self="fitScreen = false"
+      >
         <img
-          v-if="photo"
           :src="`/api/v1/photos/${photo.id}/original`"
           :alt="photo.file_name || 'Original'"
-          :style="{ transform: `scale(${zoom})` }"
-          :class="['max-h-[80vh] max-w-full object-contain cursor-zoom-in', photo.height > photo.width ? 'rotate-270' : '']"
+          :class="[
+            photo.height > photo.width ? 'rotate-270' : '',
+            fitScreen ? 'max-w-none max-h-none cursor-grab active:cursor-grabbing' : 'max-h-[85vh] max-w-full object-contain cursor-zoom-in'
+          ]"
           @load="loading = false"
-          @click="zoom = zoom > 1 ? 1 : 2"
+          @click.stop="fitScreen = !fitScreen"
         />
-        <div v-if="loading" class="text-white/50 text-sm">Loading...</div>
+        <div v-if="loading" class="text-white/50 text-sm absolute">Loading...</div>
+      </div>
 
-        <!-- EXIF bar -->
-        <div v-if="photo" class="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-white/60 justify-center">
-          <span>{{ photo.file_name }}</span>
-          <span v-if="photo.camera_make">{{ photo.camera_make }} {{ photo.camera_model }}</span>
-          <span v-if="photo.lens_model">{{ photo.lens_model }}</span>
-          <span v-if="photo.focal_length">{{ photo.focal_length }}</span>
-          <span v-if="photo.aperture">{{ photo.aperture }}</span>
-          <span v-if="photo.iso">ISO {{ photo.iso }}</span>
-          <span v-if="photo.taken_at">{{ photo.taken_at }}</span>
-          <span>{{ photo.width }}×{{ photo.height }}</span>
-        </div>
+      <!-- EXIF bar -->
+      <div v-if="photo" class="absolute bottom-4 left-0 right-0 flex flex-wrap gap-x-4 gap-y-1 text-xs text-white/50 justify-center px-4">
+        <span>{{ photo.file_name }}</span>
+        <span v-if="photo.camera_make">{{ photo.camera_make }} {{ photo.camera_model }}</span>
+        <span v-if="photo.lens_model">{{ photo.lens_model }}</span>
+        <span v-if="photo.focal_length">{{ photo.focal_length }}</span>
+        <span v-if="photo.aperture">{{ photo.aperture }}</span>
+        <span v-if="photo.iso">ISO {{ photo.iso }}</span>
+        <span v-if="photo.taken_at">{{ photo.taken_at }}</span>
+        <span>{{ photo.width }}×{{ photo.height }}</span>
       </div>
     </div>
   </Dialog>
@@ -72,17 +85,12 @@ defineEmits<{
 }>()
 
 const loading = ref(true)
-const zoom = ref(1)
+const fitScreen = ref(false)
 
-watch(() => props.photo, () => { loading.value = true; zoom.value = 1 })
-
-function onWheel(e: WheelEvent) {
-  zoom.value = Math.max(0.5, Math.min(5, zoom.value - e.deltaY * 0.001))
-}
+watch(() => props.photo, () => { loading.value = true; fitScreen.value = false })
 
 function onKey(e: KeyboardEvent) {
-  if (e.key === 'Escape') { /* Dialog handles this */ }
-  if (e.key === 'ArrowLeft' && props.hasPrev) { /* handled by button */ }
-  if (e.key === 'ArrowRight' && props.hasNext) { /* handled by button */ }
+  if (e.key === 'ArrowLeft' && props.hasPrev) { e.preventDefault(); /* handled */ }
+  if (e.key === 'ArrowRight' && props.hasNext) { e.preventDefault(); /* handled */ }
 }
 </script>
