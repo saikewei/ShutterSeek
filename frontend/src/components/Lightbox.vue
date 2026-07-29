@@ -49,17 +49,53 @@
         <div v-if="loading" class="text-white/50 text-sm absolute">Loading...</div>
       </div>
 
-      <!-- EXIF bar -->
-      <div v-if="photo" class="absolute bottom-4 left-0 right-0 flex flex-wrap gap-x-4 gap-y-1 text-xs text-white/50 justify-center px-4">
-        <span>{{ photo.file_name }}</span>
-        <span v-if="photo.camera_make">{{ photo.camera_make }} {{ photo.camera_model }}</span>
-        <span v-if="photo.lens_model">{{ photo.lens_model }}</span>
-        <span v-if="photo.focal_length">{{ photo.focal_length }}</span>
-        <span v-if="photo.aperture">{{ photo.aperture }}</span>
-        <span v-if="photo.iso">ISO {{ photo.iso }}</span>
-        <span v-if="photo.taken_at">{{ photo.taken_at }}</span>
-        <span>{{ photo.width }}×{{ photo.height }}</span>
-      </div>
+      <!-- EXIF sidebar -->
+      <Transition name="exif">
+        <div v-if="photo" class="absolute right-0 top-0 bottom-0 w-72 bg-neutral-900/70 backdrop-blur border-l border-white/10 overflow-y-auto pointer-events-auto">
+          <div class="p-4 space-y-3 text-sm">
+            <h3 class="text-white/80 font-medium text-base border-b border-white/10 pb-2">{{ photo.file_name }}</h3>
+
+            <div v-if="photo.taken_at" class="flex justify-between">
+              <span class="text-white/40">Date</span>
+              <span class="text-white/80">{{ photo.taken_at }}</span>
+            </div>
+
+            <div v-if="photo.camera_make" class="flex justify-between">
+              <span class="text-white/40">Camera</span>
+              <span class="text-white/80">{{ photo.camera_make }} {{ photo.camera_model }}</span>
+            </div>
+
+            <div v-if="photo.lens_model" class="flex justify-between">
+              <span class="text-white/40">Lens</span>
+              <span class="text-white/80">{{ photo.lens_model }}</span>
+            </div>
+
+            <div class="flex justify-between">
+              <span class="text-white/40">Resolution</span>
+              <span class="text-white/80">{{ photo.width }} × {{ photo.height }}</span>
+            </div>
+
+            <div v-if="photo.focal_length" class="flex justify-between">
+              <span class="text-white/40">Focal</span>
+              <span class="text-white/80">{{ photo.focal_length }}</span>
+            </div>
+
+            <div v-if="photo.aperture" class="flex justify-between">
+              <span class="text-white/40">Aperture</span>
+              <span class="text-white/80">{{ photo.aperture }}</span>
+            </div>
+
+            <div v-if="photo.iso" class="flex justify-between">
+              <span class="text-white/40">ISO</span>
+              <span class="text-white/80">{{ photo.iso }}</span>
+            </div>
+
+            <div class="border-t border-white/10 pt-2 mt-2">
+              <p class="text-white/30 text-xs truncate">{{ photo.file_path }}</p>
+            </div>
+          </div>
+        </div>
+      </Transition>
     </div>
   </Dialog>
 </template>
@@ -103,7 +139,7 @@ function onWheel(e: WheelEvent) {
   const cx = e.clientX - rect.left - rect.width / 2
   const cy = e.clientY - rect.top - rect.height / 2
 
-  const factor = e.deltaY < 0 ? 1.06 : 1 / 1.06
+  const factor = e.deltaY < 0 ? 1.16 : 1 / 1.16
   const newScale = Math.max(0.3, Math.min(10, scale.value * factor))
 
   // Adjust pan so the point under cursor stays fixed
