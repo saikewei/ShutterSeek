@@ -18,6 +18,7 @@ func Setup(h *handler.Handler, thumbDir string) *gin.Engine {
 	v1 := r.Group("/api/v1")
 	{
 		v1.GET("/photos", h.ListPhotos)
+		v1.GET("/photos/:id/original", h.GetOriginal)
 	}
 	r.GET("/api/health", h.Health)
 
