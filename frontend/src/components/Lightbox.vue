@@ -33,6 +33,7 @@
       >
         <img
           v-if="photo"
+          v-show="!loading"
           :src="`/api/v1/photos/${photo.id}/original`"
           :alt="photo.file_name || 'Original'"
           :style="{
