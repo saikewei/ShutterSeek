@@ -29,7 +29,7 @@
           v-if="photo"
           :src="`/api/v1/photos/${photo.id}/original`"
           :alt="photo.file_name || 'Original'"
-          :class="['max-h-[80vh] max-w-full object-contain', photo.height > photo.width ? 'rotate-90' : '']"
+          :class="['max-h-[80vh] max-w-full object-contain', photo.height > photo.width ? 'rotate-270' : '']"
           @load="loading = false"
         />
         <div v-if="loading" class="text-white/50 text-sm">Loading...</div>
