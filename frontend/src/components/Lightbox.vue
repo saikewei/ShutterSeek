@@ -136,6 +136,8 @@ watch(() => props.photo, () => {
   resetZoom()
 })
 
+const isPortrait = () => props.photo && props.photo.height > props.photo.width
+
 // ── Wheel zoom: scale toward cursor ──────────────────
 function onWheel(e: WheelEvent) {
   const rect = container.value!.getBoundingClientRect()
@@ -145,9 +147,17 @@ function onWheel(e: WheelEvent) {
   const factor = e.deltaY < 0 ? 1.16 : 1 / 1.16
   const newScale = Math.max(0.3, Math.min(10, scale.value * factor))
 
-  // Adjust pan so the point under cursor stays fixed
-  x.value = cx - (cx - x.value) * (newScale / scale.value)
-  y.value = cy - (cy - y.value) * (newScale / scale.value)
+  if (isPortrait()) {
+    // 270° rotation: screen space → pre-rotation space
+    // pre-rot (px, py) maps to screen: sx=py*s, sy=-px*s → px=-sy/s, py=sx/s
+    const px = -cy / scale.value
+    const py = cx / scale.value
+    x.value = x.value + px * (scale.value - newScale)
+    y.value = y.value + py * (scale.value - newScale)
+  } else {
+    x.value = cx - (cx - x.value) * (newScale / scale.value)
+    y.value = cy - (cy - y.value) * (newScale / scale.value)
+  }
   scale.value = newScale
 }
 
@@ -160,8 +170,16 @@ function onMouseDown(e: MouseEvent) {
 
 function onMouseMove(e: MouseEvent) {
   if (!dragging.value) return
-  x.value += e.clientX - lastX
-  y.value += e.clientY - lastY
+  const dx = e.clientX - lastX
+  const dy = e.clientY - lastY
+  if (isPortrait()) {
+    // 270° rotation: screen-right → visual-right = translate-y+, screen-down → visual-down = translate-x-
+    x.value -= dy
+    y.value += dx
+  } else {
+    x.value += dx
+    y.value += dy
+  }
   lastX = e.clientX; lastY = e.clientY
 }
 
