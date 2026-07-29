@@ -11,6 +11,7 @@
           v-for="photo in photos"
           :key="photo.id"
           class="group cursor-pointer relative rounded-lg overflow-hidden bg-neutral-800"
+          @click="openLightbox(photo)"
         >
           <img
             :src="THUMB_BASE + '/' + photo.id + '.webp'"
@@ -33,13 +34,25 @@
       <span v-if="loading && photos.length === 0">Loading...</span>
       <span v-else-if="!hasMore">— End of {{ total.toLocaleString() }} photos —</span>
     </div>
+
+    <!-- Lightbox -->
+    <Lightbox
+      :open="lightbox.open"
+      :photo="lightbox.photo"
+      :has-prev="lightboxIdx > 0"
+      :has-next="lightboxIdx < photos.length - 1 || hasMore"
+      @close="lightbox.open = false"
+      @prev="lightboxPrev"
+      @next="lightboxNext"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, reactive } from 'vue'
 import { fetchPhotos, type Photo } from '@/api/photos'
 import { THUMB_BASE } from '@/api/client'
+import Lightbox from '@/components/Lightbox.vue'
 
 const photos = ref<Photo[]>([])
 const total = ref(0)
@@ -49,7 +62,37 @@ const sentinel = ref<HTMLElement | null>(null)
 let cursor = ''
 let observer: IntersectionObserver | null = null
 let controller: AbortController | null = null
-let wasInterrupted = false // user scrolled past before page finished
+let wasInterrupted = false
+
+// ── Lightbox ────────────────────────────────────────
+const lightbox = reactive({ open: false, photo: null as Photo | null })
+let lightboxIdx = 0
+
+function openLightbox(photo: Photo) {
+  lightbox.photo = photo
+  lightboxIdx = photos.value.indexOf(photo)
+  lightbox.open = true
+}
+
+function lightboxPrev() {
+  if (lightboxIdx > 0) {
+    lightboxIdx--
+    lightbox.photo = photos.value[lightboxIdx]
+  }
+}
+
+function lightboxNext() {
+  if (lightboxIdx < photos.value.length - 1) {
+    lightboxIdx++
+    lightbox.photo = photos.value[lightboxIdx]
+  }
+}
+
+function onKeyDown(e: KeyboardEvent) {
+  if (!lightbox.open) return
+  if (e.key === 'ArrowLeft') { e.preventDefault(); lightboxPrev() }
+  if (e.key === 'ArrowRight') { e.preventDefault(); lightboxNext() }
+}
 
 // ── Dynamic batch size based on viewport ────────────
 function calcLimit(): number {
@@ -95,6 +138,7 @@ async function loadPage() {
 }
 
 onMounted(() => {
+  window.addEventListener('keydown', onKeyDown)
   loadPage()
   observer = new IntersectionObserver(
     (entries) => {
@@ -114,6 +158,7 @@ function onImgError(photo: Photo) {
 }
 
 onUnmounted(() => {
+  window.removeEventListener('keydown', onKeyDown)
   observer?.disconnect()
   controller?.abort()
 })
