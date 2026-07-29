@@ -123,13 +123,8 @@ func (s *OriginalService) serveRAW(w io.Writer, path string) error {
 	return err
 }
 
-// extractJPEG finds the largest JPEG segment in binary data.
+// extractJPEG finds the largest valid JPEG segment in binary data.
 func extractJPEG(data []byte) []byte {
-	const (
-		soi = 0xFFD8 // Start of Image
-		eoi = 0xFFD9 // End of Image
-	)
-
 	var best []byte
 	pos := 0
 
@@ -140,7 +135,7 @@ func extractJPEG(data []byte) []byte {
 			for end < len(data)-1 {
 				if data[end] == 0xFF && data[end+1] == 0xD9 {
 					candidate := data[pos : end+2]
-					if len(candidate) > len(best) {
+					if isValidJPEG(candidate) && len(candidate) > len(best) {
 						best = candidate
 					}
 					pos = end + 2
@@ -155,4 +150,48 @@ func extractJPEG(data []byte) []byte {
 		pos++
 	}
 	return best
+}
+
+// isValidJPEG checks that data starts with SOI and the first marker
+// after SOI is a genuine JPEG marker (to avoid false positives from
+// random binary that happens to have FF D8 ... FF D9 byte sequences).
+func isValidJPEG(data []byte) bool {
+	if len(data) < 4 || data[0] != 0xFF || data[1] != 0xD8 {
+		return false
+	}
+	// Skip past SOI and any padding/stuffed bytes to find the first marker
+	for i := 2; i < len(data)-1; i++ {
+		if data[i] != 0xFF {
+			continue
+		}
+		marker := data[i+1]
+		switch {
+		case marker == 0x00: // stuffed byte (literal 0xFF in entropy-coded data)
+			i++ // skip the 0x00
+		case marker == 0xFF: // padding 0xFF
+			// just continue
+		default:
+			return isJPEGMarker(marker)
+		}
+	}
+	return false
+}
+
+// isJPEGMarker reports whether b is a valid JPEG marker byte.
+// Valid ranges: 0xC0-0xCF (SOF), 0xDA-0xDF (SOS/DQT/DNL/DRI/DHP/EXP),
+// 0xE0-0xEF (APPn), plus 0xFE (COM).
+func isJPEGMarker(b byte) bool {
+	if b == 0xFE {
+		return true
+	}
+	if b < 0xC0 {
+		return false
+	}
+	if b == 0xD8 || b == 0xD9 {
+		return false
+	}
+	if b >= 0xF0 {
+		return false
+	}
+	return true
 }
