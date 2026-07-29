@@ -13,7 +13,7 @@
           class="group cursor-pointer relative rounded-lg overflow-hidden bg-neutral-800"
         >
           <img
-            :src="THUMB_BASE + '/' + photo.id + '.jpg'"
+            :src="THUMB_BASE + '/' + photo.id + '.webp'"
             :alt="photo.camera_model || 'Photo'"
             loading="lazy"
             :class="['w-full aspect-square object-cover', photo.height > photo.width ? 'rotate-270 scale-150' : '']"
