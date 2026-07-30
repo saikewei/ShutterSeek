@@ -1,33 +1,42 @@
 <template>
   <div>
-    <header class="sticky top-0 z-10 bg-neutral-950/80 backdrop-blur border-b border-neutral-800 px-4 py-2 flex items-center gap-3">
+    <header class="sticky top-0 z-30 bg-neutral-950/80 backdrop-blur border-b border-neutral-800 px-4 py-2 flex items-center gap-3">
       <button @click="$router.push('/albums')" class="text-neutral-400 hover:text-white text-lg">←</button>
       <div>
         <h1 class="text-sm font-medium text-white">{{ album?.title || 'Album' }}</h1>
         <p class="text-xs text-neutral-500">{{ album?.photo_count?.toLocaleString() || 0 }} photos</p>
       </div>
     </header>
-    <PhotoGrid :key="albumId" :fetch-fn="wrapFetch">
-      <template #exif-extra="{ photo }">
-        <div class="border-t border-white/10 pt-2 mt-2">
+
+    <PhotoGrid :key="refreshKey" :fetch-fn="wrapFetch" @photo-contextmenu="onContextMenu" />
+
+    <!-- Right-click context menu -->
+    <Teleport to="body">
+      <div v-if="ctxMenu.show" class="fixed inset-0 z-50" @click="ctxMenu.show = false" @contextmenu.prevent="ctxMenu.show = false">
+        <div
+          class="absolute bg-neutral-800 border border-neutral-700 rounded-lg py-1 shadow-xl w-36"
+          :style="{ top: ctxMenu.y + 'px', left: ctxMenu.x + 'px' }"
+        >
           <button
-            v-if="removeTarget?.id !== photo.id"
-            @click="removeTarget = photo"
-            class="text-xs text-neutral-500 hover:text-red-400 transition-colors"
-          >从相册移除…</button>
-          <div v-else class="flex items-center gap-2">
-            <span class="text-xs text-red-400">确认移除？</span>
-            <button @click="doRemove(photo)" class="text-xs px-2 py-0.5 rounded bg-red-600 text-white hover:bg-red-500">确认</button>
-            <button @click="removeTarget = null" class="text-xs text-neutral-400 hover:text-white">取消</button>
+            v-if="!ctxMenu.confirming"
+            @click.stop="ctxMenu.confirming = true"
+            class="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-neutral-700 transition-colors"
+          >从相册移除</button>
+          <div v-else class="px-3 py-2">
+            <p class="text-xs text-neutral-400 mb-2">确认移除？</p>
+            <div class="flex gap-2">
+              <button @click.stop="doRemove" class="px-2 py-0.5 text-xs rounded bg-red-600 text-white hover:bg-red-500">确认</button>
+              <button @click.stop="ctxMenu.show = false" class="px-2 py-0.5 text-xs text-neutral-400 hover:text-white">取消</button>
+            </div>
           </div>
         </div>
-      </template>
-    </PhotoGrid>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, reactive } from 'vue'
 import { useRoute } from 'vue-router'
 import PhotoGrid from '@/components/PhotoGrid.vue'
 import { fetchAlbum, fetchAlbumPhotos, removeAlbumPhoto, type Album } from '@/api/albums'
@@ -36,7 +45,15 @@ import type { Photo } from '@/api/photos'
 const route = useRoute()
 const albumId = Number(route.params.id)
 const album = ref<Album | null>(null)
-const removeTarget = ref<Photo | null>(null)
+const refreshKey = ref(0)
+
+const ctxMenu = reactive<{
+  show: boolean
+  x: number
+  y: number
+  photo: Photo | null
+  confirming: boolean
+}>({ show: false, x: 0, y: 0, photo: null, confirming: false })
 
 function loadAlbum() {
   album.value = null
@@ -44,15 +61,28 @@ function loadAlbum() {
 }
 loadAlbum()
 
-watch(() => route.params.id, () => { loadAlbum() })
+watch(() => route.params.id, () => {
+  refreshKey.value++
+  loadAlbum()
+})
 
 function wrapFetch(params: { limit: number; cursor?: string }, signal?: AbortSignal) {
   return fetchAlbumPhotos(albumId, params, signal)
 }
 
-async function doRemove(photo: Photo) {
-  await removeAlbumPhoto(albumId, photo.id)
-  removeTarget.value = null
+function onContextMenu(photo: Photo, event: MouseEvent) {
+  ctxMenu.show = true
+  ctxMenu.x = event.clientX
+  ctxMenu.y = event.clientY
+  ctxMenu.photo = photo
+  ctxMenu.confirming = false
+}
+
+async function doRemove() {
+  if (!ctxMenu.photo) return
+  await removeAlbumPhoto(albumId, ctxMenu.photo.id)
+  ctxMenu.show = false
+  refreshKey.value++
   loadAlbum()
 }
 </script>

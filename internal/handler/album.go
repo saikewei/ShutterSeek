@@ -257,7 +257,34 @@ func (h *Handler) RemoveAlbumPhoto(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "remove failed"})
 		return
 	}
+
+	// Invalidate album-photos Redis cache
+	h.clearAlbumCache(albumID)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// clearAlbumCache removes all cached first-page responses for an album.
+func (h *Handler) clearAlbumCache(albumID int64) {
+	if h.Redis == nil {
+		return
+	}
+	prefix := "cache:album_photos:" + strconv.FormatInt(albumID, 10) + ":"
+	ctx := context.Background()
+
+	var cursor uint64
+	for {
+		keys, next, err := h.Redis.Scan(ctx, cursor, prefix+"*", 100).Result()
+		if err != nil {
+			return
+		}
+		if len(keys) > 0 {
+			h.Redis.Del(ctx, keys...)
+		}
+		cursor = next
+		if cursor == 0 {
+			break
+		}
+	}
 }
 
 // ── shared helpers ──────────────────────────────────────
