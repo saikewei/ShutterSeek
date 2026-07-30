@@ -1,1 +1,20 @@
 @import "tailwindcss";
+
+/* Disable text selection everywhere, allow in inputs */
+* {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+input, textarea, [contenteditable] {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Remove focus outline (blinking cursor ring) on all elements */
+*:focus {
+  outline: none !important;
+}
+*:focus-visible {
+  outline: none !important;
+}
