@@ -265,7 +265,14 @@ const datePoints = computed<DatePoint[]>(() => {
 })
 
 function jumpToDate(label: string) {
-  const el = document.querySelector(`[data-date="${CSS.escape(label)}"]`)
+  // Fuzzy match: find first date header containing the tick label
+  const all = document.querySelectorAll('[data-date]')
+  let el: Element | null = null
+  for (const e of all) {
+    if ((e as HTMLElement).dataset.date?.includes(label)) {
+      el = e; break
+    }
+  }
   if (el) {
     const top = (props.stickyOffset || 0) + 37 + 40
     window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - top, behavior: 'smooth' })
