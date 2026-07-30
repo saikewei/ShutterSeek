@@ -230,10 +230,16 @@ watch(uncategorizedOnly, () => { reload() })
 
 function reload() {
   controller?.abort()
+  controller = null
   photos.value = []
   total.value = 0
   hasMore.value = true
+  hasNewer.value = false
+  headCount.value = 0
   cursor = ''
+  wasInterrupted = false
+  loading.value = false
+  loadingNewer.value = false
   loadPage()
 }
 
@@ -491,6 +497,7 @@ onMounted(() => {
 
 async function loadNewer() {
   if (photos.value.length === 0) return
+  if (jumpMonth.value) return // don't run during a jump
   const first = photos.value[0]
   if (!first.taken_at) return
   const newerThan = first.taken_at + ',' + first.id
