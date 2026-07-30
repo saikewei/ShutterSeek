@@ -135,8 +135,16 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 	cacheKey := ""
 	uncategorized := c.Query("album_id") == "none"
 	month := c.Query("month")
+	albumIDCache := c.Query("album_id")
+	if albumIDCache == "none" {
+		albumIDCache = ""
+	}
 	if !hasCursor && !uncategorized && month == "" {
-		cacheKey = keyFirstPage + strconv.Itoa(limit)
+		if albumIDCache != "" {
+			cacheKey = keyFirstPage + "album:" + albumIDCache + ":" + strconv.Itoa(limit)
+		} else {
+			cacheKey = keyFirstPage + strconv.Itoa(limit)
+		}
 		if cached, ok := h.redisGet(cacheKey); ok {
 			c.JSON(http.StatusOK, cached)
 			return
