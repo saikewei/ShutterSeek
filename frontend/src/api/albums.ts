@@ -57,6 +57,11 @@ export async function removeAlbumPhoto(albumId: number, photoId: number): Promis
   await api.delete(`/albums/${albumId}/photos/${photoId}`)
 }
 
+export async function fetchAlbumDates(albumId: number): Promise<Array<{ date: string; count: number }>> {
+  const { data } = await api.get(`/albums/${albumId}/dates`)
+  return data
+}
+
 export interface BatchAddResult {
   added: number
   skipped: number
