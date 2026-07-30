@@ -18,6 +18,12 @@
           class="px-3 py-1 text-xs rounded-full bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors"
         >选择</button>
 
+        <button
+          v-if="hasJumped && !selectMode"
+          @click="jumpToDate('')"
+          class="px-3 py-1 text-xs rounded-full bg-neutral-700 text-neutral-300 hover:bg-neutral-600 hover:text-white transition-colors"
+        >返回最新</button>
+
         <span v-if="selectMode" class="text-xs text-neutral-400">
           已选 {{ selected.size }} 张
         </span>
@@ -193,6 +199,7 @@ defineEmits<{
 }>()
 
 const jumpMonth = ref('')
+const hasJumped = ref(false)
 
 const photos = ref<Photo[]>([])
 const total = ref(0)
@@ -275,6 +282,7 @@ const activeMonth = computed(() => {
 
 function jumpToDate(monthKey: string) {
   jumpMonth.value = monthKey
+  hasJumped.value = monthKey !== ''
   reload()
 }
 
@@ -387,6 +395,10 @@ async function loadPage() {
     total.value = data.total
     cursor = data.next_cursor
     hasMore.value = data.next_cursor !== ''
+    // Clear month filter after first load — subsequent pages use normal pagination
+    if (jumpMonth.value) {
+      jumpMonth.value = ''
+    }
   } catch (e: any) {
     if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return
     console.error('load failed', e)
