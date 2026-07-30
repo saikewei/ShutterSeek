@@ -191,7 +191,7 @@ import type { DatePoint } from '@/components/DateScrubber.vue'
 
 const props = defineProps<{
   fetchFn: (
-    params: { limit: number; cursor?: string; album_id?: string; with_albums?: boolean; month?: string },
+    params: { limit: number; cursor?: string; newer_than?: string; album_id?: string; with_albums?: boolean; month?: string },
     signal?: AbortSignal
   ) => Promise<PhotoListResponse>
   albumTitles?: Record<number, string>
@@ -219,7 +219,6 @@ const loadingNewer = ref(false)
 const hasNewer = ref(false)
 let cursor = ''
 let observer: IntersectionObserver | null = null
-let observerTop: IntersectionObserver | null = null
 let controller: AbortController | null = null
 let wasInterrupted = false
 
@@ -506,7 +505,7 @@ async function loadNewer() {
   if (jumpMonth.value) return // don't run during a jump
   const first = photos.value[0]
   if (!first.taken_at) return
-  const newerThan = first.taken_at + ',' + first.id
+  const newerThan = encodeURIComponent(first.taken_at + ',' + first.id)
 
   // Save scroll position before prepending
   const scrollParent = document.querySelector('.overflow-auto') as HTMLElement
@@ -557,7 +556,6 @@ defineExpose({ removePhotoById })
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeyDown)
   observer?.disconnect()
-  observerTop?.disconnect()
   controller?.abort()
 })
 </script>
