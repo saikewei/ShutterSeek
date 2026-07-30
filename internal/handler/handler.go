@@ -94,9 +94,10 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 		}
 	}
 
-	// Redis cache for first page only
+	// Redis cache for first page only (skip when filtering)
 	cacheKey := ""
-	if !hasCursor {
+	uncategorized := c.Query("album_id") == "none"
+	if !hasCursor && !uncategorized {
 		cacheKey = keyFirstPage + strconv.Itoa(limit)
 		if cached, ok := h.redisGet(cacheKey); ok {
 			c.JSON(http.StatusOK, cached)
@@ -108,7 +109,6 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 	q := h.DB.Where("taken_at IS NOT NULL").Order("taken_at DESC, id DESC").Limit(limit + 1)
 
 	// Filter: uncategorized only
-	uncategorized := c.Query("album_id") == "none"
 	if uncategorized {
 		q = q.Where("id NOT IN (SELECT DISTINCT photo_id FROM album_photos)")
 	}
