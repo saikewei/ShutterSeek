@@ -280,12 +280,19 @@ const datePoints = computed<DatePoint[]>(() => {
   }))
 })
 
+const headCount = ref(0)
+
 const activeMonth = computed(() => {
-  const first = groups.value[0]
-  if (!first?.photos.length) return ''
-  const t = first.photos[0].taken_at
-  if (!t) return ''
-  return t.slice(0, 7) // YYYY-MM
+  // Skip head photos to find the actual user-visible first group
+  let skipped = 0
+  for (const g of groups.value) {
+    skipped += g.photos.length
+    if (skipped > headCount.value) {
+      const t = g.photos[0]?.taken_at
+      return t ? t.slice(0, 7) : ''
+    }
+  }
+  return ''
 })
 
 function jumpToDate(monthKey: string) {
@@ -417,20 +424,20 @@ async function loadPage() {
     hasMore.value = data.next_cursor !== ''
 
     // If head photos were preloaded, scroll past them before first paint
-    if (jumpMonth.value && (data as any).head_count > 0) {
+    headCount.value = (data as any).head_count || 0
+    if (jumpMonth.value && headCount.value > 0) {
       jumpMonth.value = ''
-      const headCount = (data as any).head_count as number
       const headerOffset = (props.stickyOffset || 0) + 37 + 38
+      const hc = headCount.value
 
       const scrollParent = document.querySelector('.overflow-auto') as HTMLElement
-      // Hide until positioned to prevent flash
       if (scrollParent) scrollParent.style.visibility = 'hidden'
 
       const doScroll = () => {
         if (!scrollParent) return
         const imgs = scrollParent.querySelectorAll('img[src*="thumbnails"]')
-        if (imgs.length > headCount) {
-          const target = imgs[headCount] as HTMLElement
+        if (imgs.length > hc) {
+          const target = imgs[hc] as HTMLElement
           const rect = target.getBoundingClientRect()
           const containerRect = scrollParent.getBoundingClientRect()
           scrollParent.scrollTop = Math.max(0, rect.top - containerRect.top + scrollParent.scrollTop - headerOffset)
