@@ -19,10 +19,10 @@
         >选择</button>
 
         <button
-          v-if="!selectMode && !atTop"
+          v-if="!selectMode && (!atTop || hasNewer)"
           @click="scrollToTop"
           class="px-3 py-1 text-xs rounded-full bg-neutral-700 text-neutral-300 hover:bg-neutral-600 hover:text-white transition-colors"
-        >↑ 顶部</button>
+        >{{ hasNewer ? '返回最新' : '↑ 顶部' }}</button>
 
         <span v-if="selectMode" class="text-xs text-neutral-400">
           已选 {{ selected.size }} 张
