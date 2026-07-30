@@ -41,6 +41,7 @@
             <p class="text-xs text-neutral-300">{{ photo.focal_length }} {{ photo.aperture }} ISO{{ photo.iso }}</p>
             <p class="text-xs text-neutral-400">{{ photo.width }}×{{ photo.height }}</p>
           </div>
+          <slot name="photo-action" :photo="photo" />
         </div>
       </div>
     </div>
