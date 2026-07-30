@@ -10,5 +10,5 @@ export const THUMB_BASE = import.meta.env.DEV
 
 export const api = axios.create({
   baseURL: API_BASE,
-  timeout: 30000,
+  timeout: 60000,
 })

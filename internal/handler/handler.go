@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -28,10 +27,11 @@ const (
 
 // Handler holds shared dependencies for all HTTP handlers.
 type Handler struct {
-	Pool    *pgxpool.Pool
-	Redis   *goredis.Client
-	DB      *gorm.DB
-	OrigSvc *service.OriginalService
+	Pool     *pgxpool.Pool
+	Redis    *goredis.Client
+	DB       *gorm.DB
+	OrigSvc  *service.OriginalService
+	AlbumSvc *service.AlbumService
 }
 
 // ── Health ──────────────────────────────────────────────
@@ -40,28 +40,66 @@ func (h *Handler) Health(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
+// ── Photo Dates ──────────────────────────────────────────
+
+type DateCount struct {
+	Date  string `json:"date"`
+	Count int64  `json:"count"`
+}
+
+// PhotoDates returns date distribution for all photos.
+// GET /api/v1/photos/dates
+func (h *Handler) PhotoDates(c *gin.Context) {
+	var rows []DateCount
+	query := "SELECT to_char(p.taken_at, 'YYYY-MM-DD') AS date, COUNT(*) AS count FROM photos p"
+	args := []interface{}{}
+
+	if albumIDStr := c.Query("album_id"); albumIDStr != "" {
+		if albumID, err := strconv.ParseInt(albumIDStr, 10, 64); err == nil && albumID > 0 {
+			query += " JOIN album_photos ap ON ap.photo_id = p.id WHERE ap.album_id = ? AND p.taken_at IS NOT NULL"
+			args = append(args, albumID)
+		} else {
+			query += " WHERE p.taken_at IS NOT NULL"
+		}
+	} else {
+		query += " WHERE p.taken_at IS NOT NULL"
+	}
+	query += " GROUP BY date ORDER BY date DESC"
+
+	if err := h.DB.Raw(query, args...).Scan(&rows).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
+		return
+	}
+	if rows == nil {
+		rows = []DateCount{}
+	}
+	c.JSON(http.StatusOK, rows)
+}
+
 // ── Photo List ──────────────────────────────────────────
 
 type PhotoItem struct {
-	ID           int64  `json:"id"`
-	ThumbnailURL string `json:"thumbnail_url"`
-	FileName     string `json:"file_name,omitempty"`
-	CameraMake   string `json:"camera_make,omitempty"`
-	CameraModel  string `json:"camera_model,omitempty"`
-	LensModel    string `json:"lens_model,omitempty"`
-	FocalLength  string `json:"focal_length,omitempty"`
-	Aperture     string `json:"aperture,omitempty"`
-	ISO          int32  `json:"iso,omitempty"`
-	TakenAt      string `json:"taken_at,omitempty"`
-	Width        int32  `json:"width"`
-	Height       int32  `json:"height"`
-	FilePath     string `json:"file_path,omitempty"`
+	ID           int64   `json:"id"`
+	ThumbnailURL string  `json:"thumbnail_url"`
+	FileName     string  `json:"file_name,omitempty"`
+	CameraMake   string  `json:"camera_make,omitempty"`
+	CameraModel  string  `json:"camera_model,omitempty"`
+	LensModel    string  `json:"lens_model,omitempty"`
+	FocalLength  string  `json:"focal_length,omitempty"`
+	Aperture     string  `json:"aperture,omitempty"`
+	ISO          int32   `json:"iso,omitempty"`
+	TakenAt      string  `json:"taken_at,omitempty"`
+	Width        int32   `json:"width"`
+	Height       int32   `json:"height"`
+	FilePath     string  `json:"file_path,omitempty"`
+	AlbumIDs     []int64 `json:"album_ids,omitempty"`
 }
 
 type PhotoListResponse struct {
 	Items      []PhotoItem `json:"items"`
 	NextCursor string      `json:"next_cursor"`
 	Total      int64       `json:"total"`
+	HeadCount  int         `json:"head_count,omitempty"`
 }
 
 // ListPhotos returns photos sorted by shooting time (newest first),
@@ -93,10 +131,20 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 		}
 	}
 
-	// Redis cache for first page only
+	// Redis cache for first page only (skip when filtering)
 	cacheKey := ""
-	if !hasCursor {
-		cacheKey = keyFirstPage + strconv.Itoa(limit)
+	uncategorized := c.Query("album_id") == "none"
+	month := c.Query("month")
+	albumIDCache := c.Query("album_id")
+	if albumIDCache == "none" {
+		albumIDCache = ""
+	}
+	if !hasCursor && !uncategorized && month == "" && c.Query("newer_t") == "" {
+		if albumIDCache != "" {
+			cacheKey = keyFirstPage + "album:" + albumIDCache + ":" + strconv.Itoa(limit)
+		} else {
+			cacheKey = keyFirstPage + strconv.Itoa(limit)
+		}
 		if cached, ok := h.redisGet(cacheKey); ok {
 			c.JSON(http.StatusOK, cached)
 			return
@@ -104,7 +152,51 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 	}
 
 	var photos []model.Photo
-	q := h.DB.Where("taken_at IS NOT NULL").Order("taken_at DESC, id DESC").Limit(limit + 1)
+	q := h.DB.Where("taken_at IS NOT NULL")
+
+	// Filter: specific album
+	albumIDStr := c.Query("album_id")
+	if albumIDStr != "" {
+		if albumID, err := strconv.ParseInt(albumIDStr, 10, 64); err == nil && albumID > 0 {
+			q = q.Where("id IN (SELECT photo_id FROM album_photos WHERE album_id = ?)", albumID)
+		}
+	}
+
+	// Reverse pagination: load newer photos
+	newerT := c.Query("newer_t")
+	if newerT != "" {
+		if t, err := time.Parse("2006-01-02T15:04:05", newerT); err == nil && !t.IsZero() {
+			if newerID, err2 := strconv.ParseInt(c.Query("newer_id"), 10, 64); err2 == nil {
+				q = q.Where("(taken_at, id) > (?, ?)", t, newerID)
+			}
+		}
+		q = q.Order("taken_at ASC, id ASC").Limit(limit + 1)
+	} else {
+		q = q.Order("taken_at DESC, id DESC").Limit(limit + 1)
+	}
+
+// Filter: jump to month — with head preload
+		var headPhotos []model.Photo
+		if month != "" {
+			if t, err := time.Parse("2006-01", month); err == nil {
+				nextMonth := t.AddDate(0, 1, 0)
+				// Preload a few photos from the next month (newer) as head
+				headQ := h.DB.Where("taken_at >= ?", nextMonth)
+				if albumIDStr != "" {
+					if aid, err2 := strconv.ParseInt(albumIDStr, 10, 64); err2 == nil && aid > 0 {
+						headQ = headQ.Where("id IN (SELECT photo_id FROM album_photos WHERE album_id = ?)", aid)
+					}
+				}
+				headQ.Order("taken_at ASC, id ASC").Limit(15).Find(&headPhotos)
+				// Main query: target month and older
+				q = q.Where("taken_at < ?", nextMonth)
+			}
+		}
+
+	// Filter: uncategorized only
+	if uncategorized {
+		q = q.Where("id NOT IN (SELECT DISTINCT photo_id FROM album_photos)")
+	}
 
 	if !afterTime.IsZero() {
 		q = q.Where("(taken_at, id) < (?, ?)", afterTime, afterID)
@@ -122,38 +214,65 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 		photos = photos[:limit]
 	}
 
-	items := make([]PhotoItem, len(photos))
-	for i, p := range photos {
-		items[i] = PhotoItem{
-			ID:           p.ID,
-			ThumbnailURL: "/api/thumbnails/" + strconv.FormatInt(p.ID, 10) + ".webp",
-			FileName:     filepath.Base(p.FilePath),
-			FilePath:     p.FilePath,
-			CameraMake:   p.CameraMake,
-			CameraModel:  p.CameraModel,
-			LensModel:    p.LensModel,
-			FocalLength:  formatFocal(p.FocalLength),
-			Aperture:     formatAperture(p.Aperture),
-			ISO:          p.Iso,
-			TakenAt:      formatTime(p.TakenAt),
-			Width:        p.Width,
-			Height:       p.Height,
+	// Prepend head photos (reverse to DESC order)
+	allPhotos := make([]model.Photo, 0, len(headPhotos)+len(photos))
+	for i := len(headPhotos) - 1; i >= 0; i-- {
+		allPhotos = append(allPhotos, headPhotos[i])
+	}
+	allPhotos = append(allPhotos, photos...)
+
+	// Load album IDs if requested
+	withAlbums := c.Query("with_albums") == "true"
+	var albumMap map[int64][]int64
+	if withAlbums && len(allPhotos) > 0 {
+		ids := make([]int64, len(allPhotos))
+		for i, p := range allPhotos {
+			ids[i] = p.ID
 		}
+		albumMap, _ = h.AlbumSvc.GetPhotoAlbumIDs(ids)
+	}
+
+	items := make([]PhotoItem, len(allPhotos))
+	for i, p := range allPhotos {
+		items[i] = toPhotoItem(&p)
+		if albumMap != nil {
+			items[i].AlbumIDs = albumMap[p.ID]
+		}
+	}
+
+	var total int64
+	switch {
+	case uncategorized:
+		h.DB.Model(&model.Photo{}).Where("taken_at IS NOT NULL AND id NOT IN (SELECT DISTINCT photo_id FROM album_photos)").Count(&total)
+	case albumIDStr != "":
+		if albumID, err := strconv.ParseInt(albumIDStr, 10, 64); err == nil && albumID > 0 {
+			tq := h.DB.Model(&model.Photo{}).
+				Where("taken_at IS NOT NULL AND id IN (SELECT photo_id FROM album_photos WHERE album_id = ?)", albumID)
+			if month != "" {
+				if t, err := time.Parse("2006-01", month); err == nil {
+					tq = tq.Where("taken_at < ?", t.AddDate(0, 1, 0))
+				}
+			}
+			tq.Count(&total)
+		}
+	default:
+		total = h.totalPhotoCountCached()
 	}
 
 	resp := PhotoListResponse{
 		Items:      items,
-		Total:      h.totalPhotoCountCached(),
+		Total:      total,
 		NextCursor: "",
+		HeadCount:  len(headPhotos),
 	}
 
-	if hasMore && len(items) > 0 {
-		last := items[len(items)-1]
-		t := last.TakenAt
+	if hasMore && len(photos) > 0 {
+		lastItem := items[len(items)-1]
+		t := lastItem.TakenAt
 		if t == "" {
 			t = "0001-01-01T00:00:00"
 		}
-		resp.NextCursor = t + "," + strconv.FormatInt(last.ID, 10)
+		resp.NextCursor = t + "," + strconv.FormatInt(lastItem.ID, 10)
 	}
 
 	if cacheKey != "" && h.Redis != nil {

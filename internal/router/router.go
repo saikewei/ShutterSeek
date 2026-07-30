@@ -18,7 +18,17 @@ func Setup(h *handler.Handler, thumbDir string) *gin.Engine {
 	v1 := r.Group("/api/v1")
 	{
 		v1.GET("/photos", h.ListPhotos)
+		v1.GET("/photos/dates", h.PhotoDates)
 		v1.GET("/photos/:id/original", h.GetOriginal)
+		v1.GET("/albums", h.ListAlbums)
+		v1.POST("/albums", h.CreateAlbum)
+		v1.GET("/albums/:id", h.GetAlbum)
+			v1.GET("/albums/:id/dates", h.AlbumDates)
+		v1.PUT("/albums/:id", h.UpdateAlbum)
+		v1.DELETE("/albums/:id", h.DeleteAlbum)
+		v1.GET("/albums/:id/photos", h.ListAlbumPhotos)
+		v1.POST("/albums/:id/photos", h.BatchAddPhotos)
+		v1.DELETE("/albums/:id/photos/:photo_id", h.RemoveAlbumPhoto)
 	}
 	r.GET("/api/health", h.Health)
 
