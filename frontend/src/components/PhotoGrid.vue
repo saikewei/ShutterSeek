@@ -422,22 +422,34 @@ async function loadPage() {
       const headCount = (data as any).head_count as number
       const headerOffset = (props.stickyOffset || 0) + 37 + 38
 
-      // Use a stable DOM-based approach: find the first photo after head, scroll to it
-      const scrollToTarget = () => {
+      // Wait for images in head area to load, then scroll once to correct position
+      const doScroll = () => {
         const scrollParent = document.querySelector('.overflow-auto') as HTMLElement
         if (!scrollParent) return
         const imgs = scrollParent.querySelectorAll('img[src*="thumbnails"]')
-        if (imgs.length > headCount) {
-          const target = imgs[headCount] as HTMLElement
-          const rect = target.getBoundingClientRect()
-          const containerRect = scrollParent.getBoundingClientRect()
-          const targetTop = rect.top - containerRect.top + scrollParent.scrollTop
-          scrollParent.scrollTop = Math.max(0, targetTop - headerOffset)
-        }
+        if (imgs.length <= headCount) return
+        const target = imgs[headCount] as HTMLElement
+        const rect = target.getBoundingClientRect()
+        const containerRect = scrollParent.getBoundingClientRect()
+        scrollParent.scrollTop = Math.max(0, rect.top - containerRect.top + scrollParent.scrollTop - headerOffset)
       }
 
-      // Do initial scroll, then re-check after images load
-      requestAnimationFrame(() => { scrollToTarget(); setTimeout(scrollToTarget, 1500) })
+      // Wait for first batch of images in target area to load before scrolling
+      requestAnimationFrame(() => {
+        const scrollParent = document.querySelector('.overflow-auto') as HTMLElement
+        if (!scrollParent) { doScroll(); return }
+        const imgs = scrollParent.querySelectorAll('img[src*="thumbnails"]')
+        const targetImgs = Array.from(imgs).slice(0, headCount + 10)
+        if (targetImgs.length === 0) { doScroll(); return }
+
+        let loaded = 0
+        const onLoad = () => { loaded++; if (loaded >= targetImgs.length) doScroll() }
+        targetImgs.forEach((img) => {
+          if ((img as HTMLImageElement).complete) loaded++
+          else (img as HTMLImageElement).addEventListener('load', onLoad, { once: true })
+        })
+        if (loaded >= targetImgs.length) doScroll()
+      })
     }
   } catch (e: any) {
     if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return
