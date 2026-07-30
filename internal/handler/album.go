@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"shutterseek/internal/model"
+	"shutterseek/internal/service"
 )
 
 // ── Album List ──────────────────────────────────────────
@@ -152,6 +154,110 @@ func (h *Handler) ListAlbumPhotos(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, resp)
+}
+
+// ── shared helpers ──────────────────────────────────────
+
+// ── Album Mutations ────────────────────────────────────
+
+type createAlbumReq struct {
+	Title       string `json:"title" binding:"required"`
+	Description string `json:"description"`
+}
+
+// CreateAlbum creates a new album.
+// POST /api/v1/albums
+func (h *Handler) CreateAlbum(c *gin.Context) {
+	var req createAlbumReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "title is required"})
+		return
+	}
+
+	item, err := h.AlbumSvc.CreateAlbum(req.Title, req.Description)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "create failed"})
+		return
+	}
+	c.JSON(http.StatusCreated, AlbumItem(*item))
+}
+
+type updateAlbumReq struct {
+	Title        *string `json:"title"`
+	Description  *string `json:"description"`
+	CoverPhotoID *int64  `json:"cover_photo_id"`
+}
+
+// UpdateAlbum updates an album.
+// PUT /api/v1/albums/:id
+func (h *Handler) UpdateAlbum(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+
+	var req updateAlbumReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
+		return
+	}
+
+	item, err := h.AlbumSvc.UpdateAlbum(id, req.Title, req.Description, req.CoverPhotoID)
+	if err != nil {
+		if errors.Is(err, service.ErrAlbumNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "album not found"})
+			return
+		}
+		if errors.Is(err, service.ErrPhotoNotInAlbum) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "cover photo not in this album"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "update failed"})
+		return
+	}
+	c.JSON(http.StatusOK, AlbumItem(*item))
+}
+
+// DeleteAlbum deletes an album.
+// DELETE /api/v1/albums/:id
+func (h *Handler) DeleteAlbum(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+
+	if err := h.AlbumSvc.DeleteAlbum(id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "delete failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// RemoveAlbumPhoto removes a photo from an album.
+// DELETE /api/v1/albums/:id/photos/:photo_id
+func (h *Handler) RemoveAlbumPhoto(c *gin.Context) {
+	albumID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid album id"})
+		return
+	}
+	photoID, err := strconv.ParseInt(c.Param("photo_id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid photo id"})
+		return
+	}
+
+	if err := h.AlbumSvc.RemoveAlbumPhoto(albumID, photoID); err != nil {
+		if errors.Is(err, service.ErrPhotoNotInAlbum) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "photo not in album"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "remove failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 // ── shared helpers ──────────────────────────────────────

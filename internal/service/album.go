@@ -1,12 +1,19 @@
 package service
 
 import (
+	"errors"
 	"strconv"
 	"time"
 
 	"gorm.io/gorm"
 
 	"shutterseek/internal/model"
+)
+
+// Sentinel errors for album service.
+var (
+	ErrAlbumNotFound  = errors.New("album not found")
+	ErrPhotoNotInAlbum = errors.New("photo not in album")
 )
 
 // AlbumService handles album business logic.
@@ -119,6 +126,122 @@ func (s *AlbumService) ListAlbumPhotos(albumID int64, limit int, afterTime time.
 	}
 
 	return &AlbumPhotoPage{Photos: photos, Total: total, HasMore: hasMore}, nil
+}
+
+// ── Mutations ─────────────────────────────────────────
+
+// CreateAlbum creates a new album.
+func (s *AlbumService) CreateAlbum(title, description string) (*AlbumItem, error) {
+	a := model.Album{Title: title, Description: description}
+	if err := s.DB.Create(&a).Error; err != nil {
+		return nil, err
+	}
+	return s.GetAlbum(a.ID)
+}
+
+// UpdateAlbum updates an album's title, description, and/or cover photo.
+// Pass nil for fields you don't want to change.
+// coverPhotoID: nil = no change, pointer to -1 = clear (auto), pointer to N = set to N.
+func (s *AlbumService) UpdateAlbum(id int64, title, description *string, coverPhotoID *int64) (*AlbumItem, error) {
+	tx := s.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	var a model.Album
+	if err := tx.First(&a, id).Error; err != nil {
+		tx.Rollback()
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrAlbumNotFound
+		}
+		return nil, err
+	}
+
+	if title != nil {
+		a.Title = *title
+	}
+	if description != nil {
+		a.Description = *description
+	}
+	if coverPhotoID != nil {
+		if *coverPhotoID <= 0 {
+			a.CoverPhotoID = nil
+		} else {
+			var count int64
+			tx.Model(&model.AlbumPhoto{}).
+				Where("album_id = ? AND photo_id = ?", id, *coverPhotoID).Count(&count)
+			if count == 0 {
+				tx.Rollback()
+				return nil, ErrPhotoNotInAlbum
+			}
+			a.CoverPhotoID = coverPhotoID
+		}
+	}
+	a.UpdatedAt = time.Now()
+
+	if err := tx.Save(&a).Error; err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	if err := tx.Commit().Error; err != nil {
+		return nil, err
+	}
+	return s.GetAlbum(id)
+}
+
+// DeleteAlbum deletes an album and all its photo associations.
+func (s *AlbumService) DeleteAlbum(id int64) error {
+	tx := s.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	// Delete associations first, then the album
+	if err := tx.Where("album_id = ?", id).Delete(&model.AlbumPhoto{}).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+	if err := tx.Delete(&model.Album{}, id).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+	return tx.Commit().Error
+}
+
+// RemoveAlbumPhoto removes a single photo from an album.
+func (s *AlbumService) RemoveAlbumPhoto(albumID, photoID int64) error {
+	tx := s.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	res := tx.Where("album_id = ? AND photo_id = ?", albumID, photoID).
+		Delete(&model.AlbumPhoto{})
+	if res.Error != nil {
+		tx.Rollback()
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		tx.Rollback()
+		return ErrPhotoNotInAlbum
+	}
+
+	// If the removed photo was the cover, clear it
+	var a model.Album
+	if err := tx.First(&a, albumID).Error; err == nil {
+		if a.CoverPhotoID != nil && *a.CoverPhotoID == photoID {
+			a.CoverPhotoID = nil
+			tx.Save(&a)
+		}
+	}
+
+	return tx.Commit().Error
 }
 
 // coverURL returns the thumbnail URL for the cover photo.
