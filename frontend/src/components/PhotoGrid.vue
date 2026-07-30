@@ -427,7 +427,7 @@ async function loadPage() {
         // Account for sticky headers: filter bar (37px) + page header (stickyOffset) + date header (~38px)
         const headerOffset = (props.stickyOffset || 0) + 37 + 38
         requestAnimationFrame(() => {
-          scrollParent.scrollTop = headHeight - headerOffset
+          scrollParent.scrollTop = Math.max(0, headHeight - headerOffset)
         })
       }
     }
