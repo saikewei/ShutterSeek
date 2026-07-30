@@ -7,7 +7,14 @@
         <p class="text-xs text-neutral-500">{{ album?.photo_count?.toLocaleString() || 0 }} photos</p>
       </div>
     </header>
-    <PhotoGrid :key="albumId" :fetch-fn="wrapFetch" />
+    <PhotoGrid :key="albumId" :fetch-fn="wrapFetch">
+      <template #photo-action="{ photo }">
+        <button
+          class="absolute top-1 right-1 w-6 h-6 rounded-full bg-red-600/80 text-white text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-red-500 transition-all"
+          @click.stop="removePhoto(photo)"
+        >✕</button>
+      </template>
+    </PhotoGrid>
   </div>
 </template>
 
@@ -15,20 +22,27 @@
 import { ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import PhotoGrid from '@/components/PhotoGrid.vue'
-import { fetchAlbum, fetchAlbumPhotos, type Album } from '@/api/albums'
+import { fetchAlbum, fetchAlbumPhotos, removeAlbumPhoto, type Album } from '@/api/albums'
+import type { Photo } from '@/api/photos'
 
 const route = useRoute()
 const albumId = Number(route.params.id)
 const album = ref<Album | null>(null)
 
-fetchAlbum(albumId).then(a => { album.value = a })
-
-watch(() => route.params.id, (id) => {
+function loadAlbum() {
   album.value = null
-  fetchAlbum(Number(id)).then(a => { album.value = a })
-})
+  fetchAlbum(albumId).then(a => { album.value = a })
+}
+loadAlbum()
+
+watch(() => route.params.id, () => { loadAlbum() })
 
 function wrapFetch(params: { limit: number; cursor?: string }, signal?: AbortSignal) {
   return fetchAlbumPhotos(albumId, params, signal)
+}
+
+async function removePhoto(photo: Photo) {
+  await removeAlbumPhoto(albumId, photo.id)
+  loadAlbum()
 }
 </script>

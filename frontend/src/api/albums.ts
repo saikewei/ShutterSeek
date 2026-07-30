@@ -35,3 +35,24 @@ export async function fetchAlbumPhotos(
   const { data } = await api.get<PhotoListResponse>(`/albums/${id}/photos`, { params, signal })
   return data
 }
+
+export async function createAlbum(title: string, description?: string): Promise<Album> {
+  const { data } = await api.post<Album>('/albums', { title, description: description || '' })
+  return data
+}
+
+export async function updateAlbum(
+  id: number,
+  fields: { title?: string; description?: string; cover_photo_id?: number | null }
+): Promise<Album> {
+  const { data } = await api.put<Album>(`/albums/${id}`, fields)
+  return data
+}
+
+export async function deleteAlbum(id: number): Promise<void> {
+  await api.delete(`/albums/${id}`)
+}
+
+export async function removeAlbumPhoto(albumId: number, photoId: number): Promise<void> {
+  await api.delete(`/albums/${albumId}/photos/${photoId}`)
+}
