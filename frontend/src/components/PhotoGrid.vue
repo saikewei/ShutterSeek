@@ -400,44 +400,37 @@ async function loadPage() {
 
   loading.value = true
   try {
-    let data: PhotoListResponse
-    let newerItems: typeof photos.value = []
+    const data = await props.fetchFn(
+      {
+        limit,
+        cursor: cursor || undefined,
+        album_id: uncategorizedOnly.value ? 'none' : undefined,
+        with_albums: !!props.albumTitles,
+        month: jumpMonth.value || undefined,
+      },
+      signal
+    )
 
-    if (jumpMonth.value) {
-      const [y, m] = jumpMonth.value.split('-').map(Number)
-      const nextM = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`
-      const newerThan = `${nextM}-01T00:00:00,0`
-
-      const [newerData, mainData] = await Promise.all([
-        props.fetchFn(
-          { limit: 20, newer_than: newerThan, with_albums: !!props.albumTitles },
-          signal
-        ).catch(() => null),
-        props.fetchFn(
-          { limit, cursor: cursor || undefined, album_id: uncategorizedOnly.value ? 'none' : undefined,
-            with_albums: !!props.albumTitles, month: jumpMonth.value },
-          signal
-        ),
-      ])
-      data = mainData
-      if (newerData?.items.length) {
-        newerItems = newerData.items.reverse()
-      }
-    } else {
-      data = await props.fetchFn(
-        { limit, cursor: cursor || undefined, album_id: uncategorizedOnly.value ? 'none' : undefined,
-          with_albums: !!props.albumTitles },
-        signal
-      )
-    }
-
-    photos.value = newerItems.length > 0
-      ? [...newerItems, ...data.items]
-      : [...data.items]
+    photos.value.push(...data.items)
     total.value = data.total
     cursor = data.next_cursor
     hasMore.value = data.next_cursor !== ''
-    if (jumpMonth.value) jumpMonth.value = ''
+
+    // If head photos were preloaded, scroll past them to show the target month
+    if (jumpMonth.value && (data as any).head_count > 0) {
+      jumpMonth.value = ''
+      // Estimate head photo height and scroll
+      const headCount = (data as any).head_count as number
+      const scrollParent = document.querySelector('.overflow-auto') as HTMLElement
+      if (scrollParent) {
+        // Each photo row ~ cell width, 5 cols = ~20% of container width
+        const approxRowH = scrollParent.clientWidth / 5
+        const headHeight = Math.ceil(headCount / 5) * approxRowH
+        requestAnimationFrame(() => {
+          scrollParent.scrollTop = headHeight
+        })
+      }
+    }
   } catch (e: any) {
     if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return
     console.error('load failed', e)

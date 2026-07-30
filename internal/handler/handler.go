@@ -86,6 +86,7 @@ type PhotoListResponse struct {
 	Items      []PhotoItem `json:"items"`
 	NextCursor string      `json:"next_cursor"`
 	Total      int64       `json:"total"`
+	HeadCount  int         `json:"head_count,omitempty"`
 }
 
 // ListPhotos returns photos sorted by shooting time (newest first),
@@ -148,11 +149,17 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 		q = q.Order("taken_at DESC, id DESC").Limit(limit + 1)
 	}
 
-	// Filter: jump to month
+	// Filter: jump to month — with head preload
+	var headPhotos []model.Photo
 	if month != "" {
 		if t, err := time.Parse("2006-01", month); err == nil {
-			endOfMonth := t.AddDate(0, 1, 0)
-			q = q.Where("taken_at < ?", endOfMonth)
+			nextMonth := t.AddDate(0, 1, 0)
+			// Preload a few photos from the next month (newer) as head
+			h.DB.Where("taken_at >= ?", nextMonth).
+				Order("taken_at ASC, id ASC").Limit(15).
+				Find(&headPhotos)
+			// Main query: target month and older
+			q = q.Where("taken_at < ?", nextMonth)
 		}
 	}
 
@@ -177,19 +184,26 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 		photos = photos[:limit]
 	}
 
+	// Prepend head photos (reverse to DESC order)
+	allPhotos := make([]model.Photo, 0, len(headPhotos)+len(photos))
+	for i := len(headPhotos) - 1; i >= 0; i-- {
+		allPhotos = append(allPhotos, headPhotos[i])
+	}
+	allPhotos = append(allPhotos, photos...)
+
 	// Load album IDs if requested
 	withAlbums := c.Query("with_albums") == "true"
 	var albumMap map[int64][]int64
-	if withAlbums && len(photos) > 0 {
-		ids := make([]int64, len(photos))
-		for i, p := range photos {
+	if withAlbums && len(allPhotos) > 0 {
+		ids := make([]int64, len(allPhotos))
+		for i, p := range allPhotos {
 			ids[i] = p.ID
 		}
 		albumMap, _ = h.AlbumSvc.GetPhotoAlbumIDs(ids)
 	}
 
-	items := make([]PhotoItem, len(photos))
-	for i, p := range photos {
+	items := make([]PhotoItem, len(allPhotos))
+	for i, p := range allPhotos {
 		items[i] = toPhotoItem(&p)
 		if albumMap != nil {
 			items[i].AlbumIDs = albumMap[p.ID]
@@ -207,15 +221,16 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 		Items:      items,
 		Total:      total,
 		NextCursor: "",
+		HeadCount:  len(headPhotos),
 	}
 
-	if hasMore && len(items) > 0 {
-		last := items[len(items)-1]
-		t := last.TakenAt
+	if hasMore && len(photos) > 0 {
+		lastItem := items[len(items)-1]
+		t := lastItem.TakenAt
 		if t == "" {
 			t = "0001-01-01T00:00:00"
 		}
-		resp.NextCursor = t + "," + strconv.FormatInt(last.ID, 10)
+		resp.NextCursor = t + "," + strconv.FormatInt(lastItem.ID, 10)
 	}
 
 	if cacheKey != "" && h.Redis != nil {
