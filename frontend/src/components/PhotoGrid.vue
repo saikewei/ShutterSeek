@@ -416,20 +416,28 @@ async function loadPage() {
     cursor = data.next_cursor
     hasMore.value = data.next_cursor !== ''
 
-    // If head photos were preloaded, scroll past them to show the target month
+    // If head photos were preloaded, scroll past them to the first target-month photo
     if (jumpMonth.value && (data as any).head_count > 0) {
       jumpMonth.value = ''
       const headCount = (data as any).head_count as number
-      const scrollParent = document.querySelector('.overflow-auto') as HTMLElement
-      if (scrollParent) {
-        const approxRowH = scrollParent.clientWidth / 5
-        const headHeight = Math.ceil(headCount / 5) * approxRowH
-        // Account for sticky headers: filter bar (37px) + page header (stickyOffset) + date header (~38px)
-        const headerOffset = (props.stickyOffset || 0) + 37 + 38
-        requestAnimationFrame(() => {
-          scrollParent.scrollTop = Math.max(0, headHeight - headerOffset)
-        })
+      const headerOffset = (props.stickyOffset || 0) + 37 + 38
+
+      // Use a stable DOM-based approach: find the first photo after head, scroll to it
+      const scrollToTarget = () => {
+        const scrollParent = document.querySelector('.overflow-auto') as HTMLElement
+        if (!scrollParent) return
+        const imgs = scrollParent.querySelectorAll('img[src*="thumbnails"]')
+        if (imgs.length > headCount) {
+          const target = imgs[headCount] as HTMLElement
+          const rect = target.getBoundingClientRect()
+          const containerRect = scrollParent.getBoundingClientRect()
+          const targetTop = rect.top - containerRect.top + scrollParent.scrollTop
+          scrollParent.scrollTop = Math.max(0, targetTop - headerOffset)
+        }
       }
+
+      // Do initial scroll, then re-check after images load
+      requestAnimationFrame(() => { scrollToTarget(); setTimeout(scrollToTarget, 1500) })
     }
   } catch (e: any) {
     if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return
