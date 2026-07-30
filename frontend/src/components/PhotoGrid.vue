@@ -27,6 +27,7 @@
           :key="photo.id"
           class="group cursor-pointer relative rounded-lg overflow-hidden bg-neutral-800"
           @click="openLightbox(photo)"
+          @contextmenu.prevent="$emit('photoContextmenu', photo, $event)"
         >
           <img
             :src="THUMB_BASE + '/' + photo.id + '.webp'"
@@ -78,6 +79,10 @@ const props = defineProps<{
     params: { limit: number; cursor?: string },
     signal?: AbortSignal
   ) => Promise<PhotoListResponse>
+}>()
+
+defineEmits<{
+  photoContextmenu: [photo: Photo, event: MouseEvent]
 }>()
 
 const photos = ref<Photo[]>([])
