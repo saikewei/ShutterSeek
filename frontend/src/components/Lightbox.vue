@@ -10,9 +10,14 @@
         class="absolute top-4 z-10 text-white/70 hover:text-white text-2xl w-10 h-10"
         :style="{ right: photo ? '308px' : '16px' }">✕</button>
 
+      <!-- Rotate -->
+      <button @click="rot = (rot + 90) % 360"
+        class="absolute top-4 left-4 z-10 text-white/50 hover:text-white text-lg w-8 h-8 flex items-center justify-center"
+        title="旋转">↻</button>
+
       <!-- Reset zoom -->
       <button v-if="scale !== 1" @click="resetZoom"
-        class="absolute top-4 left-4 z-10 text-white/50 hover:text-white text-sm px-2 py-1">Reset</button>
+        class="absolute top-4 left-12 z-10 text-white/50 hover:text-white text-sm px-2 py-1">Reset</button>
 
       <!-- Prev / Next -->
       <button v-if="hasPrev" @click.stop="$emit('prev')"
@@ -37,7 +42,7 @@
           :src="`/api/v1/photos/${photo.id}/original`"
           :alt="photo.file_name || 'Original'"
           :style="{
-            transform: `translate(${x}px, ${y}px) scale(${scale})`,
+            transform: `translate(${x}px, ${y}px) scale(${scale}) rotate(${rot}deg)`,
             transformOrigin: 'center center',
             transition: dragging ? 'none' : 'transform 0.08s ease-out',
           }"
@@ -121,6 +126,7 @@ defineEmits<{ close: []; prev: []; next: [] }>()
 
 const loading = ref(true)
 const container = ref<HTMLElement | null>(null)
+const rot = ref(0)
 
 // zoom + pan state
 const scale = ref(1)
@@ -136,6 +142,7 @@ function resetZoom() {
 watch(() => props.photo, () => {
   loading.value = true
   resetZoom()
+  rot.value = 0
 })
 
 const isPortrait = () => props.photo && props.photo.height > props.photo.width
