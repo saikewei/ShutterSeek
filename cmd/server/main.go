@@ -61,7 +61,8 @@ func main() {
 	}
 
 	origSvc := service.NewOriginalService(cfg.Thumbnail.PhotosDir, "/tmp/shutterseek_previews")
-	h := &handler.Handler{Pool: pool, Redis: rdb, DB: gormDB, OrigSvc: origSvc}
+	albumSvc := service.NewAlbumService(gormDB)
+	h := &handler.Handler{Pool: pool, Redis: rdb, DB: gormDB, OrigSvc: origSvc, AlbumSvc: albumSvc}
 	r := router.Setup(h, cfg.Thumbnail.OutputDir)
 
 	// ── HTTP Server ───────────────────────────────────────

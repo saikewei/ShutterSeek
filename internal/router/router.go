@@ -19,6 +19,9 @@ func Setup(h *handler.Handler, thumbDir string) *gin.Engine {
 	{
 		v1.GET("/photos", h.ListPhotos)
 		v1.GET("/photos/:id/original", h.GetOriginal)
+		v1.GET("/albums", h.ListAlbums)
+		v1.GET("/albums/:id", h.GetAlbum)
+		v1.GET("/albums/:id/photos", h.ListAlbumPhotos)
 	}
 	r.GET("/api/health", h.Health)
 
