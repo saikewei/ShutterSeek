@@ -40,6 +40,29 @@ func (h *Handler) Health(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
+// ── Photo Dates ──────────────────────────────────────────
+
+type DateCount struct {
+	Date  string `json:"date"`
+	Count int64  `json:"count"`
+}
+
+// PhotoDates returns date distribution for all photos.
+// GET /api/v1/photos/dates
+func (h *Handler) PhotoDates(c *gin.Context) {
+	var rows []DateCount
+	if err := h.DB.Raw(
+		"SELECT to_char(taken_at, 'YYYY-MM-DD') AS date, COUNT(*) AS count FROM photos WHERE taken_at IS NOT NULL GROUP BY date ORDER BY date DESC",
+	).Scan(&rows).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
+		return
+	}
+	if rows == nil {
+		rows = []DateCount{}
+	}
+	c.JSON(http.StatusOK, rows)
+}
+
 // ── Photo List ──────────────────────────────────────────
 
 type PhotoItem struct {
