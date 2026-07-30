@@ -12,12 +12,15 @@
 
       <!-- Rotate -->
       <button @click="rot = (rot + 90) % 360"
-        class="absolute top-4 left-4 z-10 text-white/50 hover:text-white text-lg w-8 h-8 flex items-center justify-center"
-        title="旋转">↻</button>
+        class="absolute top-4 left-4 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/80 hover:text-white transition-colors"
+        title="旋转">
+        <span class="text-lg leading-none">↻</span>
+        <span class="text-xs">旋转</span>
+      </button>
 
       <!-- Reset zoom -->
       <button v-if="scale !== 1" @click="resetZoom"
-        class="absolute top-4 left-12 z-10 text-white/50 hover:text-white text-sm px-2 py-1">Reset</button>
+        class="absolute top-4 left-28 z-10 text-white/50 hover:text-white text-sm px-2 py-1">Reset</button>
 
       <!-- Prev / Next -->
       <button v-if="hasPrev" @click.stop="$emit('prev')"
