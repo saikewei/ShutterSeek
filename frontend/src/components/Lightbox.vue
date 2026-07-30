@@ -10,9 +10,17 @@
         class="absolute top-4 z-10 text-white/70 hover:text-white text-2xl w-10 h-10"
         :style="{ right: photo ? '308px' : '16px' }">✕</button>
 
+      <!-- Rotate -->
+      <button @click="rot = (rot + 90) % 360"
+        class="absolute top-4 left-4 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/80 hover:text-white transition-colors"
+        title="旋转">
+        <span class="text-lg leading-none">↻</span>
+        <span class="text-xs">旋转</span>
+      </button>
+
       <!-- Reset zoom -->
       <button v-if="scale !== 1" @click="resetZoom"
-        class="absolute top-4 left-4 z-10 text-white/50 hover:text-white text-sm px-2 py-1">Reset</button>
+        class="absolute top-4 left-28 z-10 text-white/50 hover:text-white text-sm px-2 py-1">Reset</button>
 
       <!-- Prev / Next -->
       <button v-if="hasPrev" @click.stop="$emit('prev')"
@@ -37,7 +45,7 @@
           :src="`/api/v1/photos/${photo.id}/original`"
           :alt="photo.file_name || 'Original'"
           :style="{
-            transform: `translate(${x}px, ${y}px) scale(${scale})`,
+            transform: `translate(${x}px, ${y}px) scale(${scale}) rotate(${rot}deg)`,
             transformOrigin: 'center center',
             transition: dragging ? 'none' : 'transform 0.08s ease-out',
           }"
@@ -96,6 +104,8 @@
             <div class="border-t border-white/10 pt-2 mt-2">
               <p class="text-white/30 text-xs truncate">{{ photo.file_path }}</p>
             </div>
+
+            <slot name="exif-extra" :photo="photo" />
           </div>
         </div>
       </Transition>
@@ -119,6 +129,7 @@ defineEmits<{ close: []; prev: []; next: [] }>()
 
 const loading = ref(true)
 const container = ref<HTMLElement | null>(null)
+const rot = ref(0)
 
 // zoom + pan state
 const scale = ref(1)
@@ -134,7 +145,10 @@ function resetZoom() {
 watch(() => props.photo, () => {
   loading.value = true
   resetZoom()
+  rot.value = 0
 })
+
+const isPortrait = () => props.photo && props.photo.height > props.photo.width
 
 // ── Wheel zoom: scale toward cursor ──────────────────
 function onWheel(e: WheelEvent) {
@@ -145,9 +159,17 @@ function onWheel(e: WheelEvent) {
   const factor = e.deltaY < 0 ? 1.16 : 1 / 1.16
   const newScale = Math.max(0.3, Math.min(10, scale.value * factor))
 
-  // Adjust pan so the point under cursor stays fixed
-  x.value = cx - (cx - x.value) * (newScale / scale.value)
-  y.value = cy - (cy - y.value) * (newScale / scale.value)
+  if (isPortrait()) {
+    // 270° rotation: screen space → pre-rotation space
+    // pre-rot (px, py) maps to screen: sx=py*s, sy=-px*s → px=-sy/s, py=sx/s
+    const px = -cy / scale.value
+    const py = cx / scale.value
+    x.value = x.value + px * (scale.value - newScale)
+    y.value = y.value + py * (scale.value - newScale)
+  } else {
+    x.value = cx - (cx - x.value) * (newScale / scale.value)
+    y.value = cy - (cy - y.value) * (newScale / scale.value)
+  }
   scale.value = newScale
 }
 
@@ -160,8 +182,16 @@ function onMouseDown(e: MouseEvent) {
 
 function onMouseMove(e: MouseEvent) {
   if (!dragging.value) return
-  x.value += e.clientX - lastX
-  y.value += e.clientY - lastY
+  const dx = e.clientX - lastX
+  const dy = e.clientY - lastY
+  if (isPortrait()) {
+    // 270° rotation: screen-right → visual-right = translate-y+, screen-down → visual-down = translate-x-
+    x.value -= dy
+    y.value += dx
+  } else {
+    x.value += dx
+    y.value += dy
+  }
   lastX = e.clientX; lastY = e.clientY
 }
 

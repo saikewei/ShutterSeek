@@ -12,7 +12,20 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/api': 'http://localhost:8080',
+      '/api': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+        timeout: 60000,
+        proxyTimeout: 60000,
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq, req) => {
+            req.headers['connection'] = 'keep-alive'
+          })
+          proxy.on('error', (err, req, res) => {
+            console.error('[vite proxy error]', err.message)
+          })
+        },
+      },
       '/thumbnails': 'http://localhost:8080',
     },
   },

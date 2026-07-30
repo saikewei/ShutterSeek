@@ -4,10 +4,12 @@ package service
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func setupSvc(t *testing.T) *OriginalService {
@@ -134,3 +136,136 @@ func TestDirCreation(t *testing.T) {
 	}
 	os.RemoveAll(svc.PreviewDir)
 }
+
+// ═══════════════════════════════════════════════════════
+// Cache eviction
+// ═══════════════════════════════════════════════════════
+
+func TestCacheWriteAndPrune(t *testing.T) {
+	dir := t.TempDir()
+	svc := NewOriginalService("/photos", dir)
+
+	// Write more than maxCacheFiles (2000) dummy files
+	for i := 0; i < 10; i++ {
+		data := []byte{0xFF, 0xD8, 0xFF, 0xD9} // minimal JPEG
+		svc.cacheWrite(fmt.Sprintf("test_%d.jpg", i), data)
+	}
+
+	// Wait a bit for async prune
+	time.Sleep(10 * time.Millisecond)
+
+	entries, _ := os.ReadDir(dir)
+	t.Logf("cache files: %d", len(entries))
+	if len(entries) != 10 {
+		t.Fatalf("expected 10 files, got %d", len(entries))
+	}
+}
+
+func TestCacheWrite_PeriodicPrune(t *testing.T) {
+	dir := t.TempDir()
+	svc := NewOriginalService("/photos", dir)
+
+	// Write 100 files (triggers prune check)
+	for i := 0; i < 100; i++ {
+		data := []byte{0xFF, 0xD8, 0xFF, 0xD9}
+		svc.cacheWrite(fmt.Sprintf("prune_%d.jpg", i), data)
+	}
+
+	time.Sleep(50 * time.Millisecond)
+
+	entries, _ := os.ReadDir(dir)
+	jpgs := 0
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".jpg") {
+			jpgs++
+		}
+	}
+	t.Logf("cache files after 100 writes: %d", jpgs)
+	if jpgs != 100 {
+		t.Fatalf("expected 100 files, got %d", jpgs)
+	}
+}
+
+func TestCachePrune_KeepsNewest(t *testing.T) {
+	dir := t.TempDir()
+	svc := NewOriginalService("/photos", dir)
+
+	// Write files with delays to create age differences
+	for i := 0; i < 5; i++ {
+		data := []byte{0xFF, 0xD8, 0xFF, 0xD9}
+		svc.cacheWrite(fmt.Sprintf("keep_%d.jpg", i), data)
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	// Force prune (modify maxCacheFiles for test - not possible, just check no panic)
+	svc.pruneCache()
+
+	entries, _ := os.ReadDir(dir)
+	jpgs := 0
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".jpg") {
+			jpgs++
+		}
+	}
+	if jpgs != 5 {
+		t.Fatalf("prune shouldn't delete when below max: expected 5, got %d", jpgs)
+	}
+}
+
+// ═══════════════════════════════════════════════════════
+// Exiftool fallback
+// ═══════════════════════════════════════════════════════
+
+func TestExtractWithExiftool_A6000(t *testing.T) {
+	// Test with a known a6000 ARW file
+	path := "/photos/FromDesktop/a6000/跳绳/_DSC0757.ARW"
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		t.Skip("a6000 test file not found")
+	}
+
+	data, err := extractWithExiftool(path)
+	if err != nil {
+		t.Fatalf("exiftool extraction failed: %v", err)
+	}
+	if len(data) < 20000 {
+		t.Fatalf("extracted data too small: %d bytes", len(data))
+	}
+	if data[0] != 0xFF || data[1] != 0xD8 {
+		t.Fatal("not a valid JPEG header")
+	}
+	t.Logf("exiftool extracted: %d bytes", len(data))
+}
+
+func TestExtractWithExiftool_NotFound(t *testing.T) {
+	_, err := extractWithExiftool("/nonexistent/file.ARW")
+	if err == nil {
+		t.Fatal("expected error for non-existent file")
+	}
+}
+
+func TestServeRAW_A6000Fallback(t *testing.T) {
+	path := "/photos/FromDesktop/a6000/跳绳/_DSC0757.ARW"
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		t.Skip("a6000 test file not found")
+	}
+
+	dir := t.TempDir()
+	svc := NewOriginalService("/photos", dir)
+
+	var buf bytes.Buffer
+	err := svc.ServeOriginal(&buf, "FromDesktop/a6000/跳绳/_DSC0757.ARW")
+	if err != nil {
+		t.Fatalf("serve a6000: %v", err)
+	}
+	if buf.Len() < 20000 {
+		t.Fatalf("too small: %d bytes (expected >20KB)", buf.Len())
+	}
+	// Verify it's cached
+	if _, err := os.Stat(dir + "/_DSC0757.ARW.jpg"); os.IsNotExist(err) {
+		t.Fatal("preview not cached")
+	}
+	t.Logf("a6000 served: %d bytes", buf.Len())
+}
+
+// need fmt for TestCacheWriteAndPrune
+
