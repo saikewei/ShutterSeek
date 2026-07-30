@@ -236,15 +236,21 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 	}
 
 	var total int64
-	if uncategorized {
+	switch {
+	case uncategorized:
 		h.DB.Model(&model.Photo{}).Where("taken_at IS NOT NULL AND id NOT IN (SELECT DISTINCT photo_id FROM album_photos)").Count(&total)
-	} else if albumIDStr != "" {
+	case albumIDStr != "":
 		if albumID, err := strconv.ParseInt(albumIDStr, 10, 64); err == nil && albumID > 0 {
-			h.DB.Model(&model.Photo{}).
-				Where("taken_at IS NOT NULL AND id IN (SELECT photo_id FROM album_photos WHERE album_id = ?)", albumID).
-				Count(&total)
+			tq := h.DB.Model(&model.Photo{}).
+				Where("taken_at IS NOT NULL AND id IN (SELECT photo_id FROM album_photos WHERE album_id = ?)", albumID)
+			if month != "" {
+				if t, err := time.Parse("2006-01", month); err == nil {
+					tq = tq.Where("taken_at < ?", t.AddDate(0, 1, 0))
+				}
+			}
+			tq.Count(&total)
 		}
-	} else {
+	default:
 		total = h.totalPhotoCountCached()
 	}
 
