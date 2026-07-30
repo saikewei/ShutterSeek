@@ -152,34 +152,52 @@ func extractJPEG(data []byte) []byte {
 	return best
 }
 
-// isValidJPEG checks that data starts with SOI and the first marker
-// after SOI is a genuine JPEG marker (to avoid false positives from
-// random binary that happens to have FF D8 ... FF D9 byte sequences).
+// isValidJPEG checks that data starts with SOI and contains essential
+// markers (SOF + SOS) for browser rendering. Rejects false positives
+// like giant APP5-only segments found in some Sony ARW files.
 func isValidJPEG(data []byte) bool {
 	if len(data) < 4 || data[0] != 0xFF || data[1] != 0xD8 {
 		return false
 	}
-	// Skip past SOI and any padding/stuffed bytes to find the first marker
-	for i := 2; i < len(data)-1; i++ {
+
+	var hasSOF, hasSOS bool
+	i := 2
+	for i < len(data)-1 {
 		if data[i] != 0xFF {
+			i++
 			continue
 		}
 		marker := data[i+1]
 		switch {
-		case marker == 0x00: // stuffed byte (literal 0xFF in entropy-coded data)
-			i++ // skip the 0x00
-		case marker == 0xFF: // padding 0xFF
-			// just continue
+		case marker == 0x00: // stuffed byte
+			i += 2
+		case marker == 0xFF: // padding
+			i++
+		case marker == 0xD9: // EOI — stop scanning
+			i += 2
+		case marker >= 0xC0 && marker <= 0xCF && marker != 0xC4:
+			hasSOF = true
+			i += 2 + int(data[i+2])<<8 + int(data[i+3])
+		case marker == 0xDA: // SOS
+			hasSOS = true
+			i += 2 + int(data[i+2])<<8 + int(data[i+3])
+		case marker >= 0xD0 && marker <= 0xD7: // RST (no length)
+			i += 2
 		default:
-			return isJPEGMarker(marker)
+			// Valid marker with length field
+			if !isJPEGMarker(marker) {
+				return false
+			}
+			if i+4 > len(data) {
+				return false
+			}
+			i += 2 + int(data[i+2])<<8 + int(data[i+3])
 		}
 	}
-	return false
+	return hasSOF && hasSOS
 }
 
 // isJPEGMarker reports whether b is a valid JPEG marker byte.
-// Valid ranges: 0xC0-0xCF (SOF), 0xDA-0xDF (SOS/DQT/DNL/DRI/DHP/EXP),
-// 0xE0-0xEF (APPn), plus 0xFE (COM).
 func isJPEGMarker(b byte) bool {
 	if b == 0xFE {
 		return true
