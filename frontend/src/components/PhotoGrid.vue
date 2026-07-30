@@ -400,6 +400,23 @@ async function loadPage() {
 
   loading.value = true
   try {
+    // When jumping to a month, also preload some newer photos in parallel
+    let newerItems: typeof photos.value = []
+    if (jumpMonth.value) {
+      const [y, m] = jumpMonth.value.split('-').map(Number)
+      const nextM = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`
+      const newerThan = `${nextM}-01T00:00:00,0`
+      try {
+        const newerData = await props.fetchFn(
+          { limit: 20, newer_than: newerThan, with_albums: !!props.albumTitles },
+          signal
+        )
+        if (newerData.items.length > 0) {
+          newerItems = newerData.items.reverse() // ASC → DESC
+        }
+      } catch { /* non-critical */ }
+    }
+
     const data = await props.fetchFn(
       {
         limit,
@@ -410,11 +427,15 @@ async function loadPage() {
       },
       signal
     )
-    photos.value.push(...data.items)
+
+    if (newerItems.length > 0) {
+      photos.value = [...newerItems, ...data.items]
+    } else {
+      photos.value = [...data.items]
+    }
     total.value = data.total
     cursor = data.next_cursor
     hasMore.value = data.next_cursor !== ''
-    // Clear month filter after first load — subsequent pages use normal pagination
     if (jumpMonth.value) {
       jumpMonth.value = ''
     }
