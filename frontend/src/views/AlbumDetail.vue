@@ -8,11 +8,19 @@
       </div>
     </header>
     <PhotoGrid :key="albumId" :fetch-fn="wrapFetch">
-      <template #photo-action="{ photo }">
-        <button
-          class="absolute top-1 right-1 w-6 h-6 rounded-full bg-red-600/80 text-white text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-red-500 transition-all"
-          @click.stop="removePhoto(photo)"
-        >✕</button>
+      <template #exif-extra="{ photo }">
+        <div class="border-t border-white/10 pt-2 mt-2">
+          <button
+            v-if="removeTarget?.id !== photo.id"
+            @click="removeTarget = photo"
+            class="text-xs text-neutral-500 hover:text-red-400 transition-colors"
+          >从相册移除…</button>
+          <div v-else class="flex items-center gap-2">
+            <span class="text-xs text-red-400">确认移除？</span>
+            <button @click="doRemove(photo)" class="text-xs px-2 py-0.5 rounded bg-red-600 text-white hover:bg-red-500">确认</button>
+            <button @click="removeTarget = null" class="text-xs text-neutral-400 hover:text-white">取消</button>
+          </div>
+        </div>
       </template>
     </PhotoGrid>
   </div>
@@ -28,6 +36,7 @@ import type { Photo } from '@/api/photos'
 const route = useRoute()
 const albumId = Number(route.params.id)
 const album = ref<Album | null>(null)
+const removeTarget = ref<Photo | null>(null)
 
 function loadAlbum() {
   album.value = null
@@ -41,8 +50,9 @@ function wrapFetch(params: { limit: number; cursor?: string }, signal?: AbortSig
   return fetchAlbumPhotos(albumId, params, signal)
 }
 
-async function removePhoto(photo: Photo) {
+async function doRemove(photo: Photo) {
   await removeAlbumPhoto(albumId, photo.id)
+  removeTarget.value = null
   loadAlbum()
 }
 </script>

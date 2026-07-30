@@ -96,6 +96,8 @@
             <div class="border-t border-white/10 pt-2 mt-2">
               <p class="text-white/30 text-xs truncate">{{ photo.file_path }}</p>
             </div>
+
+            <slot name="exif-extra" :photo="photo" />
           </div>
         </div>
       </Transition>
