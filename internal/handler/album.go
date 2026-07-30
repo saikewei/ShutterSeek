@@ -287,6 +287,44 @@ func (h *Handler) clearAlbumCache(albumID int64) {
 	}
 }
 
+// ── Batch Add Photos ────────────────────────────────────
+
+type batchAddReq struct {
+	PhotoIDs []int64 `json:"photo_ids" binding:"required"`
+}
+
+// BatchAddPhotos adds multiple photos to an album.
+// POST /api/v1/albums/:id/photos
+func (h *Handler) BatchAddPhotos(c *gin.Context) {
+	albumID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid album id"})
+		return
+	}
+
+	var req batchAddReq
+	if err := c.ShouldBindJSON(&req); err != nil || len(req.PhotoIDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "photo_ids required"})
+		return
+	}
+
+	result, err := h.AlbumSvc.BatchAddPhotos(albumID, req.PhotoIDs)
+	if err != nil {
+		if errors.Is(err, service.ErrAlbumNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "album not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "batch add failed"})
+		return
+	}
+
+	h.clearAlbumCache(albumID)
+	c.JSON(http.StatusOK, gin.H{
+		"added":   result.Added,
+		"skipped": result.Skipped,
+	})
+}
+
 // ── shared helpers ──────────────────────────────────────
 
 func toPhotoItem(p *model.Photo) PhotoItem {

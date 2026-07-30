@@ -25,6 +25,7 @@ func Setup(h *handler.Handler, thumbDir string) *gin.Engine {
 		v1.PUT("/albums/:id", h.UpdateAlbum)
 		v1.DELETE("/albums/:id", h.DeleteAlbum)
 		v1.GET("/albums/:id/photos", h.ListAlbumPhotos)
+		v1.POST("/albums/:id/photos", h.BatchAddPhotos)
 		v1.DELETE("/albums/:id/photos/:photo_id", h.RemoveAlbumPhoto)
 	}
 	r.GET("/api/health", h.Health)
