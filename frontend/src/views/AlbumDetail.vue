@@ -8,7 +8,7 @@
       </div>
     </header>
 
-    <PhotoGrid ref="gridRef" :fetch-fn="wrapFetch" @photo-contextmenu="onContextMenu" />
+    <PhotoGrid ref="gridRef" :fetch-fn="wrapFetch" :sticky-offset="44" @photo-contextmenu="onContextMenu" />
 
     <!-- Right-click context menu -->
     <Teleport to="body">
