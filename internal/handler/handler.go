@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -28,10 +27,11 @@ const (
 
 // Handler holds shared dependencies for all HTTP handlers.
 type Handler struct {
-	Pool    *pgxpool.Pool
-	Redis   *goredis.Client
-	DB      *gorm.DB
-	OrigSvc *service.OriginalService
+	Pool     *pgxpool.Pool
+	Redis    *goredis.Client
+	DB       *gorm.DB
+	OrigSvc  *service.OriginalService
+	AlbumSvc *service.AlbumService
 }
 
 // ── Health ──────────────────────────────────────────────
@@ -124,21 +124,7 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 
 	items := make([]PhotoItem, len(photos))
 	for i, p := range photos {
-		items[i] = PhotoItem{
-			ID:           p.ID,
-			ThumbnailURL: "/api/thumbnails/" + strconv.FormatInt(p.ID, 10) + ".webp",
-			FileName:     filepath.Base(p.FilePath),
-			FilePath:     p.FilePath,
-			CameraMake:   p.CameraMake,
-			CameraModel:  p.CameraModel,
-			LensModel:    p.LensModel,
-			FocalLength:  formatFocal(p.FocalLength),
-			Aperture:     formatAperture(p.Aperture),
-			ISO:          p.Iso,
-			TakenAt:      formatTime(p.TakenAt),
-			Width:        p.Width,
-			Height:       p.Height,
-		}
+		items[i] = toPhotoItem(&p)
 	}
 
 	resp := PhotoListResponse{
