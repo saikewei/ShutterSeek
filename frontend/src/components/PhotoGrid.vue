@@ -300,9 +300,13 @@ const activeMonth = computed(() => {
   return ''
 })
 
+const jumpCooldown = ref(false)
+
 function jumpToDate(monthKey: string) {
   jumpMonth.value = monthKey
   hasNewer.value = monthKey !== ''
+  jumpCooldown.value = true
+  setTimeout(() => { jumpCooldown.value = false }, 500)
   reload()
 }
 
@@ -491,7 +495,7 @@ onMounted(() => {
       ticking = true
       requestAnimationFrame(() => {
         atTop.value = scrollParent.scrollTop < 50
-        if (scrollParent.scrollTop < 100 && hasNewer.value && !loadingNewer.value) {
+        if (scrollParent.scrollTop < 100 && hasNewer.value && !loadingNewer.value && !jumpCooldown.value) {
           loadNewer()
         }
         ticking = false
