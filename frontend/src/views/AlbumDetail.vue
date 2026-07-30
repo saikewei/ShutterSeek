@@ -2,7 +2,7 @@
   <div>
     <header class="sticky top-0 z-30 bg-neutral-950/80 backdrop-blur border-b border-neutral-800 px-4 py-2 flex items-center gap-3">
       <button @click="$router.push('/albums')" class="text-neutral-400 hover:text-white text-lg">←</button>
-      <div>
+      <div class="flex-1">
         <h1 class="text-sm font-medium text-white">{{ album?.title || 'Album' }}</h1>
         <p class="text-xs text-neutral-500">{{ album?.photo_count?.toLocaleString() || 0 }} photos</p>
       </div>
@@ -13,15 +13,13 @@
     <!-- Right-click context menu -->
     <Teleport to="body">
       <div v-if="ctxMenu.show" class="fixed inset-0 z-50" @click="ctxMenu.show = false" @contextmenu.prevent="ctxMenu.show = false">
-        <div
-          class="absolute bg-neutral-800 border border-neutral-700 rounded-lg py-1 shadow-xl w-36"
-          :style="{ top: ctxMenu.y + 'px', left: ctxMenu.x + 'px' }"
-        >
-          <button
-            v-if="!ctxMenu.confirming"
-            @click.stop="ctxMenu.confirming = true"
-            class="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-neutral-700 transition-colors"
-          >从相册移除</button>
+        <div class="absolute bg-neutral-800 border border-neutral-700 rounded-lg py-1 shadow-xl w-40"
+          :style="{ top: ctxMenu.y + 'px', left: ctxMenu.x + 'px' }">
+          <button @click.stop="setAsCover" class="w-full text-left px-3 py-2 text-sm text-neutral-300 hover:bg-neutral-700 hover:text-white transition-colors">设为封面</button>
+
+          <template v-if="!ctxMenu.confirming">
+            <button @click.stop="ctxMenu.confirming = true" class="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-neutral-700 transition-colors">从相册移除</button>
+          </template>
           <div v-else class="px-3 py-2">
             <p class="text-xs text-neutral-400 mb-2">确认移除？</p>
             <div class="flex gap-2">
@@ -39,7 +37,7 @@
 import { ref, watch, reactive } from 'vue'
 import { useRoute } from 'vue-router'
 import PhotoGrid from '@/components/PhotoGrid.vue'
-import { fetchAlbum, fetchAlbumPhotos, removeAlbumPhoto, type Album } from '@/api/albums'
+import { fetchAlbum, fetchAlbumPhotos, removeAlbumPhoto, updateAlbum, type Album } from '@/api/albums'
 import type { Photo } from '@/api/photos'
 
 const route = useRoute()
@@ -48,11 +46,7 @@ const album = ref<Album | null>(null)
 const gridRef = ref<InstanceType<typeof PhotoGrid> | null>(null)
 
 const ctxMenu = reactive<{
-  show: boolean
-  x: number
-  y: number
-  photo: Photo | null
-  confirming: boolean
+  show: boolean; x: number; y: number; photo: Photo | null; confirming: boolean
 }>({ show: false, x: 0, y: 0, photo: null, confirming: false })
 
 function loadAlbum() {
@@ -61,20 +55,18 @@ function loadAlbum() {
 }
 loadAlbum()
 
-watch(() => route.params.id, () => {
-  loadAlbum()
-})
+watch(() => route.params.id, () => { loadAlbum() })
 
-function wrapFetch(params: { limit: number; cursor?: string }, signal?: AbortSignal) {
+function wrapFetch(
+  params: { limit: number; cursor?: string; album_id?: string; with_albums?: boolean },
+  signal?: AbortSignal
+) {
   return fetchAlbumPhotos(albumId, params, signal)
 }
 
 function onContextMenu(photo: Photo, event: MouseEvent) {
-  ctxMenu.show = true
-  ctxMenu.x = event.clientX
-  ctxMenu.y = event.clientY
-  ctxMenu.photo = photo
-  ctxMenu.confirming = false
+  ctxMenu.show = true; ctxMenu.x = event.clientX; ctxMenu.y = event.clientY
+  ctxMenu.photo = photo; ctxMenu.confirming = false
 }
 
 async function doRemove() {
@@ -83,6 +75,13 @@ async function doRemove() {
   await removeAlbumPhoto(albumId, photoId)
   ctxMenu.show = false
   gridRef.value?.removePhotoById(photoId)
+  loadAlbum()
+}
+
+async function setAsCover() {
+  if (!ctxMenu.photo) return
+  await updateAlbum(albumId, { cover_photo_id: ctxMenu.photo.id })
+  ctxMenu.show = false
   loadAlbum()
 }
 </script>

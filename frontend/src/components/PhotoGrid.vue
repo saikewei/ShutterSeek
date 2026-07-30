@@ -1,24 +1,39 @@
 <template>
   <div>
-    <!-- Date grouping toggle -->
-    <div class="sticky top-0 z-20 flex items-center gap-1 px-2 py-2 bg-neutral-950/80 backdrop-blur border-b border-neutral-800">
-      <button
-        v-for="opt in [{k:'day',l:'按日'},{k:'month',l:'按月'}]"
-        :key="opt.k"
-        @click="groupBy = opt.k as 'day'|'month'"
-        :class="groupBy === opt.k
-          ? 'bg-neutral-700 text-white'
-          : 'text-neutral-500 hover:text-neutral-300'"
-        class="px-3 py-1 text-xs rounded-full transition-colors"
-      >{{ opt.l }}</button>
+    <!-- Filter bar -->
+    <div class="sticky top-0 z-20 flex items-center justify-between px-2 py-1.5 bg-neutral-950/90 backdrop-blur border-b border-neutral-800">
+      <div class="flex items-center gap-1.5">
+        <button
+          @click="filterOpen = true"
+          class="relative px-3 py-1 text-xs rounded-full transition-colors"
+          :class="hasActiveFilter ? 'bg-neutral-200 text-black' : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'"
+        >
+          筛选
+          <span v-if="hasActiveFilter" class="ml-1 text-[10px]">●</span>
+        </button>
+
+        <button
+          v-if="!selectMode"
+          @click="enterSelectMode"
+          class="px-3 py-1 text-xs rounded-full bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors"
+        >选择</button>
+
+        <span v-if="selectMode" class="text-xs text-neutral-400">
+          已选 {{ selected.size }} 张
+        </span>
+      </div>
+
+      <div v-if="selectMode" class="flex items-center gap-1.5">
+        <button @click="openAlbumPicker" class="px-3 py-1 text-xs rounded-full bg-white text-black font-medium hover:bg-neutral-200 transition-colors">
+          添加到相册
+        </button>
+        <button @click="exitSelectMode" class="px-3 py-1 text-xs rounded-full text-neutral-400 hover:text-white transition-colors">取消</button>
+      </div>
     </div>
 
-    <!-- Grid with sticky date separators -->
+    <!-- Grid with date separators -->
     <div v-for="group in groups" :key="group.label">
-      <div
-        class="sticky z-10 bg-neutral-950/95 backdrop-blur px-2 py-2 text-sm font-semibold tracking-wide border-b border-neutral-800"
-        style="top: 37px"
-      >
+      <div class="sticky z-10 bg-neutral-950/95 backdrop-blur px-2 py-2 text-sm font-semibold tracking-wide border-b border-neutral-800" style="top: 37px">
         <span class="border-l-2 border-neutral-500 pl-2.5 text-neutral-200">{{ group.label }}</span>
       </div>
       <div class="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-1 p-1">
@@ -26,7 +41,8 @@
           v-for="photo in group.photos"
           :key="photo.id"
           class="group cursor-pointer relative rounded-lg overflow-hidden bg-neutral-800"
-          @click="openLightbox(photo)"
+          :class="{ 'ring-2 ring-white': selectMode && selected.has(photo.id) }"
+          @click="onPhotoClick(photo)"
           @contextmenu.prevent="$emit('photoContextmenu', photo, $event)"
         >
           <img
@@ -36,6 +52,26 @@
             :class="['w-full aspect-square object-cover', photo.height > photo.width ? 'rotate-270 scale-150' : '']"
             @error="onImgError(photo)"
           />
+
+          <!-- Selection checkbox -->
+          <div v-if="selectMode" class="absolute top-1.5 left-1.5">
+            <div class="w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors"
+              :class="selected.has(photo.id) ? 'bg-white border-white' : 'border-white/60 bg-black/30'"
+            >
+              <span v-if="selected.has(photo.id)" class="text-black text-xs">✓</span>
+            </div>
+          </div>
+
+          <!-- Album tags -->
+          <div v-if="!selectMode && albumTags(photo).length" class="absolute top-1 left-1 flex flex-wrap gap-0.5 max-w-[90%]">
+            <span
+              v-for="tag in albumTags(photo).slice(0, 2)"
+              :key="tag"
+              class="px-1.5 py-0.5 text-[10px] rounded bg-black/60 text-neutral-300 truncate max-w-[80px]"
+            >{{ tag }}</span>
+            <span v-if="albumTags(photo).length > 2" class="text-[10px] text-neutral-500">+{{ albumTags(photo).length - 2 }}</span>
+          </div>
+
           <div class="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
             <p class="text-xs truncate text-neutral-400">{{ photo.file_name }}</p>
             <p class="text-xs truncate">{{ photo.camera_make }} {{ photo.camera_model }}</p>
@@ -65,35 +101,89 @@
         <slot name="exif-extra" :photo="photo" />
       </template>
     </Lightbox>
+
+    <!-- Filter dialog -->
+    <Teleport to="body">
+      <div v-if="filterOpen" class="fixed inset-0 z-50 flex items-center justify-center">
+        <div class="absolute inset-0 bg-black/60" @click="filterOpen = false" />
+        <div class="relative bg-neutral-800 rounded-xl p-5 w-72 shadow-xl border border-neutral-700">
+          <h2 class="text-sm font-medium text-white mb-4">筛选设置</h2>
+
+          <div class="space-y-4">
+            <div>
+              <label class="text-xs text-neutral-400 block mb-2">日期分组</label>
+              <div class="flex gap-1">
+                <button
+                  v-for="opt in [{k:'day',l:'按日'},{k:'month',l:'按月'}]"
+                  :key="opt.k"
+                  @click="groupBy = opt.k as 'day'|'month'"
+                  :class="groupBy === opt.k ? 'bg-neutral-600 text-white' : 'bg-neutral-700 text-neutral-400 hover:text-white'"
+                  class="flex-1 py-1.5 text-xs rounded-lg transition-colors"
+                >{{ opt.l }}</button>
+              </div>
+            </div>
+
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" v-model="uncategorizedOnly" class="rounded accent-white" />
+              <span class="text-xs text-neutral-300">仅显示未归类照片</span>
+            </label>
+          </div>
+
+          <div class="flex justify-end mt-4">
+            <button @click="filterOpen = false" class="px-4 py-1.5 text-xs rounded-full bg-white text-black font-medium hover:bg-neutral-200">关闭</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Album picker dialog -->
+    <Teleport to="body">
+      <div v-if="albumPickerOpen" class="fixed inset-0 z-50 flex items-center justify-center">
+        <div class="absolute inset-0 bg-black/60" @click="albumPickerOpen = false" />
+        <div class="relative bg-neutral-800 rounded-xl p-5 w-80 shadow-xl border border-neutral-700 max-h-[70vh] flex flex-col">
+          <h2 class="text-sm font-medium text-white mb-3">添加到相册</h2>
+
+          <div class="flex-1 overflow-y-auto space-y-1 mb-3">
+            <button
+              v-for="album in albumList"
+              :key="album.id"
+              @click="doBatchAdd(album.id)"
+              class="w-full text-left px-3 py-2 rounded-lg text-sm text-neutral-300 hover:bg-neutral-700 hover:text-white transition-colors flex justify-between"
+            >
+              <span>{{ album.title }}</span>
+              <span class="text-xs text-neutral-500">{{ album.photo_count }}</span>
+            </button>
+          </div>
+
+          <div v-if="addingResult" class="text-xs text-neutral-400 mb-2">
+            {{ addingResult }}
+          </div>
+
+          <button @click="albumPickerOpen = false" class="text-xs text-neutral-500 hover:text-white self-end">关闭</button>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, reactive } from 'vue'
+import { ref, computed, onMounted, onUnmounted, reactive, watch } from 'vue'
 import type { Photo, PhotoListResponse } from '@/api/photos'
 import { THUMB_BASE } from '@/api/client'
+import { fetchAlbums, batchAddPhotos, type Album } from '@/api/albums'
 import Lightbox from '@/components/Lightbox.vue'
 
 const props = defineProps<{
   fetchFn: (
-    params: { limit: number; cursor?: string },
+    params: { limit: number; cursor?: string; album_id?: string; with_albums?: boolean },
     signal?: AbortSignal
   ) => Promise<PhotoListResponse>
+  albumTitles?: Record<number, string>
 }>()
 
 defineEmits<{
   photoContextmenu: [photo: Photo, event: MouseEvent]
 }>()
-
-function removePhotoById(id: number) {
-  const idx = photos.value.findIndex(p => p.id === id)
-  if (idx !== -1) {
-    photos.value.splice(idx, 1)
-    total.value = Math.max(0, total.value - 1)
-  }
-}
-
-defineExpose({ removePhotoById })
 
 const photos = ref<Photo[]>([])
 const total = ref(0)
@@ -101,18 +191,35 @@ const loading = ref(false)
 const hasMore = ref(true)
 const sentinel = ref<HTMLElement | null>(null)
 const groupBy = ref<'day' | 'month'>('day')
+const uncategorizedOnly = ref(false)
+const filterOpen = ref(false)
 let cursor = ''
 let observer: IntersectionObserver | null = null
 let controller: AbortController | null = null
 let wasInterrupted = false
 
+const hasActiveFilter = computed(() => uncategorizedOnly.value)
+
+// Watch filter change: reload
+watch(uncategorizedOnly, () => { reload() })
+
+function reload() {
+  controller?.abort()
+  photos.value = []
+  total.value = 0
+  hasMore.value = true
+  cursor = ''
+  loadPage()
+}
+
 // ── Date grouping ────────────────────────────────────
+
 interface Group { label: string; photos: Photo[] }
 
 const groups = computed<Group[]>(() => {
   const result: Group[] = []
   for (const p of photos.value) {
-    const label = dateLabel(p.taken_at, groupBy.value)
+    const label = dateLabel(p.taken_at)
     const last = result[result.length - 1]
     if (last && last.label === label) {
       last.photos.push(p)
@@ -123,13 +230,18 @@ const groups = computed<Group[]>(() => {
   return result
 })
 
-function dateLabel(iso: string, mode: 'day' | 'month'): string {
+function dateLabel(iso: string): string {
   if (!iso) return '未标注日期'
   const d = new Date(iso)
   const y = d.getFullYear()
   const m = d.getMonth() + 1
-  if (mode === 'month') return `${y}年${m}月`
+  if (groupBy.value === 'month') return `${y}年${m}月`
   return `${y}年${m}月${d.getDate()}日`
+}
+
+function albumTags(photo: Photo): string[] {
+  if (!photo.album_ids?.length || !props.albumTitles) return []
+  return photo.album_ids.map(id => props.albumTitles![id] || `#${id}`).filter(Boolean)
 }
 
 // ── Lightbox ────────────────────────────────────────
@@ -137,23 +249,18 @@ const lightbox = reactive({ open: false, photo: null as Photo | null })
 let lightboxIdx = 0
 
 function openLightbox(photo: Photo) {
+  if (selectMode.value) return
   lightbox.photo = photo
   lightboxIdx = photos.value.indexOf(photo)
   lightbox.open = true
 }
 
 function lightboxPrev() {
-  if (lightboxIdx > 0) {
-    lightboxIdx--
-    lightbox.photo = photos.value[lightboxIdx]
-  }
+  if (lightboxIdx > 0) { lightboxIdx--; lightbox.photo = photos.value[lightboxIdx] }
 }
 
 function lightboxNext() {
-  if (lightboxIdx < photos.value.length - 1) {
-    lightboxIdx++
-    lightbox.photo = photos.value[lightboxIdx]
-  }
+  if (lightboxIdx < photos.value.length - 1) { lightboxIdx++; lightbox.photo = photos.value[lightboxIdx] }
 }
 
 function onKeyDown(e: KeyboardEvent) {
@@ -162,7 +269,51 @@ function onKeyDown(e: KeyboardEvent) {
   if (e.key === 'ArrowRight') { e.preventDefault(); lightboxNext() }
 }
 
-// ── Dynamic batch size based on viewport ────────────
+// ── Selection mode ──────────────────────────────────
+
+const selectMode = ref(false)
+const selected = ref<Set<number>>(new Set())
+
+function enterSelectMode() { selectMode.value = true; selected.value = new Set() }
+function exitSelectMode() { selectMode.value = false; selected.value = new Set() }
+
+function onPhotoClick(photo: Photo) {
+  if (selectMode.value) {
+    const s = new Set(selected.value)
+    if (s.has(photo.id)) s.delete(photo.id)
+    else s.add(photo.id)
+    selected.value = s
+  } else {
+    openLightbox(photo)
+  }
+}
+
+// ── Batch add ───────────────────────────────────────
+
+const albumPickerOpen = ref(false)
+const albumList = ref<Album[]>([])
+const addingResult = ref('')
+
+async function openAlbumPicker() {
+  if (selected.value.size === 0) return
+  try { albumList.value = (await fetchAlbums()).items }
+  catch { albumList.value = [] }
+  addingResult.value = ''
+  albumPickerOpen.value = true
+}
+
+async function doBatchAdd(albumId: number) {
+  const ids = Array.from(selected.value)
+  try {
+    const r = await batchAddPhotos(albumId, ids)
+    addingResult.value = `已添加 ${r.added} 张` + (r.skipped > 0 ? `，${r.skipped} 张已存在` : '')
+  } catch {
+    addingResult.value = '添加失败'
+  }
+}
+
+// ── Fetch ───────────────────────────────────────────
+
 function calcLimit(): number {
   const w = window.innerWidth
   const cols = w >= 1280 ? 5 : w >= 1024 ? 4 : w >= 768 ? 3 : 2
@@ -171,10 +322,8 @@ function calcLimit(): number {
   return Math.max(30, cols * visibleRows * 3)
 }
 
-// ── Fetch page with abort support ───────────────────
 async function loadPage() {
   if (!hasMore.value) return
-
   if (loading.value) wasInterrupted = true
 
   controller?.abort()
@@ -187,7 +336,12 @@ async function loadPage() {
   loading.value = true
   try {
     const data = await props.fetchFn(
-      { limit, cursor: cursor || undefined },
+      {
+        limit,
+        cursor: cursor || undefined,
+        album_id: uncategorizedOnly.value ? 'none' : undefined,
+        with_albums: !!props.albumTitles,
+      },
       signal
     )
     photos.value.push(...data.items)
@@ -211,9 +365,7 @@ onMounted(() => {
     },
     { rootMargin: `${window.innerHeight * 2}px` }
   )
-  setTimeout(() => {
-    if (sentinel.value) observer?.observe(sentinel.value)
-  }, 1000)
+  setTimeout(() => { if (sentinel.value) observer?.observe(sentinel.value) }, 1000)
 })
 
 function onImgError(photo: Photo) {
@@ -221,6 +373,13 @@ function onImgError(photo: Photo) {
   photo.thumbnail_url = ''
   setTimeout(() => { photo.thumbnail_url = url }, 2000)
 }
+
+function removePhotoById(id: number) {
+  const idx = photos.value.findIndex(p => p.id === id)
+  if (idx !== -1) { photos.value.splice(idx, 1); total.value = Math.max(0, total.value - 1) }
+}
+
+defineExpose({ removePhotoById })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeyDown)
