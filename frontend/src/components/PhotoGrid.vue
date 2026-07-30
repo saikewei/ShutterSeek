@@ -33,7 +33,7 @@
 
     <!-- Grid with date separators -->
     <div v-for="group in groups" :key="group.label">
-      <div class="sticky z-10 bg-neutral-950/95 backdrop-blur px-2 py-2 text-sm font-semibold tracking-wide border-b border-neutral-800" :style="{ top: (stickyOffset || 0) + 33 + 'px' }">
+      <div class="sticky z-10 bg-neutral-950/95 backdrop-blur px-2 py-2 text-sm font-semibold tracking-wide border-b border-neutral-800" :style="{ top: (stickyOffset || 0) + 37 + 'px' }">
         <span class="border-l-2 border-neutral-500 pl-2.5 text-neutral-200">{{ group.label }}</span>
       </div>
       <div class="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-1 p-1">
