@@ -1,9 +1,29 @@
 <template>
   <div>
-    <div class="p-1">
-      <div class="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-1">
+    <!-- Date grouping toggle -->
+    <div class="sticky top-0 z-20 flex items-center gap-1 px-2 py-2 bg-neutral-950/80 backdrop-blur border-b border-neutral-800">
+      <button
+        v-for="opt in [{k:'day',l:'按日'},{k:'month',l:'按月'}]"
+        :key="opt.k"
+        @click="groupBy = opt.k as 'day'|'month'"
+        :class="groupBy === opt.k
+          ? 'bg-neutral-700 text-white'
+          : 'text-neutral-500 hover:text-neutral-300'"
+        class="px-3 py-1 text-xs rounded-full transition-colors"
+      >{{ opt.l }}</button>
+    </div>
+
+    <!-- Grid with sticky date separators -->
+    <div v-for="group in groups" :key="group.label">
+      <div
+        class="sticky z-10 bg-neutral-950/95 backdrop-blur px-2 py-2 text-sm font-semibold tracking-wide border-b border-neutral-800"
+        style="top: 37px"
+      >
+        <span class="border-l-2 border-neutral-500 pl-2.5 text-neutral-200">{{ group.label }}</span>
+      </div>
+      <div class="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-1 p-1">
         <div
-          v-for="photo in photos"
+          v-for="photo in group.photos"
           :key="photo.id"
           class="group cursor-pointer relative rounded-lg overflow-hidden bg-neutral-800"
           @click="openLightbox(photo)"
@@ -43,7 +63,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, reactive } from 'vue'
+import { ref, computed, onMounted, onUnmounted, reactive } from 'vue'
 import type { Photo, PhotoListResponse } from '@/api/photos'
 import { THUMB_BASE } from '@/api/client'
 import Lightbox from '@/components/Lightbox.vue'
@@ -60,10 +80,37 @@ const total = ref(0)
 const loading = ref(false)
 const hasMore = ref(true)
 const sentinel = ref<HTMLElement | null>(null)
+const groupBy = ref<'day' | 'month'>('day')
 let cursor = ''
 let observer: IntersectionObserver | null = null
 let controller: AbortController | null = null
 let wasInterrupted = false
+
+// ── Date grouping ────────────────────────────────────
+interface Group { label: string; photos: Photo[] }
+
+const groups = computed<Group[]>(() => {
+  const result: Group[] = []
+  for (const p of photos.value) {
+    const label = dateLabel(p.taken_at, groupBy.value)
+    const last = result[result.length - 1]
+    if (last && last.label === label) {
+      last.photos.push(p)
+    } else {
+      result.push({ label, photos: [p] })
+    }
+  }
+  return result
+})
+
+function dateLabel(iso: string, mode: 'day' | 'month'): string {
+  if (!iso) return '未标注日期'
+  const d = new Date(iso)
+  const y = d.getFullYear()
+  const m = d.getMonth() + 1
+  if (mode === 'month') return `${y}年${m}月`
+  return `${y}年${m}月${d.getDate()}日`
+}
 
 // ── Lightbox ────────────────────────────────────────
 const lightbox = reactive({ open: false, photo: null as Photo | null })
