@@ -427,13 +427,21 @@ onMounted(() => {
   )
   setTimeout(() => { if (sentinel.value) observer?.observe(sentinel.value) }, 1000)
 
-  observerTop = new IntersectionObserver(
-    (entries) => {
-      if (entries[0].isIntersecting && hasNewer.value && !loadingNewer.value) loadNewer()
-    },
-    { rootMargin: `${window.innerHeight}px` }
-  )
-  setTimeout(() => { if (sentinelTop.value) observerTop?.observe(sentinelTop.value) }, 1000)
+  // Scroll-up detection for loading newer photos
+  const scrollParent = document.querySelector('.overflow-auto') as HTMLElement
+  if (scrollParent) {
+    let ticking = false
+    scrollParent.addEventListener('scroll', () => {
+      if (ticking) return
+      ticking = true
+      requestAnimationFrame(() => {
+        if (scrollParent.scrollTop < 200 && hasNewer.value && !loadingNewer.value) {
+          loadNewer()
+        }
+        ticking = false
+      })
+    }, { passive: true })
+  }
 })
 
 async function loadNewer() {
