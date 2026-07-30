@@ -139,7 +139,7 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 	if albumIDCache == "none" {
 		albumIDCache = ""
 	}
-	if !hasCursor && !uncategorized && month == "" {
+	if !hasCursor && !uncategorized && month == "" && c.Query("newer_t") == "" {
 		if albumIDCache != "" {
 			cacheKey = keyFirstPage + "album:" + albumIDCache + ":" + strconv.Itoa(limit)
 		} else {
