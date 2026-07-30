@@ -9,7 +9,6 @@ export const THUMB_BASE = import.meta.env.DEV
   : '/api/thumbnails'
 
 export const api = axios.create({
-  // In dev, bypass Vite proxy for large API responses
-  baseURL: import.meta.env.DEV ? 'http://localhost:8080/api/v1' : API_BASE,
+  baseURL: API_BASE,
   timeout: 60000,
 })
