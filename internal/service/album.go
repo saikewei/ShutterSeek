@@ -244,6 +244,70 @@ func (s *AlbumService) RemoveAlbumPhoto(albumID, photoID int64) error {
 	return tx.Commit().Error
 }
 
+// BatchAddResult reports how many photos were added vs skipped.
+type BatchAddResult struct {
+	Added   int64
+	Skipped int64
+}
+
+// BatchAddPhotos adds photos to an album, skipping those that already exist.
+func (s *AlbumService) BatchAddPhotos(albumID int64, photoIDs []int64) (*BatchAddResult, error) {
+	tx := s.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	// Verify album exists
+	var a model.Album
+	if err := tx.First(&a, albumID).Error; err != nil {
+		tx.Rollback()
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrAlbumNotFound
+		}
+		return nil, err
+	}
+
+	var added, skipped int64
+	for _, pid := range photoIDs {
+		ap := model.AlbumPhoto{AlbumID: albumID, PhotoID: pid, AddedAt: time.Now()}
+		res := tx.Where("album_id = ? AND photo_id = ?", albumID, pid).FirstOrCreate(&ap)
+		if res.Error != nil {
+			tx.Rollback()
+			return nil, res.Error
+		}
+		if res.RowsAffected > 0 {
+			added++
+		} else {
+			skipped++
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		return nil, err
+	}
+	return &BatchAddResult{Added: added, Skipped: skipped}, nil
+}
+
+// GetPhotoAlbumIDs returns the album IDs each photo belongs to.
+func (s *AlbumService) GetPhotoAlbumIDs(photoIDs []int64) (map[int64][]int64, error) {
+	if len(photoIDs) == 0 {
+		return nil, nil
+	}
+
+	var rows []model.AlbumPhoto
+	if err := s.DB.Where("photo_id IN ?", photoIDs).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	result := make(map[int64][]int64)
+	for _, r := range rows {
+		result[r.PhotoID] = append(result[r.PhotoID], r.AlbumID)
+	}
+	return result, nil
+}
+
 // coverURL returns the thumbnail URL for the cover photo.
 // If coverID is nil, picks the first photo in the album by sort_order.
 func (s *AlbumService) coverURL(albumID int64, coverID *int64) string {

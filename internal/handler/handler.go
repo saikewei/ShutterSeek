@@ -43,19 +43,20 @@ func (h *Handler) Health(c *gin.Context) {
 // ── Photo List ──────────────────────────────────────────
 
 type PhotoItem struct {
-	ID           int64  `json:"id"`
-	ThumbnailURL string `json:"thumbnail_url"`
-	FileName     string `json:"file_name,omitempty"`
-	CameraMake   string `json:"camera_make,omitempty"`
-	CameraModel  string `json:"camera_model,omitempty"`
-	LensModel    string `json:"lens_model,omitempty"`
-	FocalLength  string `json:"focal_length,omitempty"`
-	Aperture     string `json:"aperture,omitempty"`
-	ISO          int32  `json:"iso,omitempty"`
-	TakenAt      string `json:"taken_at,omitempty"`
-	Width        int32  `json:"width"`
-	Height       int32  `json:"height"`
-	FilePath     string `json:"file_path,omitempty"`
+	ID           int64   `json:"id"`
+	ThumbnailURL string  `json:"thumbnail_url"`
+	FileName     string  `json:"file_name,omitempty"`
+	CameraMake   string  `json:"camera_make,omitempty"`
+	CameraModel  string  `json:"camera_model,omitempty"`
+	LensModel    string  `json:"lens_model,omitempty"`
+	FocalLength  string  `json:"focal_length,omitempty"`
+	Aperture     string  `json:"aperture,omitempty"`
+	ISO          int32   `json:"iso,omitempty"`
+	TakenAt      string  `json:"taken_at,omitempty"`
+	Width        int32   `json:"width"`
+	Height       int32   `json:"height"`
+	FilePath     string  `json:"file_path,omitempty"`
+	AlbumIDs     []int64 `json:"album_ids,omitempty"`
 }
 
 type PhotoListResponse struct {
@@ -106,6 +107,12 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 	var photos []model.Photo
 	q := h.DB.Where("taken_at IS NOT NULL").Order("taken_at DESC, id DESC").Limit(limit + 1)
 
+	// Filter: uncategorized only
+	uncategorized := c.Query("album_id") == "none"
+	if uncategorized {
+		q = q.Where("id NOT IN (SELECT DISTINCT photo_id FROM album_photos)")
+	}
+
 	if !afterTime.IsZero() {
 		q = q.Where("(taken_at, id) < (?, ?)", afterTime, afterID)
 	} else if afterID > 0 {
@@ -122,14 +129,35 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 		photos = photos[:limit]
 	}
 
+	// Load album IDs if requested
+	withAlbums := c.Query("with_albums") == "true"
+	var albumMap map[int64][]int64
+	if withAlbums && len(photos) > 0 {
+		ids := make([]int64, len(photos))
+		for i, p := range photos {
+			ids[i] = p.ID
+		}
+		albumMap, _ = h.AlbumSvc.GetPhotoAlbumIDs(ids)
+	}
+
 	items := make([]PhotoItem, len(photos))
 	for i, p := range photos {
 		items[i] = toPhotoItem(&p)
+		if albumMap != nil {
+			items[i].AlbumIDs = albumMap[p.ID]
+		}
+	}
+
+	var total int64
+	if uncategorized {
+		h.DB.Model(&model.Photo{}).Where("taken_at IS NOT NULL AND id NOT IN (SELECT DISTINCT photo_id FROM album_photos)").Count(&total)
+	} else {
+		total = h.totalPhotoCountCached()
 	}
 
 	resp := PhotoListResponse{
 		Items:      items,
-		Total:      h.totalPhotoCountCached(),
+		Total:      total,
 		NextCursor: "",
 	}
 
