@@ -14,6 +14,7 @@ export interface Photo {
   taken_at: string
   width: number
   height: number
+  album_ids?: number[]
 }
 
 export interface PhotoListResponse {
