@@ -89,6 +89,10 @@
       </div>
     </div>
 
+    <div ref="sentinelTop" class="py-6 text-center text-neutral-500 text-sm">
+      <span v-if="loadingNewer" class="text-xs">加载中...</span>
+    </div>
+
     <div ref="sentinel" class="py-12 text-center text-neutral-500 text-sm">
       <span v-if="loading && photos.length === 0">Loading...</span>
       <span v-else-if="!hasMore">— End of {{ total.toLocaleString() }} photos —</span>
@@ -205,12 +209,16 @@ const photos = ref<Photo[]>([])
 const total = ref(0)
 const loading = ref(false)
 const hasMore = ref(true)
+const sentinelTop = ref<HTMLElement | null>(null)
 const sentinel = ref<HTMLElement | null>(null)
 const groupBy = ref<'day' | 'month'>('day')
 const uncategorizedOnly = ref(false)
 const filterOpen = ref(false)
+const loadingNewer = ref(false)
+const hasNewer = ref(false)
 let cursor = ''
 let observer: IntersectionObserver | null = null
+let observerTop: IntersectionObserver | null = null
 let controller: AbortController | null = null
 let wasInterrupted = false
 
@@ -283,6 +291,7 @@ const activeMonth = computed(() => {
 function jumpToDate(monthKey: string) {
   jumpMonth.value = monthKey
   hasJumped.value = monthKey !== ''
+  hasNewer.value = monthKey !== ''
   reload()
 }
 
@@ -417,7 +426,42 @@ onMounted(() => {
     { rootMargin: `${window.innerHeight * 2}px` }
   )
   setTimeout(() => { if (sentinel.value) observer?.observe(sentinel.value) }, 1000)
+
+  observerTop = new IntersectionObserver(
+    (entries) => {
+      if (entries[0].isIntersecting && hasNewer.value && !loadingNewer.value) loadNewer()
+    },
+    { rootMargin: `${window.innerHeight}px` }
+  )
+  setTimeout(() => { if (sentinelTop.value) observerTop?.observe(sentinelTop.value) }, 1000)
 })
+
+async function loadNewer() {
+  if (photos.value.length === 0) return
+  const first = photos.value[0]
+  if (!first.taken_at) return
+  const newerThan = first.taken_at + ',' + first.id
+
+  loadingNewer.value = true
+  try {
+    const data = await props.fetchFn(
+      { limit: 50, newer_than: newerThan, with_albums: !!props.albumTitles },
+      undefined
+    )
+    if (data.items.length === 0) {
+      hasNewer.value = false
+      return
+    }
+    // Results come in ASC order, reverse to DESC and prepend
+    photos.value.unshift(...data.items.reverse())
+    total.value = data.total
+  } catch (e: any) {
+    if (e?.name === 'CanceledError') return
+    console.error('load newer failed', e)
+  } finally {
+    loadingNewer.value = false
+  }
+}
 
 function onImgError(photo: Photo) {
   const url = photo.thumbnail_url
@@ -435,6 +479,7 @@ defineExpose({ removePhotoById })
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeyDown)
   observer?.disconnect()
+  observerTop?.disconnect()
   controller?.abort()
 })
 </script>

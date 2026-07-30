@@ -130,7 +130,23 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 	}
 
 	var photos []model.Photo
-	q := h.DB.Where("taken_at IS NOT NULL").Order("taken_at DESC, id DESC").Limit(limit + 1)
+	q := h.DB.Where("taken_at IS NOT NULL")
+
+	// Reverse pagination: load newer photos
+	newerThan := c.Query("newer_than")
+	if newerThan != "" {
+		parts := strings.SplitN(newerThan, ",", 2)
+		if len(parts) == 2 {
+			if t, err := time.Parse("2006-01-02T15:04:05", parts[0]); err == nil && !t.IsZero() {
+				if id, err2 := strconv.ParseInt(parts[1], 10, 64); err2 == nil {
+					q = q.Where("(taken_at, id) > (?, ?)", t, id)
+				}
+			}
+		}
+		q = q.Order("taken_at ASC, id ASC").Limit(limit + 1)
+	} else {
+		q = q.Order("taken_at DESC, id DESC").Limit(limit + 1)
+	}
 
 	// Filter: jump to month
 	if month != "" {
