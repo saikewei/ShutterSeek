@@ -21,6 +21,7 @@ export interface PhotoListResponse {
   items: Photo[]
   next_cursor: string
   total: number
+  head_count?: number
 }
 
 export interface PhotoListParams {
