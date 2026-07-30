@@ -36,3 +36,13 @@ export async function fetchPhotos(params?: PhotoListParams, signal?: AbortSignal
   })
   return data
 }
+
+export interface DateCount {
+  date: string
+  count: number
+}
+
+export async function fetchPhotoDates(signal?: AbortSignal): Promise<DateCount[]> {
+  const { data } = await api.get<DateCount[]>('/photos/dates', { signal })
+  return data
+}
