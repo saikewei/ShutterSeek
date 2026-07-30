@@ -28,11 +28,18 @@ export interface PhotoListParams {
   cursor?: string
   album_id?: string
   with_albums?: boolean
+  month?: string
 }
 
 export async function fetchPhotos(params?: PhotoListParams, signal?: AbortSignal): Promise<PhotoListResponse> {
   const { data } = await api.get<PhotoListResponse>('/photos', {
-    params: params ? { ...params, with_albums: params.with_albums ? 'true' : undefined, album_id: params.album_id || undefined } : undefined,
+    params: params ? {
+      limit: params.limit,
+      cursor: params.cursor || undefined,
+      album_id: params.album_id || undefined,
+      with_albums: params.with_albums ? 'true' : undefined,
+      month: params.month || undefined,
+    } : undefined,
     signal
   })
   return data

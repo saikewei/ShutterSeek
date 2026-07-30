@@ -22,7 +22,7 @@ onMounted(async () => {
 })
 
 function wrapFetch(
-  params: { limit: number; cursor?: string; album_id?: string; with_albums?: boolean },
+  params: { limit: number; cursor?: string; album_id?: string; with_albums?: boolean; month?: string },
   signal?: AbortSignal
 ) {
   return fetchPhotos(params, signal)

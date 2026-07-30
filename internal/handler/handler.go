@@ -120,7 +120,8 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 	// Redis cache for first page only (skip when filtering)
 	cacheKey := ""
 	uncategorized := c.Query("album_id") == "none"
-	if !hasCursor && !uncategorized {
+	month := c.Query("month")
+	if !hasCursor && !uncategorized && month == "" {
 		cacheKey = keyFirstPage + strconv.Itoa(limit)
 		if cached, ok := h.redisGet(cacheKey); ok {
 			c.JSON(http.StatusOK, cached)
@@ -130,6 +131,14 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 
 	var photos []model.Photo
 	q := h.DB.Where("taken_at IS NOT NULL").Order("taken_at DESC, id DESC").Limit(limit + 1)
+
+	// Filter: jump to month
+	if month != "" {
+		if t, err := time.Parse("2006-01", month); err == nil {
+			endOfMonth := t.AddDate(0, 1, 0)
+			q = q.Where("taken_at < ?", endOfMonth)
+		}
+	}
 
 	// Filter: uncategorized only
 	if uncategorized {

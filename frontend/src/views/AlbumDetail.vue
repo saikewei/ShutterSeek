@@ -58,7 +58,7 @@ loadAlbum()
 watch(() => route.params.id, () => { loadAlbum() })
 
 function wrapFetch(
-  params: { limit: number; cursor?: string; album_id?: string; with_albums?: boolean },
+  params: { limit: number; cursor?: string; album_id?: string; with_albums?: boolean; month?: string },
   signal?: AbortSignal
 ) {
   return fetchAlbumPhotos(albumId, params, signal)

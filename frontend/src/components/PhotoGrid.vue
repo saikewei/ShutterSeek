@@ -137,7 +137,7 @@
     </Teleport>
 
     <!-- Date scrubber -->
-    <DateScrubber :dates="datePoints" @jump="jumpToDate" />
+    <DateScrubber :dates="datePoints" :active-month="activeMonth" @jump="jumpToDate" />
 
     <!-- Album picker dialog -->
     <Teleport to="body">
@@ -181,17 +181,18 @@ import type { DatePoint } from '@/components/DateScrubber.vue'
 
 const props = defineProps<{
   fetchFn: (
-    params: { limit: number; cursor?: string; album_id?: string; with_albums?: boolean },
+    params: { limit: number; cursor?: string; album_id?: string; with_albums?: boolean; month?: string },
     signal?: AbortSignal
   ) => Promise<PhotoListResponse>
   albumTitles?: Record<number, string>
-  /** Extra top offset for sticky date headers (page-level headers above) */
   stickyOffset?: number
 }>()
 
 defineEmits<{
   photoContextmenu: [photo: Photo, event: MouseEvent]
 }>()
+
+const jumpMonth = ref('')
 
 const photos = ref<Photo[]>([])
 const total = ref(0)
@@ -264,22 +265,17 @@ const datePoints = computed<DatePoint[]>(() => {
   }))
 })
 
-function jumpToDate(label: string) {
-  const all = document.querySelectorAll('[data-date]')
-  let el: HTMLElement | null = null
-  for (const e of all) {
-    if ((e as HTMLElement).dataset.date?.includes(label)) {
-      el = e as HTMLElement; break
-    }
-  }
-  if (!el) return
+const activeMonth = computed(() => {
+  const first = groups.value[0]
+  if (!first?.photos.length) return ''
+  const t = first.photos[0].taken_at
+  if (!t) return ''
+  return t.slice(0, 7) // YYYY-MM
+})
 
-  const scrollParent = el.closest('.overflow-auto') as HTMLElement
-  if (!scrollParent) return
-
-  const offset = (props.stickyOffset || 0) + 37 + 40
-  const elTop = el.getBoundingClientRect().top - scrollParent.getBoundingClientRect().top + scrollParent.scrollTop
-  scrollParent.scrollTo({ top: Math.max(0, elTop - offset), behavior: 'smooth' })
+function jumpToDate(monthKey: string) {
+  jumpMonth.value = monthKey
+  reload()
 }
 
 onMounted(async () => {
@@ -383,6 +379,7 @@ async function loadPage() {
         cursor: cursor || undefined,
         album_id: uncategorizedOnly.value ? 'none' : undefined,
         with_albums: !!props.albumTitles,
+        month: jumpMonth.value || undefined,
       },
       signal
     )
