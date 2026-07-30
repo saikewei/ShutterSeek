@@ -11,6 +11,27 @@ input, textarea, [contenteditable] {
   -webkit-user-select: text;
 }
 
+/* Dark scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #525252;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #737373;
+}
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #525252 transparent;
+}
+
 /* Remove focus outline (blinking cursor ring) on all elements */
 *:focus {
   outline: none !important;
