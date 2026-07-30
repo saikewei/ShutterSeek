@@ -401,15 +401,20 @@ function calcLimit(): number {
   return Math.max(30, cols * visibleRows * 3)
 }
 
+let loadId = 0
+
 async function loadPage() {
   if (!hasMore.value) return
-  if (loading.value) wasInterrupted = true
+  if (loading.value) { wasInterrupted = true; return }
+
+  const myLoadId = ++loadId
+  const monthParam = jumpMonth.value || undefined
 
   controller?.abort()
   controller = new AbortController()
   const { signal } = controller
 
-  const limit = wasInterrupted ? 200 : jumpMonth.value ? 80 : calcLimit()
+  const limit = wasInterrupted ? 200 : monthParam ? 80 : calcLimit()
   wasInterrupted = false
 
   loading.value = true
@@ -420,20 +425,21 @@ async function loadPage() {
         cursor: cursor || undefined,
         album_id: uncategorizedOnly.value ? 'none' : undefined,
         with_albums: !!props.albumTitles,
-        month: jumpMonth.value || undefined,
+        month: monthParam,
       },
       signal
     )
+
+    // Discard if a newer load has started
+    if (myLoadId !== loadId) return
 
     photos.value.push(...data.items)
     total.value = data.total
     cursor = data.next_cursor
     hasMore.value = data.next_cursor !== ''
 
-    // If head photos were preloaded, scroll past them before first paint
     headCount.value = (data as any).head_count || 0
-    if (jumpMonth.value) {
-      const wasJump = jumpMonth.value
+    if (monthParam) {
       jumpMonth.value = ''
       if (headCount.value > 0) {
         const headerOffset = (props.stickyOffset || 0) + 37 + 38
