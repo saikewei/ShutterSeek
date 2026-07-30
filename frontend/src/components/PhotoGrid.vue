@@ -234,7 +234,6 @@ function reload() {
   photos.value = []
   total.value = 0
   hasMore.value = true
-  hasNewer.value = false
   headCount.value = 0
   cursor = ''
   wasInterrupted = false
@@ -433,30 +432,31 @@ async function loadPage() {
 
     // If head photos were preloaded, scroll past them before first paint
     headCount.value = (data as any).head_count || 0
-    if (jumpMonth.value && headCount.value > 0) {
+    if (jumpMonth.value) {
+      const wasJump = jumpMonth.value
       jumpMonth.value = ''
-      const headerOffset = (props.stickyOffset || 0) + 37 + 38
-      const hc = headCount.value
+      if (headCount.value > 0) {
+        const headerOffset = (props.stickyOffset || 0) + 37 + 38
+        const hc = headCount.value
 
-      const scrollParent = document.querySelector('.overflow-auto') as HTMLElement
-      if (scrollParent) scrollParent.style.visibility = 'hidden'
+        const scrollParent = document.querySelector('.overflow-auto') as HTMLElement
+        if (scrollParent) scrollParent.style.visibility = 'hidden'
 
-      const doScroll = () => {
-        if (!scrollParent) return
-        const imgs = scrollParent.querySelectorAll('img[src*="thumbnails"]')
-        if (imgs.length > hc) {
-          const target = imgs[hc] as HTMLElement
-          const rect = target.getBoundingClientRect()
-          const containerRect = scrollParent.getBoundingClientRect()
-          scrollParent.scrollTop = Math.max(0, rect.top - containerRect.top + scrollParent.scrollTop - headerOffset)
+        const doScroll = () => {
+          if (!scrollParent) return
+          const imgs = scrollParent.querySelectorAll('img[src*="thumbnails"]')
+          if (imgs.length > hc) {
+            const target = imgs[hc] as HTMLElement
+            const rect = target.getBoundingClientRect()
+            const containerRect = scrollParent.getBoundingClientRect()
+            scrollParent.scrollTop = Math.max(0, rect.top - containerRect.top + scrollParent.scrollTop - headerOffset)
+          }
+          scrollParent.style.visibility = ''
         }
-        scrollParent.style.visibility = ''
-      }
 
-      // Position after DOM renders, before browser paints
-      requestAnimationFrame(() => { doScroll() })
-      // Safety: show content after 2s even if scroll fails
-      setTimeout(() => { if (scrollParent) scrollParent.style.visibility = '' }, 2000)
+        requestAnimationFrame(() => { doScroll() })
+        setTimeout(() => { if (scrollParent) scrollParent.style.visibility = '' }, 2000)
+      }
     }
   } catch (e: any) {
     if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return
