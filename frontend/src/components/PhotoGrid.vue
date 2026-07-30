@@ -33,7 +33,7 @@
 
     <!-- Grid with date separators -->
     <div v-for="group in groups" :key="group.label">
-      <div class="sticky z-10 bg-neutral-950/95 backdrop-blur px-2 py-2 text-sm font-semibold tracking-wide border-b border-neutral-800" :style="{ top: (stickyOffset || 0) + 37 + 'px' }">
+      <div class="sticky z-10 bg-neutral-950/95 backdrop-blur px-2 py-2 text-sm font-semibold tracking-wide border-b border-neutral-800" :style="{ top: (stickyOffset || 0) + 37 + 'px' }" :data-date="group.label">
         <span class="border-l-2 border-neutral-500 pl-2.5 text-neutral-200">{{ group.label }}</span>
       </div>
       <div class="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-1 p-1">
@@ -136,6 +136,9 @@
       </div>
     </Teleport>
 
+    <!-- Date scrubber -->
+    <DateScrubber :dates="datePoints" @jump="jumpToDate" />
+
     <!-- Album picker dialog -->
     <Teleport to="body">
       <div v-if="albumPickerOpen" class="fixed inset-0 z-50 flex items-center justify-center">
@@ -169,9 +172,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, reactive, watch } from 'vue'
 import type { Photo, PhotoListResponse } from '@/api/photos'
+import { fetchPhotoDates } from '@/api/photos'
 import { THUMB_BASE } from '@/api/client'
 import { fetchAlbums, batchAddPhotos, type Album } from '@/api/albums'
 import Lightbox from '@/components/Lightbox.vue'
+import DateScrubber from '@/components/DateScrubber.vue'
+import type { DatePoint } from '@/components/DateScrubber.vue'
 
 const props = defineProps<{
   fetchFn: (
@@ -245,6 +251,30 @@ function albumTags(photo: Photo): string[] {
   if (!photo.album_ids?.length || !props.albumTitles) return []
   return photo.album_ids.map(id => props.albumTitles![id] || `#${id}`).filter(Boolean)
 }
+
+// ── Date scrubber ────────────────────────────────────
+
+const allDates = ref<Array<{ date: string; count: number }>>([])
+
+const datePoints = computed<DatePoint[]>(() => {
+  const loadedSet = new Set(groups.value.map(g => g.label))
+  return allDates.value.map(d => ({
+    ...d,
+    loaded: loadedSet.has(dateLabel(d.date)),
+  }))
+})
+
+function jumpToDate(label: string) {
+  const el = document.querySelector(`[data-date="${CSS.escape(label)}"]`)
+  if (el) {
+    const top = (props.stickyOffset || 0) + 37 + 40
+    window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - top, behavior: 'smooth' })
+  }
+}
+
+onMounted(async () => {
+  try { allDates.value = await fetchPhotoDates() } catch { /* no scrubber without dates */ }
+})
 
 // ── Lightbox ────────────────────────────────────────
 const lightbox = reactive({ open: false, photo: null as Photo | null })
