@@ -385,7 +385,7 @@ async function loadPage() {
   controller = new AbortController()
   const { signal } = controller
 
-  const limit = wasInterrupted ? 200 : calcLimit()
+  const limit = wasInterrupted ? 200 : jumpMonth.value ? 200 : calcLimit()
   wasInterrupted = false
 
   loading.value = true
@@ -435,7 +435,7 @@ onMounted(() => {
       if (ticking) return
       ticking = true
       requestAnimationFrame(() => {
-        if (scrollParent.scrollTop < 200 && hasNewer.value && !loadingNewer.value) {
+        if (scrollParent.scrollTop < 100 && hasNewer.value && !loadingNewer.value) {
           loadNewer()
         }
         ticking = false
@@ -450,6 +450,10 @@ async function loadNewer() {
   if (!first.taken_at) return
   const newerThan = first.taken_at + ',' + first.id
 
+  // Save scroll position before prepending
+  const scrollParent = document.querySelector('.overflow-auto') as HTMLElement
+  const oldHeight = scrollParent?.scrollHeight || 0
+
   loadingNewer.value = true
   try {
     const data = await props.fetchFn(
@@ -460,9 +464,17 @@ async function loadNewer() {
       hasNewer.value = false
       return
     }
-    // Results come in ASC order, reverse to DESC and prepend
+    // Reverse ASC results and prepend
     photos.value.unshift(...data.items.reverse())
     total.value = data.total
+
+    // Restore scroll position so content doesn't jump
+    if (scrollParent) {
+      requestAnimationFrame(() => {
+        const newHeight = scrollParent.scrollHeight
+        scrollParent.scrollTop += newHeight - oldHeight
+      })
+    }
   } catch (e: any) {
     if (e?.name === 'CanceledError') return
     console.error('load newer failed', e)
