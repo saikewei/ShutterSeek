@@ -419,15 +419,15 @@ async function loadPage() {
     // If head photos were preloaded, scroll past them to show the target month
     if (jumpMonth.value && (data as any).head_count > 0) {
       jumpMonth.value = ''
-      // Estimate head photo height and scroll
       const headCount = (data as any).head_count as number
       const scrollParent = document.querySelector('.overflow-auto') as HTMLElement
       if (scrollParent) {
-        // Each photo row ~ cell width, 5 cols = ~20% of container width
         const approxRowH = scrollParent.clientWidth / 5
         const headHeight = Math.ceil(headCount / 5) * approxRowH
+        // Account for sticky headers: filter bar (37px) + page header (stickyOffset) + date header (~38px)
+        const headerOffset = (props.stickyOffset || 0) + 37 + 38
         requestAnimationFrame(() => {
-          scrollParent.scrollTop = headHeight
+          scrollParent.scrollTop = headHeight - headerOffset
         })
       }
     }
