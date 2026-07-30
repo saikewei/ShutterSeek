@@ -51,9 +51,22 @@ type DateCount struct {
 // GET /api/v1/photos/dates
 func (h *Handler) PhotoDates(c *gin.Context) {
 	var rows []DateCount
-	if err := h.DB.Raw(
-		"SELECT to_char(taken_at, 'YYYY-MM-DD') AS date, COUNT(*) AS count FROM photos WHERE taken_at IS NOT NULL GROUP BY date ORDER BY date DESC",
-	).Scan(&rows).Error; err != nil {
+	query := "SELECT to_char(p.taken_at, 'YYYY-MM-DD') AS date, COUNT(*) AS count FROM photos p"
+	args := []interface{}{}
+
+	if albumIDStr := c.Query("album_id"); albumIDStr != "" {
+		if albumID, err := strconv.ParseInt(albumIDStr, 10, 64); err == nil && albumID > 0 {
+			query += " JOIN album_photos ap ON ap.photo_id = p.id WHERE ap.album_id = ? AND p.taken_at IS NOT NULL"
+			args = append(args, albumID)
+		} else {
+			query += " WHERE p.taken_at IS NOT NULL"
+		}
+	} else {
+		query += " WHERE p.taken_at IS NOT NULL"
+	}
+	query += " GROUP BY date ORDER BY date DESC"
+
+	if err := h.DB.Raw(query, args...).Scan(&rows).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
 		return
 	}
@@ -132,6 +145,14 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 
 	var photos []model.Photo
 	q := h.DB.Where("taken_at IS NOT NULL")
+
+	// Filter: specific album
+	albumIDStr := c.Query("album_id")
+	if albumIDStr != "" {
+		if albumID, err := strconv.ParseInt(albumIDStr, 10, 64); err == nil && albumID > 0 {
+			q = q.Where("id IN (SELECT photo_id FROM album_photos WHERE album_id = ?)", albumID)
+		}
+	}
 
 	// Reverse pagination: load newer photos
 	newerThan := c.Query("newer_than")
@@ -213,6 +234,12 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 	var total int64
 	if uncategorized {
 		h.DB.Model(&model.Photo{}).Where("taken_at IS NOT NULL AND id NOT IN (SELECT DISTINCT photo_id FROM album_photos)").Count(&total)
+	} else if albumIDStr != "" {
+		if albumID, err := strconv.ParseInt(albumIDStr, 10, 64); err == nil && albumID > 0 {
+			h.DB.Model(&model.Photo{}).
+				Where("taken_at IS NOT NULL AND id IN (SELECT photo_id FROM album_photos WHERE album_id = ?)", albumID).
+				Count(&total)
+		}
 	} else {
 		total = h.totalPhotoCountCached()
 	}
