@@ -9,7 +9,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
+	"sync"
 
 	_ "golang.org/x/image/tiff"
 )
@@ -18,11 +20,65 @@ import (
 type OriginalService struct {
 	PhotosDir   string
 	PreviewDir  string // cached extracted previews
+	mu          sync.Mutex
+	pruneCount  int // track writes between prunes
 }
+
+const maxCacheFiles = 2000
 
 func NewOriginalService(photosDir, previewDir string) *OriginalService {
 	os.MkdirAll(previewDir, 0755)
 	return &OriginalService{PhotosDir: photosDir, PreviewDir: previewDir}
+}
+
+// cacheWrite writes data to the cache and periodically prunes old files.
+func (s *OriginalService) cacheWrite(name string, data []byte) {
+	path := filepath.Join(s.PreviewDir, name)
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return
+	}
+	s.mu.Lock()
+	s.pruneCount++
+	n := s.pruneCount
+	s.mu.Unlock()
+	if n%100 == 0 {
+		go s.pruneCache()
+	}
+}
+
+func (s *OriginalService) pruneCache() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	entries, err := os.ReadDir(s.PreviewDir)
+	if err != nil || len(entries) <= maxCacheFiles {
+		return
+	}
+
+	type fi struct {
+		name    string
+		modTime int64
+	}
+	var files []fi
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jpg") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		files = append(files, fi{e.Name(), info.ModTime().Unix()})
+	}
+
+	// Keep the newest maxCacheFiles, delete the rest
+	if len(files) <= maxCacheFiles {
+		return
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].modTime > files[j].modTime })
+	for _, f := range files[maxCacheFiles:] {
+		os.Remove(filepath.Join(s.PreviewDir, f.name))
+	}
 }
 
 // ServeOriginal writes the original photo as JPEG to w.
@@ -99,7 +155,7 @@ func (s *OriginalService) serveRAW(w io.Writer, path string) error {
 		// Cache and serve
 		var buf bytes.Buffer
 		if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 92}); err == nil {
-			os.WriteFile(cacheKey, buf.Bytes(), 0644)
+			s.cacheWrite(filepath.Base(path)+".jpg", buf.Bytes())
 			_, _ = w.Write(buf.Bytes())
 			return nil
 		}
@@ -116,7 +172,7 @@ func (s *OriginalService) serveRAW(w io.Writer, path string) error {
 
 	jpegData := extractJPEG(rawData)
 	if jpegData != nil && len(jpegData) > 20000 { // >20KB: likely a real preview
-		os.WriteFile(cacheKey, jpegData, 0644)
+		s.cacheWrite(filepath.Base(path)+".jpg", jpegData)
 		_, err = w.Write(jpegData)
 		return err
 	}
@@ -124,14 +180,14 @@ func (s *OriginalService) serveRAW(w io.Writer, path string) error {
 	// Fallback: use exiftool for older cameras (e.g. Sony a6000)
 	// that don't embed a full-size JPEG preview in the RAW container.
 	if data, err := extractWithExiftool(path); err == nil {
-		os.WriteFile(cacheKey, data, 0644)
+		s.cacheWrite(filepath.Base(path)+".jpg", data)
 		_, err = w.Write(data)
 		return err
 	}
 
 	if jpegData != nil {
 		// Return the small thumbnail as last resort
-		os.WriteFile(cacheKey, jpegData, 0644)
+		s.cacheWrite(filepath.Base(path)+".jpg", jpegData)
 		_, err = w.Write(jpegData)
 		return err
 	}
