@@ -19,10 +19,10 @@
         >选择</button>
 
         <button
-          v-if="hasJumped && !selectMode"
-          @click="jumpToDate('')"
+          v-if="!selectMode && !atTop"
+          @click="scrollToTop"
           class="px-3 py-1 text-xs rounded-full bg-neutral-700 text-neutral-300 hover:bg-neutral-600 hover:text-white transition-colors"
-        >返回最新</button>
+        >↑ 顶部</button>
 
         <span v-if="selectMode" class="text-xs text-neutral-400">
           已选 {{ selected.size }} 张
@@ -203,7 +203,7 @@ defineEmits<{
 }>()
 
 const jumpMonth = ref('')
-const hasJumped = ref(false)
+const atTop = ref(true)
 
 const photos = ref<Photo[]>([])
 const total = ref(0)
@@ -290,9 +290,19 @@ const activeMonth = computed(() => {
 
 function jumpToDate(monthKey: string) {
   jumpMonth.value = monthKey
-  hasJumped.value = monthKey !== ''
   hasNewer.value = monthKey !== ''
   reload()
+}
+
+function scrollToTop() {
+  const sp = document.querySelector('.overflow-auto') as HTMLElement
+  if (sp) sp.scrollTo({ top: 0, behavior: 'smooth' })
+  // Also reset any month filter
+  if (hasNewer.value) {
+    jumpMonth.value = ''
+    hasNewer.value = false
+    reload()
+  }
 }
 
 onMounted(async () => {
@@ -435,6 +445,7 @@ onMounted(() => {
       if (ticking) return
       ticking = true
       requestAnimationFrame(() => {
+        atTop.value = scrollParent.scrollTop < 50
         if (scrollParent.scrollTop < 100 && hasNewer.value && !loadingNewer.value) {
           loadNewer()
         }
