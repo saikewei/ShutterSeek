@@ -416,40 +416,32 @@ async function loadPage() {
     cursor = data.next_cursor
     hasMore.value = data.next_cursor !== ''
 
-    // If head photos were preloaded, scroll past them to the first target-month photo
+    // If head photos were preloaded, scroll past them before first paint
     if (jumpMonth.value && (data as any).head_count > 0) {
       jumpMonth.value = ''
       const headCount = (data as any).head_count as number
       const headerOffset = (props.stickyOffset || 0) + 37 + 38
 
-      // Wait for images in head area to load, then scroll once to correct position
+      const scrollParent = document.querySelector('.overflow-auto') as HTMLElement
+      // Hide until positioned to prevent flash
+      if (scrollParent) scrollParent.style.visibility = 'hidden'
+
       const doScroll = () => {
-        const scrollParent = document.querySelector('.overflow-auto') as HTMLElement
         if (!scrollParent) return
         const imgs = scrollParent.querySelectorAll('img[src*="thumbnails"]')
-        if (imgs.length <= headCount) return
-        const target = imgs[headCount] as HTMLElement
-        const rect = target.getBoundingClientRect()
-        const containerRect = scrollParent.getBoundingClientRect()
-        scrollParent.scrollTop = Math.max(0, rect.top - containerRect.top + scrollParent.scrollTop - headerOffset)
+        if (imgs.length > headCount) {
+          const target = imgs[headCount] as HTMLElement
+          const rect = target.getBoundingClientRect()
+          const containerRect = scrollParent.getBoundingClientRect()
+          scrollParent.scrollTop = Math.max(0, rect.top - containerRect.top + scrollParent.scrollTop - headerOffset)
+        }
+        scrollParent.style.visibility = ''
       }
 
-      // Wait for first batch of images in target area to load before scrolling
-      requestAnimationFrame(() => {
-        const scrollParent = document.querySelector('.overflow-auto') as HTMLElement
-        if (!scrollParent) { doScroll(); return }
-        const imgs = scrollParent.querySelectorAll('img[src*="thumbnails"]')
-        const targetImgs = Array.from(imgs).slice(0, headCount + 10)
-        if (targetImgs.length === 0) { doScroll(); return }
-
-        let loaded = 0
-        const onLoad = () => { loaded++; if (loaded >= targetImgs.length) doScroll() }
-        targetImgs.forEach((img) => {
-          if ((img as HTMLImageElement).complete) loaded++
-          else (img as HTMLImageElement).addEventListener('load', onLoad, { once: true })
-        })
-        if (loaded >= targetImgs.length) doScroll()
-      })
+      // Position after DOM renders, before browser paints
+      requestAnimationFrame(() => { doScroll() })
+      // Safety: show content after 2s even if scroll fails
+      setTimeout(() => { if (scrollParent) scrollParent.style.visibility = '' }, 2000)
     }
   } catch (e: any) {
     if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return
