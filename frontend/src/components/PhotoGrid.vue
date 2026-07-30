@@ -395,7 +395,7 @@ async function loadPage() {
   controller = new AbortController()
   const { signal } = controller
 
-  const limit = wasInterrupted ? 200 : jumpMonth.value ? 200 : calcLimit()
+  const limit = wasInterrupted ? 200 : jumpMonth.value ? 80 : calcLimit()
   wasInterrupted = false
 
   loading.value = true
