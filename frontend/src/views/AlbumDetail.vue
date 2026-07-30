@@ -8,7 +8,15 @@
       </div>
     </header>
 
-    <PhotoGrid :key="albumId" ref="gridRef" :fetch-fn="wrapFetch" :sticky-offset="53" :dates-fn="albumDatesFn" @photo-contextmenu="onContextMenu" />
+    <PhotoGrid
+      :key="albumId"
+      ref="gridRef"
+      :fetch-fn="wrapFetch"
+      :dates-fn="albumDatesFn"
+      :album-titles="albumTitles"
+      :sticky-offset="53"
+      @photo-contextmenu="onContextMenu"
+    />
 
     <!-- Right-click context menu -->
     <Teleport to="body">
@@ -16,7 +24,6 @@
         <div class="absolute bg-neutral-800 border border-neutral-700 rounded-lg py-1 shadow-xl w-40"
           :style="{ top: ctxMenu.y + 'px', left: ctxMenu.x + 'px' }">
           <button @click.stop="setAsCover" class="w-full text-left px-3 py-2 text-sm text-neutral-300 hover:bg-neutral-700 hover:text-white transition-colors">设为封面</button>
-
           <template v-if="!ctxMenu.confirming">
             <button @click.stop="ctxMenu.confirming = true" class="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-neutral-700 transition-colors">从相册移除</button>
           </template>
@@ -34,38 +41,35 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, reactive } from 'vue'
+import { ref, reactive } from 'vue'
 import { useRoute } from 'vue-router'
 import PhotoGrid from '@/components/PhotoGrid.vue'
-import { fetchAlbum, fetchAlbumPhotos, removeAlbumPhoto, updateAlbum, fetchAlbumDates, type Album } from '@/api/albums'
+import { fetchAlbum, fetchAlbumDates, updateAlbum, removeAlbumPhoto } from '@/api/albums'
+import { fetchPhotos } from '@/api/photos'
 import type { Photo } from '@/api/photos'
 
 const route = useRoute()
 const albumId = Number(route.params.id)
-const album = ref<Album | null>(null)
+const album = ref<any>(null)
 const gridRef = ref<InstanceType<typeof PhotoGrid> | null>(null)
+const albumTitles: Record<number, string> = {}
+
+// Load album info
+fetchAlbum(albumId).then(a => {
+  album.value = a
+  albumTitles[a.id] = a.title
+})
 
 const ctxMenu = reactive<{
   show: boolean; x: number; y: number; photo: Photo | null; confirming: boolean
 }>({ show: false, x: 0, y: 0, photo: null, confirming: false })
 
-function loadAlbum() {
-  album.value = null
-  fetchAlbum(albumId).then(a => { album.value = a })
-}
-loadAlbum()
-
-watch(() => route.params.id, () => { loadAlbum() })
-
 function albumDatesFn() {
   return fetchAlbumDates(albumId)
 }
 
-function wrapFetch(
-  params: { limit: number; cursor?: string; album_id?: string; with_albums?: boolean; month?: string },
-  signal?: AbortSignal
-) {
-  return fetchAlbumPhotos(albumId, params, signal)
+function wrapFetch(params: any, signal?: AbortSignal) {
+  return fetchPhotos({ ...params, album_id: String(albumId) }, signal)
 }
 
 function onContextMenu(photo: Photo, event: MouseEvent) {
@@ -79,13 +83,13 @@ async function doRemove() {
   await removeAlbumPhoto(albumId, photoId)
   ctxMenu.show = false
   gridRef.value?.removePhotoById(photoId)
-  loadAlbum()
+  fetchAlbum(albumId).then(a => { album.value = a })
 }
 
 async function setAsCover() {
   if (!ctxMenu.photo) return
   await updateAlbum(albumId, { cover_photo_id: ctxMenu.photo.id })
   ctxMenu.show = false
-  loadAlbum()
+  fetchAlbum(albumId).then(a => { album.value = a })
 }
 </script>
