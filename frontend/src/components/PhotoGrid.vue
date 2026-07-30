@@ -59,7 +59,11 @@
       @close="lightbox.open = false"
       @prev="lightboxPrev"
       @next="lightboxNext"
-    />
+    >
+      <template #exif-extra="{ photo }">
+        <slot name="exif-extra" :photo="photo" />
+      </template>
+    </Lightbox>
   </div>
 </template>
 
