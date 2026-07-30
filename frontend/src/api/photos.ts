@@ -26,6 +26,7 @@ export interface PhotoListResponse {
 export interface PhotoListParams {
   limit?: number
   cursor?: string
+  newer_than?: string
   album_id?: string
   with_albums?: boolean
   month?: string
@@ -36,6 +37,7 @@ export async function fetchPhotos(params?: PhotoListParams, signal?: AbortSignal
     params: params ? {
       limit: params.limit,
       cursor: params.cursor || undefined,
+      newer_than: params.newer_than || undefined,
       album_id: params.album_id || undefined,
       with_albums: params.with_albums ? 'true' : undefined,
       month: params.month || undefined,
