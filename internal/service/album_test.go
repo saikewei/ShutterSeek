@@ -465,7 +465,7 @@ func TestListAlbumPhotos_WithPhotos(t *testing.T) {
 	svc.DB.Raw("SELECT id FROM photos LIMIT 10").Scan(&photoIDs)
 	svc.BatchAddPhotos(created.ID, photoIDs)
 
-	page, err := svc.ListAlbumPhotos(created.ID, 5, zeroTime(), 0)
+	page, err := svc.ListAlbumPhotos(created.ID, 5, zeroTime(), 0, "")
 	if err != nil {
 		t.Fatalf("list photos: %v", err)
 	}
@@ -485,7 +485,7 @@ func TestListAlbumPhotos_EmptyAlbum(t *testing.T) {
 	created, _ := svc.CreateAlbum("TEST_ListEmpty", "")
 	defer svc.DeleteAlbum(created.ID)
 
-	page, err := svc.ListAlbumPhotos(created.ID, 50, zeroTime(), 0)
+	page, err := svc.ListAlbumPhotos(created.ID, 50, zeroTime(), 0, "")
 	if err != nil {
 		t.Fatalf("list empty: %v", err)
 	}
@@ -508,14 +508,14 @@ func TestListAlbumPhotos_CursorPagination(t *testing.T) {
 	svc.BatchAddPhotos(created.ID, photoIDs)
 
 	// First page
-	p1, _ := svc.ListAlbumPhotos(created.ID, 3, zeroTime(), 0)
+	p1, _ := svc.ListAlbumPhotos(created.ID, 3, zeroTime(), 0, "")
 	if len(p1.Photos) != 3 {
 		t.Fatalf("page 1: expected 3, got %d", len(p1.Photos))
 	}
 
 	// Second page using cursor from last item
 	last := p1.Photos[2]
-	p2, _ := svc.ListAlbumPhotos(created.ID, 3, last.TakenAt, last.ID)
+	p2, _ := svc.ListAlbumPhotos(created.ID, 3, last.TakenAt, last.ID, "")
 	if len(p2.Photos) == 0 {
 		t.Fatal("page 2 should have photos")
 	}
