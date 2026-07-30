@@ -40,12 +40,11 @@ type AlbumItem struct {
 
 // AlbumPhotoPage holds a page of photos within an album.
 type AlbumPhotoPage struct {
-	Photos  []model.Photo
-	Total   int64
-	HasMore bool
+	Photos     []model.Photo
+	HeadPhotos []model.Photo
+	Total      int64
+	HasMore    bool
 }
-
-// ListAlbums returns all albums with cover URL and photo count.
 func (s *AlbumService) ListAlbums() ([]AlbumItem, error) {
 	var albums []model.Album
 	if err := s.DB.Order("sort_order, id").Find(&albums).Error; err != nil {
@@ -97,7 +96,8 @@ func (s *AlbumService) GetAlbum(id int64) (*AlbumItem, error) {
 }
 
 // ListAlbumPhotos returns a page of photos within an album (cursor-based).
-func (s *AlbumService) ListAlbumPhotos(albumID int64, limit int, afterTime time.Time, afterID int64) (*AlbumPhotoPage, error) {
+// If month is non-empty, also preloads a few newer (head) photos.
+func (s *AlbumService) ListAlbumPhotos(albumID int64, limit int, afterTime time.Time, afterID int64, month string) (*AlbumPhotoPage, error) {
 	var total int64
 	s.DB.Model(&model.AlbumPhoto{}).Where("album_id = ?", albumID).Count(&total)
 
@@ -108,6 +108,22 @@ func (s *AlbumService) ListAlbumPhotos(albumID int64, limit int, afterTime time.
 	q := s.DB.Where("id IN (?)", sub).
 		Order("taken_at DESC NULLS LAST, id DESC").
 		Limit(limit + 1)
+
+	// Head preload for month jump
+	var head []model.Photo
+	if month != "" {
+		if t, err := time.Parse("2006-01", month); err == nil {
+			nextMonth := t.AddDate(0, 1, 0)
+			s.DB.Where("id IN (?)", sub).
+				Where("taken_at >= ?", nextMonth).
+				Order("taken_at ASC, id ASC").Limit(15).
+				Find(&head)
+			q = q.Where("taken_at < ?", nextMonth)
+			// Re-count total for the filtered set
+			s.DB.Model(&model.Photo{}).Where("id IN (?)", sub).
+				Where("taken_at < ?", nextMonth).Count(&total)
+		}
+	}
 
 	if !afterTime.IsZero() {
 		q = q.Where("(taken_at, id) < (?, ?)", afterTime, afterID)
@@ -125,7 +141,7 @@ func (s *AlbumService) ListAlbumPhotos(albumID int64, limit int, afterTime time.
 		photos = photos[:limit]
 	}
 
-	return &AlbumPhotoPage{Photos: photos, Total: total, HasMore: hasMore}, nil
+	return &AlbumPhotoPage{Photos: photos, HeadPhotos: head, Total: total, HasMore: hasMore}, nil
 }
 
 // ── Mutations ─────────────────────────────────────────

@@ -107,6 +107,7 @@ type AlbumPhotoListResponse struct {
 	Items      []PhotoItem `json:"items"`
 	NextCursor string      `json:"next_cursor"`
 	Total      int64       `json:"total"`
+	HeadCount  int         `json:"head_count,omitempty"`
 }
 
 // ListAlbumPhotos returns paginated photos within an album.
@@ -154,25 +155,31 @@ func (h *Handler) ListAlbumPhotos(c *gin.Context) {
 		}
 	}
 
-	page, err := h.AlbumSvc.ListAlbumPhotos(albumID, limit, afterTime, afterID)
+	month := c.Query("month")
+	page, err := h.AlbumSvc.ListAlbumPhotos(albumID, limit, afterTime, afterID, month)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
 		return
 	}
 
-	items := make([]PhotoItem, len(page.Photos))
-	for i, p := range page.Photos {
-		items[i] = toPhotoItem(&p)
+	// Prepend head photos (reversed to DESC)
+	all := make([]PhotoItem, 0, len(page.HeadPhotos)+len(page.Photos))
+	for i := len(page.HeadPhotos) - 1; i >= 0; i-- {
+		all = append(all, toPhotoItem(&page.HeadPhotos[i]))
+	}
+	for _, p := range page.Photos {
+		all = append(all, toPhotoItem(&p))
 	}
 
 	resp := AlbumPhotoListResponse{
-		Items:      items,
+		Items:      all,
 		Total:      page.Total,
 		NextCursor: "",
+		HeadCount:  len(page.HeadPhotos),
 	}
 
-	if page.HasMore && len(items) > 0 {
-		last := items[len(items)-1]
+		if page.HasMore && len(page.Photos) > 0 {
+			last := all[len(all)-1]
 		t := last.TakenAt
 		if t == "" {
 			t = "0001-01-01T00:00:00"
