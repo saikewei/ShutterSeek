@@ -170,19 +170,23 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 		q = q.Order("taken_at DESC, id DESC").Limit(limit + 1)
 	}
 
-	// Filter: jump to month — with head preload
-	var headPhotos []model.Photo
-	if month != "" {
-		if t, err := time.Parse("2006-01", month); err == nil {
-			nextMonth := t.AddDate(0, 1, 0)
-			// Preload a few photos from the next month (newer) as head
-			h.DB.Where("taken_at >= ?", nextMonth).
-				Order("taken_at ASC, id ASC").Limit(15).
-				Find(&headPhotos)
-			// Main query: target month and older
-			q = q.Where("taken_at < ?", nextMonth)
+// Filter: jump to month — with head preload
+		var headPhotos []model.Photo
+		if month != "" {
+			if t, err := time.Parse("2006-01", month); err == nil {
+				nextMonth := t.AddDate(0, 1, 0)
+				// Preload a few photos from the next month (newer) as head
+				headQ := h.DB.Where("taken_at >= ?", nextMonth)
+				if albumIDStr != "" {
+					if aid, err2 := strconv.ParseInt(albumIDStr, 10, 64); err2 == nil && aid > 0 {
+						headQ = headQ.Where("id IN (SELECT photo_id FROM album_photos WHERE album_id = ?)", aid)
+					}
+				}
+				headQ.Order("taken_at ASC, id ASC").Limit(15).Find(&headPhotos)
+				// Main query: target month and older
+				q = q.Where("taken_at < ?", nextMonth)
+			}
 		}
-	}
 
 	// Filter: uncategorized only
 	if uncategorized {
