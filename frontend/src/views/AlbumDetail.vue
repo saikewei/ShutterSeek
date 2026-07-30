@@ -8,7 +8,7 @@
       </div>
     </header>
 
-    <PhotoGrid ref="gridRef" :fetch-fn="wrapFetch" :sticky-offset="53" @photo-contextmenu="onContextMenu" />
+    <PhotoGrid ref="gridRef" :fetch-fn="wrapFetch" :sticky-offset="53" :dates-fn="albumDatesFn" @photo-contextmenu="onContextMenu" />
 
     <!-- Right-click context menu -->
     <Teleport to="body">
@@ -37,7 +37,7 @@
 import { ref, watch, reactive } from 'vue'
 import { useRoute } from 'vue-router'
 import PhotoGrid from '@/components/PhotoGrid.vue'
-import { fetchAlbum, fetchAlbumPhotos, removeAlbumPhoto, updateAlbum, type Album } from '@/api/albums'
+import { fetchAlbum, fetchAlbumPhotos, removeAlbumPhoto, updateAlbum, fetchAlbumDates, type Album } from '@/api/albums'
 import type { Photo } from '@/api/photos'
 
 const route = useRoute()
@@ -56,6 +56,10 @@ function loadAlbum() {
 loadAlbum()
 
 watch(() => route.params.id, () => { loadAlbum() })
+
+function albumDatesFn() {
+  return fetchAlbumDates(albumId)
+}
 
 function wrapFetch(
   params: { limit: number; cursor?: string; album_id?: string; with_albums?: boolean; month?: string },

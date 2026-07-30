@@ -15,6 +15,38 @@ import (
 	"shutterseek/internal/service"
 )
 
+// ── Album Dates ─────────────────────────────────────────
+
+type albumDateCount struct {
+	Date  string `json:"date"`
+	Count int64  `json:"count"`
+}
+
+// AlbumDates returns date distribution for photos within an album.
+// GET /api/v1/albums/:id/dates
+func (h *Handler) AlbumDates(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	var rows []albumDateCount
+	if err := h.DB.Raw(
+		`SELECT to_char(p.taken_at, 'YYYY-MM-DD') AS date, COUNT(*) AS count
+		 FROM photos p
+		 JOIN album_photos ap ON ap.photo_id = p.id
+		 WHERE ap.album_id = ? AND p.taken_at IS NOT NULL
+		 GROUP BY date ORDER BY date DESC`, id,
+	).Scan(&rows).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
+		return
+	}
+	if rows == nil {
+		rows = []albumDateCount{}
+	}
+	c.JSON(http.StatusOK, rows)
+}
+
 // ── Album List ──────────────────────────────────────────
 
 type AlbumItem struct {

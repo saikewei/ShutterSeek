@@ -196,6 +196,7 @@ const props = defineProps<{
   ) => Promise<PhotoListResponse>
   albumTitles?: Record<number, string>
   stickyOffset?: number
+  datesFn?: () => Promise<Array<{ date: string; count: number }>>
 }>()
 
 defineEmits<{
@@ -313,7 +314,8 @@ function scrollToTop() {
 }
 
 onMounted(async () => {
-  try { allDates.value = await fetchPhotoDates() } catch { /* no scrubber without dates */ }
+  const fn = props.datesFn || fetchPhotoDates
+  try { allDates.value = await fn() } catch { /* no scrubber */ }
 })
 
 // ── Lightbox ────────────────────────────────────────
