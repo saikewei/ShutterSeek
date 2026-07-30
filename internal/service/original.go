@@ -7,6 +7,7 @@ import (
 	"image/jpeg"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -114,13 +115,38 @@ func (s *OriginalService) serveRAW(w io.Writer, path string) error {
 	}
 
 	jpegData := extractJPEG(rawData)
-	if jpegData == nil {
-		return fmt.Errorf("no embedded jpeg found in %s", filepath.Base(path))
+	if jpegData != nil && len(jpegData) > 20000 { // >20KB: likely a real preview
+		os.WriteFile(cacheKey, jpegData, 0644)
+		_, err = w.Write(jpegData)
+		return err
 	}
 
-	os.WriteFile(cacheKey, jpegData, 0644)
-	_, err = w.Write(jpegData)
-	return err
+	// Fallback: use exiftool for older cameras (e.g. Sony a6000)
+	// that don't embed a full-size JPEG preview in the RAW container.
+	if data, err := extractWithExiftool(path); err == nil {
+		os.WriteFile(cacheKey, data, 0644)
+		_, err = w.Write(data)
+		return err
+	}
+
+	if jpegData != nil {
+		// Return the small thumbnail as last resort
+		os.WriteFile(cacheKey, jpegData, 0644)
+		_, err = w.Write(jpegData)
+		return err
+	}
+	return fmt.Errorf("no embedded jpeg found in %s", filepath.Base(path))
+}
+
+// extractWithExiftool tries to extract a JPEG preview using exiftool.
+func extractWithExiftool(path string) ([]byte, error) {
+	for _, tag := range []string{"-PreviewImage", "-JpgFromRaw"} {
+		data, err := exec.Command("exiftool", "-b", tag, path).Output()
+		if err == nil && len(data) > 20000 && data[0] == 0xFF && data[1] == 0xD8 {
+			return data, nil
+		}
+	}
+	return nil, fmt.Errorf("exiftool extraction failed")
 }
 
 // extractJPEG finds the largest valid JPEG segment in binary data.
