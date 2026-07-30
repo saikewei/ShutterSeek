@@ -85,6 +85,16 @@ defineEmits<{
   photoContextmenu: [photo: Photo, event: MouseEvent]
 }>()
 
+function removePhotoById(id: number) {
+  const idx = photos.value.findIndex(p => p.id === id)
+  if (idx !== -1) {
+    photos.value.splice(idx, 1)
+    total.value = Math.max(0, total.value - 1)
+  }
+}
+
+defineExpose({ removePhotoById })
+
 const photos = ref<Photo[]>([])
 const total = ref(0)
 const loading = ref(false)

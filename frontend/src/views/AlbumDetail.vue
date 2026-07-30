@@ -8,7 +8,7 @@
       </div>
     </header>
 
-    <PhotoGrid :key="refreshKey" :fetch-fn="wrapFetch" @photo-contextmenu="onContextMenu" />
+    <PhotoGrid ref="gridRef" :fetch-fn="wrapFetch" @photo-contextmenu="onContextMenu" />
 
     <!-- Right-click context menu -->
     <Teleport to="body">
@@ -45,7 +45,7 @@ import type { Photo } from '@/api/photos'
 const route = useRoute()
 const albumId = Number(route.params.id)
 const album = ref<Album | null>(null)
-const refreshKey = ref(0)
+const gridRef = ref<InstanceType<typeof PhotoGrid> | null>(null)
 
 const ctxMenu = reactive<{
   show: boolean
@@ -62,7 +62,6 @@ function loadAlbum() {
 loadAlbum()
 
 watch(() => route.params.id, () => {
-  refreshKey.value++
   loadAlbum()
 })
 
@@ -80,9 +79,10 @@ function onContextMenu(photo: Photo, event: MouseEvent) {
 
 async function doRemove() {
   if (!ctxMenu.photo) return
-  await removeAlbumPhoto(albumId, ctxMenu.photo.id)
+  const photoId = ctxMenu.photo.id
+  await removeAlbumPhoto(albumId, photoId)
   ctxMenu.show = false
-  refreshKey.value++
+  gridRef.value?.removePhotoById(photoId)
   loadAlbum()
 }
 </script>
