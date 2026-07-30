@@ -56,3 +56,13 @@ export async function deleteAlbum(id: number): Promise<void> {
 export async function removeAlbumPhoto(albumId: number, photoId: number): Promise<void> {
   await api.delete(`/albums/${albumId}/photos/${photoId}`)
 }
+
+export interface BatchAddResult {
+  added: number
+  skipped: number
+}
+
+export async function batchAddPhotos(albumId: number, photoIds: number[]): Promise<BatchAddResult> {
+  const { data } = await api.post<BatchAddResult>(`/albums/${albumId}/photos`, { photo_ids: photoIds })
+  return data
+}
