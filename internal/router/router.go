@@ -49,6 +49,7 @@ func Setup(h *handler.Handler, thumbDir string) *gin.Engine {
 			admin.POST("/invites", h.CreateInvite)
 			admin.GET("/invites", h.ListInvites)
 			admin.DELETE("/invites/:id", h.DeleteInvite)
+			admin.GET("/photos/range", h.PhotoRange)
 		}
 	}
 	r.GET("/api/health", h.Health)
