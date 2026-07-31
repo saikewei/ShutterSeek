@@ -261,6 +261,51 @@ func (s *AlbumService) DeleteAlbum(id int64) error {
 	return tx.Commit().Error
 }
 
+// BatchRemovePhotos removes multiple photos from an album in one transaction.
+// Returns the number of rows actually removed. If the album cover is among
+// the removed photos, the cover is cleared.
+func (s *AlbumService) BatchRemovePhotos(albumID int64, photoIDs []int64) (int64, error) {
+	tx := s.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	var a model.Album
+	if err := tx.First(&a, albumID).Error; err != nil {
+		tx.Rollback()
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, ErrAlbumNotFound
+		}
+		return 0, err
+	}
+
+	res := tx.Where("album_id = ? AND photo_id IN ?", albumID, photoIDs).
+		Delete(&model.AlbumPhoto{})
+	if res.Error != nil {
+		tx.Rollback()
+		return 0, res.Error
+	}
+	removed := res.RowsAffected
+
+	// If the cover photo was among the removed, clear it
+	if a.CoverPhotoID != nil {
+		for _, pid := range photoIDs {
+			if *a.CoverPhotoID == pid {
+				a.CoverPhotoID = nil
+				tx.Save(&a)
+				break
+			}
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		return 0, err
+	}
+	return removed, nil
+}
+
 // RemoveAlbumPhoto removes a single photo from an album.
 func (s *AlbumService) RemoveAlbumPhoto(albumID, photoID int64) error {
 	tx := s.DB.Begin()

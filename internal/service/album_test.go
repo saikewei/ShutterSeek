@@ -533,6 +533,83 @@ func TestListAlbumPhotos_CursorPagination(t *testing.T) {
 }
 
 // ═══════════════════════════════════════════════════════
+// BatchRemovePhotos
+// ═══════════════════════════════════════════════════════
+
+func TestBatchRemovePhotos_Success(t *testing.T) {
+	svc := setupAlbumSvc(t)
+	created, _ := svc.CreateAlbum("TEST_BatchRemove_OK", "")
+	defer svc.DeleteAlbum(created.ID)
+
+	var photoIDs []int64
+	svc.DB.Raw("SELECT id FROM photos LIMIT 5").Scan(&photoIDs)
+	svc.BatchAddPhotos(created.ID, photoIDs)
+
+	removed, err := svc.BatchRemovePhotos(created.ID, []int64{photoIDs[0], photoIDs[1], photoIDs[2]})
+	if err != nil {
+		t.Fatalf("batch remove: %v", err)
+	}
+	if removed != 3 {
+		t.Fatalf("expected 3 removed, got %d", removed)
+	}
+
+	// Verify remaining 2
+	var count int64
+	svc.DB.Raw("SELECT COUNT(*) FROM album_photos WHERE album_id = ?", created.ID).Scan(&count)
+	if count != 2 {
+		t.Fatalf("expected 2 remaining, got %d", count)
+	}
+}
+
+func TestBatchRemovePhotos_ClearsCover(t *testing.T) {
+	svc := setupAlbumSvc(t)
+	created, _ := svc.CreateAlbum("TEST_BatchRemove_Cover", "")
+	defer svc.DeleteAlbum(created.ID)
+
+	var photoIDs []int64
+	svc.DB.Raw("SELECT id FROM photos LIMIT 2").Scan(&photoIDs)
+	svc.BatchAddPhotos(created.ID, photoIDs)
+	svc.UpdateAlbum(created.ID, nil, nil, &photoIDs[0], nil)
+
+	// Remove both, including the cover
+	if _, err := svc.BatchRemovePhotos(created.ID, photoIDs); err != nil {
+		t.Fatalf("batch remove: %v", err)
+	}
+
+	updated, _ := svc.GetAlbum(created.ID)
+	if updated.CoverURL != "" {
+		t.Fatalf("cover should be cleared, got %q", updated.CoverURL)
+	}
+}
+
+func TestBatchRemovePhotos_Partial(t *testing.T) {
+	svc := setupAlbumSvc(t)
+	created, _ := svc.CreateAlbum("TEST_BatchRemove_Partial", "")
+	defer svc.DeleteAlbum(created.ID)
+
+	var photoIDs []int64
+	svc.DB.Raw("SELECT id FROM photos LIMIT 2").Scan(&photoIDs)
+	svc.BatchAddPhotos(created.ID, photoIDs)
+
+	// One id in album, one not in album
+	removed, err := svc.BatchRemovePhotos(created.ID, []int64{photoIDs[0], 99999999})
+	if err != nil {
+		t.Fatalf("batch remove: %v", err)
+	}
+	if removed != 1 {
+		t.Fatalf("expected 1 removed (partial), got %d", removed)
+	}
+}
+
+func TestBatchRemovePhotos_AlbumNotFound(t *testing.T) {
+	svc := setupAlbumSvc(t)
+	_, err := svc.BatchRemovePhotos(99999999, []int64{1, 2})
+	if !errors.Is(err, ErrAlbumNotFound) {
+		t.Fatalf("expected ErrAlbumNotFound, got %v", err)
+	}
+}
+
+// ═══════════════════════════════════════════════════════
 // helpers
 // ═══════════════════════════════════════════════════════
 
