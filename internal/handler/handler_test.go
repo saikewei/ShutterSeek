@@ -318,7 +318,7 @@ func TestPhotoDates_AlbumFilter(t *testing.T) {
 
 func TestCreateAlbumHandler(t *testing.T) {
 	h := setupHandler(t)
-	body := `{"title":"TEST_H_Create","description":"handler test"}`
+	body := `{"title":"H_Create","description":"handler test"}`
 	c, w := ginCtx("POST", "/api/v1/albums")
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Request.Body = httptest.NewRequest("POST", "/", stringsNewReader(body)).Body
@@ -339,9 +339,9 @@ func TestCreateAlbumHandler(t *testing.T) {
 
 func TestUpdateAlbumHandler(t *testing.T) {
 	h := setupHandler(t)
-	created, _ := h.AlbumSvc.CreateAlbum("TEST_H_Update", "")
+	created, _ := h.AlbumSvc.CreateAlbum("H_Update", "")
 
-	body := `{"title":"TEST_H_Updated"}`
+	body := `{"title":"H_Updated"}`
 	c, w := ginCtx("PUT", "/api/v1/albums/"+itoa(created.ID))
 	c.Params = gin.Params{{Key: "id", Value: itoa(created.ID)}}
 	c.Request.Header.Set("Content-Type", "application/json")
@@ -354,7 +354,7 @@ func TestUpdateAlbumHandler(t *testing.T) {
 	}
 	var item AlbumItem
 	json.Unmarshal(w.Body.Bytes(), &item)
-	if item.Title != "TEST_H_Updated" {
+	if item.Title != "H_Updated" {
 		t.Fatalf("title not updated: %s", item.Title)
 	}
 	h.AlbumSvc.DeleteAlbum(created.ID)
@@ -362,7 +362,7 @@ func TestUpdateAlbumHandler(t *testing.T) {
 
 func TestDeleteAlbumHandler(t *testing.T) {
 	h := setupHandler(t)
-	created, _ := h.AlbumSvc.CreateAlbum("TEST_H_Delete", "")
+	created, _ := h.AlbumSvc.CreateAlbum("H_Delete", "")
 
 	c, w := ginCtx("DELETE", "/api/v1/albums/"+itoa(created.ID))
 	c.Params = gin.Params{{Key: "id", Value: itoa(created.ID)}}
@@ -381,7 +381,7 @@ func TestDeleteAlbumHandler(t *testing.T) {
 
 func TestBatchAddPhotosHandler(t *testing.T) {
 	h := setupHandler(t)
-	created, _ := h.AlbumSvc.CreateAlbum("TEST_H_Batch", "")
+	created, _ := h.AlbumSvc.CreateAlbum("H_Batch", "")
 	defer h.AlbumSvc.DeleteAlbum(created.ID)
 
 	var photoIDs []int64
@@ -403,7 +403,7 @@ func TestBatchAddPhotosHandler(t *testing.T) {
 
 func TestRemoveAlbumPhotoHandler(t *testing.T) {
 	h := setupHandler(t)
-	created, _ := h.AlbumSvc.CreateAlbum("TEST_H_Remove", "")
+	created, _ := h.AlbumSvc.CreateAlbum("H_Remove", "")
 	defer h.AlbumSvc.DeleteAlbum(created.ID)
 
 	var photoIDs []int64
