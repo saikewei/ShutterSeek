@@ -20,6 +20,10 @@ import (
 // interval disjoint from real (2024+) photo data.
 func insertRangePhotos(t *testing.T, h *Handler, n int) []model.Photo {
 	t.Helper()
+	// Clean residue from an interrupted prior run (the OverLimit test inserts
+	// 5001 rows; if that run was killed mid-test the t.Cleanup never fires and
+	// the rows pollute other range tests' 2020 intervals). Fast when clean.
+	h.DB.Exec("DELETE FROM photos WHERE file_path LIKE 'RANGE_PHOTO_%' OR file_path LIKE 'RANGE_NULL_%'")
 	base := time.Date(2020, 6, 1, 12, 0, 0, 0, time.UTC)
 	prefix := fmt.Sprintf("RANGE_PHOTO_%d_", time.Now().UnixNano())
 	photos := make([]model.Photo, n)
