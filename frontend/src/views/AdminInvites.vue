@@ -9,10 +9,10 @@
       >{{ creating ? '生成中...' : '+ 生成邀请码' }}</button>
     </div>
 
-    <div v-if="newCode" class="mb-4 p-3 bg-neutral-800 border border-neutral-700 rounded-lg">
-      <p class="text-xs text-neutral-400 mb-1">新邀请码已生成（复制以下链接发送给访客）：</p>
-      <p class="text-sm text-white font-mono break-all">{{ inviteLink }}</p>
-      <button @click="copyLink" class="mt-2 text-xs text-neutral-400 hover:text-white">📋 {{ copied ? '已复制' : '复制链接' }}</button>
+    <div v-if="newCode" class="mb-4 p-3 bg-amber-500/10 border border-amber-500/40 rounded-lg">
+      <p class="text-xs text-amber-300 mb-1">新邀请码已生成（复制以下链接发送给访客）：</p>
+      <p class="text-sm text-amber-100 font-mono break-all">{{ inviteLink }}</p>
+      <button @click="copyLink" class="mt-2 text-xs text-amber-300 hover:text-amber-200">📋 {{ copied ? '已复制' : '复制链接' }}</button>
     </div>
 
     <div v-if="loading" class="text-center text-neutral-500 py-12 text-sm">Loading...</div>
