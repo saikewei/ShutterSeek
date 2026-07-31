@@ -22,6 +22,12 @@
           class="block px-4 py-2 text-sm transition-colors"
           :class="$route.path === '/admin/invites' ? 'text-white bg-neutral-800' : 'text-neutral-400 hover:text-white hover:bg-neutral-800/50'"
         >邀请</router-link>
+        <router-link
+          v-if="isAdmin"
+          to="/admin/logs"
+          class="block px-4 py-2 text-sm transition-colors"
+          :class="$route.path === '/admin/logs' ? 'text-white bg-neutral-800' : 'text-neutral-400 hover:text-white hover:bg-neutral-800/50'"
+        >日志</router-link>
       </div>
       <div class="px-4 py-3 border-t border-neutral-800 flex items-center justify-between">
         <span class="text-xs text-neutral-500">{{ authState.user?.username }}</span>

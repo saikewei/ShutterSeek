@@ -52,6 +52,25 @@ export async function redeemInvite(
   return data
 }
 
+export interface UserLogEntry {
+  id: number
+  user_id: number
+  username: string
+  event_type: 'login' | 'session' | 'logout'
+  ip: string
+  created_at: string
+}
+
+export async function fetchLogs(params?: { limit?: number; before_id?: number }): Promise<{ items: UserLogEntry[]; total: number }> {
+  const { data } = await api.get<{ items: UserLogEntry[]; total: number }>('/auth/logs', {
+    params: {
+      limit: params?.limit,
+      before_id: params?.before_id,
+    },
+  })
+  return data
+}
+
 export interface InviteValidation {
   valid: boolean
   status: 'valid' | 'expired' | 'invalid'
