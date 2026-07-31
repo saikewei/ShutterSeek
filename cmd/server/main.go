@@ -60,9 +60,26 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
+	// ── Auth ──────────────────────────────────────────────
+	jwtSecret := os.Getenv("SHUTTERSEEK_JWT_SECRET")
+	if jwtSecret == "" {
+		log.Fatal("SHUTTERSEEK_JWT_SECRET is required")
+	}
+	authSvc := service.NewAuthService(gormDB, jwtSecret)
+
+	// Seed initial admin if none exists
+	adminPw := os.Getenv("SHUTTERSEEK_ADMIN_PASSWORD")
+	if adminPw == "" {
+		log.Fatal("SHUTTERSEEK_ADMIN_PASSWORD is required for admin seed")
+	}
+	if err := authSvc.SeedAdmin(adminPw); err != nil {
+		log.Fatalf("seed admin: %v", err)
+	}
+	log.Println("✓ Admin user seeded")
+
 	origSvc := service.NewOriginalService(cfg.Thumbnail.PhotosDir, "/tmp/shutterseek_previews")
 	albumSvc := service.NewAlbumService(gormDB)
-	h := &handler.Handler{Pool: pool, Redis: rdb, DB: gormDB, OrigSvc: origSvc, AlbumSvc: albumSvc}
+	h := &handler.Handler{Pool: pool, Redis: rdb, DB: gormDB, OrigSvc: origSvc, AlbumSvc: albumSvc, AuthSvc: authSvc}
 	r := router.Setup(h, cfg.Thumbnail.OutputDir)
 
 	// ── HTTP Server ───────────────────────────────────────

@@ -59,3 +59,20 @@ export async function fetchPhotoDates(signal?: AbortSignal): Promise<DateCount[]
   const { data } = await api.get<DateCount[]>('/photos/dates', { signal })
   return data
 }
+
+export async function fetchPhotoRange(params: {
+  from_id: number
+  to_id: number
+  album_id?: string
+  month?: string
+}): Promise<{ photo_ids: number[]; count: number }> {
+  const { data } = await api.get<{ photo_ids: number[]; count: number }>('/photos/range', {
+    params: {
+      from_id: params.from_id,
+      to_id: params.to_id,
+      album_id: params.album_id || undefined,
+      month: params.month || undefined,
+    },
+  })
+  return data
+}
