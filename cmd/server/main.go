@@ -7,16 +7,20 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
+	"github.com/caddyserver/certmagic"
 	"github.com/gin-gonic/gin"
+	libdnsalidns "github.com/libdns/alidns"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
 	"shutterseek/internal/config"
 	"shutterseek/internal/db"
 	"shutterseek/internal/handler"
+	"shutterseek/internal/middleware"
 	myredis "shutterseek/internal/redis"
 	"shutterseek/internal/router"
 	"shutterseek/internal/service"
@@ -82,15 +86,26 @@ func main() {
 	h := &handler.Handler{Pool: pool, Redis: rdb, DB: gormDB, OrigSvc: origSvc, AlbumSvc: albumSvc, AuthSvc: authSvc}
 	r := router.Setup(h, cfg.Thumbnail.OutputDir)
 
-	// ── HTTP Server ───────────────────────────────────────
-	srv := &http.Server{
-		Addr:    fmt.Sprintf(":%d", cfg.Server.Port),
-		Handler: r,
+	// ── Server (HTTP or HTTPS via Let's Encrypt DNS-01) ──
+	tlsEnabled := os.Getenv("SHUTTERSEEK_TLS_ENABLED") == "true"
+	srv := &http.Server{Handler: r}
+
+	if tlsEnabled {
+		setupTLS(srv, r)
+	} else {
+		srv.Addr = fmt.Sprintf(":%d", cfg.Server.Port)
 	}
 
 	go func() {
-		log.Printf("🚀 Server listening on :%d", cfg.Server.Port)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		var err error
+		if tlsEnabled {
+			log.Printf("🚀 HTTPS server ready on %s", srv.Addr)
+			err = srv.ListenAndServeTLS("", "")
+		} else {
+			log.Printf("🚀 Server listening on :%d", cfg.Server.Port)
+			err = srv.ListenAndServe()
+		}
+		if err != nil && err != http.ErrServerClosed {
 			log.Fatalf("server: %v", err)
 		}
 	}()
@@ -107,4 +122,51 @@ func main() {
 		log.Fatalf("shutdown: %v", err)
 	}
 	log.Println("Server stopped")
+}
+
+// setupTLS configures certmagic with the Alibaba Cloud DNS-01 solver and
+// binds srv to the HTTPS port. Certificates are issued and auto-renewed.
+func setupTLS(srv *http.Server, handler http.Handler) {
+	domain := os.Getenv("SHUTTERSEEK_TLS_DOMAIN")
+	if domain == "" {
+		log.Fatal("SHUTTERSEEK_TLS_DOMAIN is required when SHUTTERSEEK_TLS_ENABLED=true")
+	}
+	tlsPort := 8443
+	if p := os.Getenv("SHUTTERSEEK_TLS_PORT"); p != "" {
+		if n, err := strconv.Atoi(p); err == nil && n > 0 {
+			tlsPort = n
+		}
+	}
+	certDir := os.Getenv("SHUTTERSEEK_CERT_DIR")
+	if certDir == "" {
+		log.Fatal("SHUTTERSEEK_CERT_DIR is required when TLS is enabled")
+	}
+	aliKey := os.Getenv("ALIYUN_ACCESS_KEY_ID")
+	aliSecret := os.Getenv("ALIYUN_ACCESS_KEY_SECRET")
+	if aliKey == "" || aliSecret == "" {
+		log.Fatal("ALIYUN_ACCESS_KEY_ID and ALIYUN_ACCESS_KEY_SECRET are required for the DNS-01 challenge")
+	}
+
+	certmagic.Default.Storage = &certmagic.FileStorage{Path: certDir}
+	certmagic.DefaultACME.DNS01Solver = &certmagic.DNS01Solver{
+		DNSManager: certmagic.DNSManager{
+			DNSProvider: &libdnsalidns.Provider{
+				CredentialInfo: libdnsalidns.CredentialInfo{
+					AccessKeyID:     aliKey,
+					AccessKeySecret: aliSecret,
+				},
+			},
+		},
+	}
+
+	cm := certmagic.NewDefault()
+	if err := cm.ManageAsync(context.Background(), []string{domain}); err != nil {
+		log.Fatalf("certmagic manage: %v", err)
+	}
+
+	srv.Addr = fmt.Sprintf(":%d", tlsPort)
+	srv.Handler = handler
+	srv.TLSConfig = cm.TLSConfig()
+	middleware.CookieSecure = true
+	log.Printf("✓ TLS enabled — domain %s, certs dir %s", domain, certDir)
 }

@@ -11,6 +11,10 @@ import (
 // CookieName is the HttpOnly cookie that carries the JWT.
 const CookieName = "shutterseek_token"
 
+// CookieSecure controls the cookie's Secure flag. Set true when serving over
+// HTTPS (required for the cookie to be sent over HTTPS).
+var CookieSecure = false
+
 // AuthRequired validates the JWT cookie and injects user info into the context.
 func AuthRequired(authSvc *service.AuthService) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -50,8 +54,8 @@ func SetTokenCookie(c *gin.Context, token string) {
 		30*24*3600, // 30 days
 		"/api",
 		"",
-		false, // secure — false for local dev; production sits behind Tailscale
-		true,  // httpOnly
+		CookieSecure,
+		true, // httpOnly
 	)
 }
 

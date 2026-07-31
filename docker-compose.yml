@@ -5,9 +5,11 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
+      - "${SHUTTERSEEK_TLS_PORT:-8443}:${SHUTTERSEEK_TLS_PORT:-8443}"
     volumes:
       - /volume1/Main/Photos:/photos:ro
       - /volume1/docker/ShutterSeek/thumbnails:/thumbnails
+      - ${SHUTTERSEEK_CERT_DIR:-/volume1/docker/ShutterSeek/certs}:/certs
     environment:
       SHUTTERSEEK_DB_USER: ${DB_USER}
       SHUTTERSEEK_DB_PASSWORD: ${DB_PASSWORD}
@@ -18,6 +20,13 @@ services:
       SHUTTERSEEK_THUMBNAILS_DIR: /thumbnails/.thumbnails_1080
       SHUTTERSEEK_JWT_SECRET: ${JWT_SECRET}
       SHUTTERSEEK_ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      # HTTPS (optional) — Let's Encrypt DNS-01 via Alibaba Cloud DNS
+      SHUTTERSEEK_TLS_ENABLED: ${SHUTTERSEEK_TLS_ENABLED:-false}
+      SHUTTERSEEK_TLS_DOMAIN: ${SHUTTERSEEK_TLS_DOMAIN:-}
+      SHUTTERSEEK_TLS_PORT: ${SHUTTERSEEK_TLS_PORT:-8443}
+      SHUTTERSEEK_CERT_DIR: /certs
+      ALIYUN_ACCESS_KEY_ID: ${ALIYUN_ACCESS_KEY_ID:-}
+      ALIYUN_ACCESS_KEY_SECRET: ${ALIYUN_ACCESS_KEY_SECRET:-}
 
 networks:
   default:
