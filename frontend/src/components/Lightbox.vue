@@ -10,10 +10,10 @@
         class="absolute top-4 z-10 text-white/70 hover:text-white text-2xl w-10 h-10"
         :style="{ right: photo && !isMobile ? '308px' : '16px' }">✕</button>
 
-      <!-- Info (mobile only — EXIF is popover-style) -->
-      <button v-if="photo && isMobile" @click="exifOpen = !exifOpen"
-        class="absolute top-4 right-16 z-10 w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white/80 hover:text-white text-lg transition-colors"
-        title="图片信息">ℹ</button>
+      <!-- Info (mobile only — EXIF is popover-style; hidden while panel is open) -->
+      <button v-if="photo && isMobile && !exifOpen" @click="exifOpen = true"
+        class="absolute top-4 right-16 z-10 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/70 hover:text-white text-xs transition-colors"
+        title="图片信息">信息</button>
 
       <!-- Rotate -->
       <button @click="rot = (rot + 90) % 360"
