@@ -315,6 +315,49 @@ func (s *AuthService) RedeemInviteCode(code, username, password string) (*model.
 	return &u, nil
 }
 
+// ── User Logs ────────────────────────────────────────
+
+// userLogRetentionMax caps the number of user_logs rows kept in the DB.
+const userLogRetentionMax = 2000
+
+// LogEvent records a user activity event (login / session / logout) and
+// prunes rows beyond the retention cap.
+func (s *AuthService) LogEvent(userID int64, username, eventType, ip string) error {
+	if err := s.DB.Create(&model.UserLog{
+		UserID:    userID,
+		Username:  username,
+		EventType: eventType,
+		IP:        ip,
+	}).Error; err != nil {
+		return err
+	}
+
+	var count int64
+	s.DB.Model(&model.UserLog{}).Count(&count)
+	if count > userLogRetentionMax {
+		excess := count - userLogRetentionMax
+		s.DB.Where("id IN (SELECT id FROM user_logs ORDER BY id ASC LIMIT ?)", excess).
+			Delete(&model.UserLog{})
+	}
+	return nil
+}
+
+// ListLogs returns user activity logs, newest first, with cursor pagination.
+func (s *AuthService) ListLogs(limit int, beforeID int64) ([]model.UserLog, int64, error) {
+	var total int64
+	s.DB.Model(&model.UserLog{}).Count(&total)
+
+	q := s.DB.Order("id DESC").Limit(limit)
+	if beforeID > 0 {
+		q = q.Where("id < ?", beforeID)
+	}
+	var logs []model.UserLog
+	if err := q.Find(&logs).Error; err != nil {
+		return nil, 0, err
+	}
+	return logs, total, nil
+}
+
 // isDuplicateKey reports whether err is a Postgres unique-violation (23505).
 func isDuplicateKey(err error) bool {
 	var pgErr *pgconn.PgError
