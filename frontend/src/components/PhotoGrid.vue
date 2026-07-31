@@ -133,7 +133,7 @@
               </div>
             </div>
 
-            <label class="flex items-center gap-2 cursor-pointer">
+            <label v-if="isAdmin" class="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" v-model="uncategorizedOnly" class="rounded accent-white" />
               <span class="text-xs text-neutral-300">仅显示未归类照片</span>
             </label>
