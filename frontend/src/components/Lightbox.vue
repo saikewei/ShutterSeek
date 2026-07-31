@@ -37,12 +37,16 @@
       <div
         ref="container"
         :style="{ paddingRight: photo && !isMobile ? '288px' : '0' }"
-        class="w-full h-full flex items-center justify-center overflow-hidden transition-[padding] duration-200"
+        class="w-full h-full flex items-center justify-center overflow-hidden transition-[padding] duration-200 touch-none"
         @wheel.prevent="onWheel"
         @mousedown="onMouseDown"
         @mousemove="onMouseMove"
         @mouseup="onMouseUp"
         @mouseleave="onMouseUp"
+        @touchstart="onTouchStart"
+        @touchmove="onTouchMove"
+        @touchend="onTouchEnd"
+        @touchcancel="onTouchEnd"
       >
         <img
           v-if="photo"
@@ -167,15 +171,12 @@ watch(() => props.photo, () => {
 
 const isPortrait = () => props.photo && props.photo.height > props.photo.width
 
-// ── Wheel zoom: scale toward cursor ──────────────────
-function onWheel(e: WheelEvent) {
-  const rect = container.value!.getBoundingClientRect()
-  const cx = e.clientX - rect.left - rect.width / 2
-  const cy = e.clientY - rect.top - rect.height / 2
+// ── Zoom: scale toward a point relative to container center ──
+const ZOOM_MIN = 0.3
+const ZOOM_MAX = 10
 
-  const factor = e.deltaY < 0 ? 1.16 : 1 / 1.16
-  const newScale = Math.max(0.3, Math.min(10, scale.value * factor))
-
+function zoomAt(cx: number, cy: number, newScale: number) {
+  newScale = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, newScale))
   if (isPortrait()) {
     // 270° rotation: screen space → pre-rotation space
     // pre-rot (px, py) maps to screen: sx=py*s, sy=-px*s → px=-sy/s, py=sx/s
@@ -188,6 +189,72 @@ function onWheel(e: WheelEvent) {
     y.value = cy - (cy - y.value) * (newScale / scale.value)
   }
   scale.value = newScale
+}
+
+function onWheel(e: WheelEvent) {
+  const rect = container.value!.getBoundingClientRect()
+  const cx = e.clientX - rect.left - rect.width / 2
+  const cy = e.clientY - rect.top - rect.height / 2
+  const factor = e.deltaY < 0 ? 1.16 : 1 / 1.16
+  zoomAt(cx, cy, scale.value * factor)
+}
+
+// ── Touch gestures (pinch zoom, one-finger pan, double-tap) ──
+let touchStartDist = 0
+let touchStartScale = 1
+let lastTouch = { x: 0, y: 0 }
+let lastTapAt = 0
+
+function touchDist(a: Touch, b: Touch) {
+  return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)
+}
+
+function onTouchStart(e: TouchEvent) {
+  if (e.touches.length === 2) {
+    touchStartDist = touchDist(e.touches[0], e.touches[1])
+    touchStartScale = scale.value
+    dragging.value = false
+  } else if (e.touches.length === 1) {
+    dragging.value = true
+    lastTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+  }
+}
+
+function onTouchMove(e: TouchEvent) {
+  e.preventDefault()
+  if (e.touches.length === 2) {
+    const rect = container.value!.getBoundingClientRect()
+    const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2
+    const my = (e.touches[0].clientY + e.touches[1].clientY) / 2
+    const cx = mx - rect.left - rect.width / 2
+    const cy = my - rect.top - rect.height / 2
+    const newScale = touchStartScale * (touchDist(e.touches[0], e.touches[1]) / touchStartDist)
+    zoomAt(cx, cy, newScale)
+  } else if (e.touches.length === 1 && dragging.value) {
+    const t = e.touches[0]
+    const dx = t.clientX - lastTouch.x
+    const dy = t.clientY - lastTouch.y
+    if (isPortrait()) {
+      x.value -= dy
+      y.value += dx
+    } else {
+      x.value += dx
+      y.value += dy
+    }
+    lastTouch = { x: t.clientX, y: t.clientY }
+  }
+}
+
+function onTouchEnd() {
+  dragging.value = false
+  const now = Date.now()
+  if (now - lastTapAt < 300 && scale.value <= 1) {
+    // double tap → zoom in
+    zoomAt(0, 0, 2.5)
+  } else if (now - lastTapAt < 300 && scale.value > 1) {
+    resetZoom()
+  }
+  lastTapAt = now
 }
 
 // ── Pan drag ──────────────────────────────────────────
