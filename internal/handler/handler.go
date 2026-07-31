@@ -32,6 +32,7 @@ type Handler struct {
 	DB       *gorm.DB
 	OrigSvc  *service.OriginalService
 	AlbumSvc *service.AlbumService
+	AuthSvc  *service.AuthService
 }
 
 // ── Health ──────────────────────────────────────────────
@@ -54,6 +55,8 @@ func (h *Handler) PhotoDates(c *gin.Context) {
 	query := "SELECT to_char(p.taken_at, 'YYYY-MM-DD') AS date, COUNT(*) AS count FROM photos p"
 	args := []interface{}{}
 
+	isGuest := c.GetString("role") == "guest"
+
 	if albumIDStr := c.Query("album_id"); albumIDStr != "" {
 		if albumID, err := strconv.ParseInt(albumIDStr, 10, 64); err == nil && albumID > 0 {
 			query += " JOIN album_photos ap ON ap.photo_id = p.id WHERE ap.album_id = ? AND p.taken_at IS NOT NULL"
@@ -63,6 +66,11 @@ func (h *Handler) PhotoDates(c *gin.Context) {
 		}
 	} else {
 		query += " WHERE p.taken_at IS NOT NULL"
+	}
+
+	// Guests only see dates for photos in public albums
+	if isGuest {
+		query += " AND p.id IN (SELECT ap.photo_id FROM album_photos ap JOIN albums a ON a.id = ap.album_id WHERE a.is_public = true)"
 	}
 	query += " GROUP BY date ORDER BY date DESC"
 
@@ -132,6 +140,10 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 	}
 
 	// Redis cache for first page only (skip when filtering)
+	roleScope := ""
+	if c.GetString("role") == "guest" {
+		roleScope = "guest:"
+	}
 	cacheKey := ""
 	uncategorized := c.Query("album_id") == "none"
 	month := c.Query("month")
@@ -141,9 +153,9 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 	}
 	if !hasCursor && !uncategorized && month == "" && c.Query("newer_t") == "" {
 		if albumIDCache != "" {
-			cacheKey = keyFirstPage + "album:" + albumIDCache + ":" + strconv.Itoa(limit)
+			cacheKey = keyFirstPage + roleScope + "album:" + albumIDCache + ":" + strconv.Itoa(limit)
 		} else {
-			cacheKey = keyFirstPage + strconv.Itoa(limit)
+			cacheKey = keyFirstPage + roleScope + strconv.Itoa(limit)
 		}
 		if cached, ok := h.redisGet(cacheKey); ok {
 			c.JSON(http.StatusOK, cached)
@@ -153,6 +165,7 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 
 	var photos []model.Photo
 	q := h.DB.Where("taken_at IS NOT NULL")
+	q = h.guestPhotoFilter(c, q)
 
 	// Filter: specific album
 	albumIDStr := c.Query("album_id")
@@ -182,6 +195,7 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 				nextMonth := t.AddDate(0, 1, 0)
 				// Preload a few photos from the next month (newer) as head
 				headQ := h.DB.Where("taken_at >= ?", nextMonth)
+				headQ = h.guestPhotoFilter(c, headQ)
 				if albumIDStr != "" {
 					if aid, err2 := strconv.ParseInt(albumIDStr, 10, 64); err2 == nil && aid > 0 {
 						headQ = headQ.Where("id IN (SELECT photo_id FROM album_photos WHERE album_id = ?)", aid)
@@ -242,6 +256,20 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 
 	var total int64
 	switch {
+	case roleScope != "": // guest — count only public-album photos
+		tq := h.DB.Model(&model.Photo{}).
+			Where("taken_at IS NOT NULL AND id IN (SELECT ap.photo_id FROM album_photos ap JOIN albums a ON a.id = ap.album_id WHERE a.is_public = true)")
+		if albumIDStr != "" {
+			if albumID, err := strconv.ParseInt(albumIDStr, 10, 64); err == nil && albumID > 0 {
+				tq = tq.Where("id IN (SELECT photo_id FROM album_photos WHERE album_id = ?)", albumID)
+			}
+		}
+		if month != "" {
+			if t, err := time.Parse("2006-01", month); err == nil {
+				tq = tq.Where("taken_at < ?", t.AddDate(0, 1, 0))
+			}
+		}
+		tq.Count(&total)
 	case uncategorized:
 		h.DB.Model(&model.Photo{}).Where("taken_at IS NOT NULL AND id NOT IN (SELECT DISTINCT photo_id FROM album_photos)").Count(&total)
 	case albumIDStr != "":
@@ -302,6 +330,19 @@ func (h *Handler) GetOriginal(c *gin.Context) {
 		return
 	}
 
+	// Guests may only fetch originals of photos in public albums
+	if c.GetString("role") == "guest" {
+		var count int64
+		h.DB.Raw(
+			"SELECT COUNT(*) FROM album_photos ap JOIN albums a ON a.id = ap.album_id WHERE ap.photo_id = ? AND a.is_public = true",
+			id,
+		).Scan(&count)
+		if count == 0 {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权访问"})
+			return
+		}
+	}
+
 	c.Header("Content-Type", "image/jpeg")
 	c.Header("Cache-Control", "public, max-age=86400")
 	if err := h.OrigSvc.ServeOriginal(c.Writer, photo.FilePath); err != nil {
@@ -338,6 +379,17 @@ func (h *Handler) totalPhotoCountCached() int64 {
 		h.Redis.Set(context.Background(), keyTotalPhotos, count, ttlTotal)
 	}
 	return count
+}
+
+// ── Guest visibility helpers ────────────────────────────
+
+// guestPhotoFilter restricts a photo query to photos that belong to at
+// least one public album. Guests see only those photos; admins see all.
+func (h *Handler) guestPhotoFilter(c *gin.Context, q *gorm.DB) *gorm.DB {
+	if c.GetString("role") == "guest" {
+		q = q.Where("id IN (SELECT ap.photo_id FROM album_photos ap JOIN albums a ON a.id = ap.album_id WHERE a.is_public = true)")
+	}
+	return q
 }
 
 // ── helpers ─────────────────────────────────────────────

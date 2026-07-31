@@ -34,6 +34,7 @@ type AlbumItem struct {
 	CoverURL     string    `json:"cover_url"`
 	PhotoCount   int64     `json:"photo_count"`
 	SortOrder    int32     `json:"sort_order"`
+	IsPublic     bool      `json:"is_public"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
@@ -46,8 +47,21 @@ type AlbumPhotoPage struct {
 	HasMore    bool
 }
 func (s *AlbumService) ListAlbums() ([]AlbumItem, error) {
+	return s.listAlbums("")
+}
+
+// ListPublicAlbums returns only albums that guests can see (is_public = true).
+func (s *AlbumService) ListPublicAlbums() ([]AlbumItem, error) {
+	return s.listAlbums("is_public = true")
+}
+
+func (s *AlbumService) listAlbums(where string) ([]AlbumItem, error) {
+	q := s.DB.Order("sort_order, id")
+	if where != "" {
+		q = q.Where(where)
+	}
 	var albums []model.Album
-	if err := s.DB.Order("sort_order, id").Find(&albums).Error; err != nil {
+	if err := q.Find(&albums).Error; err != nil {
 		return nil, err
 	}
 
@@ -58,6 +72,7 @@ func (s *AlbumService) ListAlbums() ([]AlbumItem, error) {
 			Title:       a.Title,
 			Description: a.Description,
 			SortOrder:   a.SortOrder,
+			IsPublic:    a.IsPublic,
 			CreatedAt:   a.CreatedAt,
 			UpdatedAt:   a.UpdatedAt,
 		}
@@ -69,6 +84,19 @@ func (s *AlbumService) ListAlbums() ([]AlbumItem, error) {
 		items[i].CoverURL = s.coverURL(a.ID, a.CoverPhotoID)
 	}
 	return items, nil
+}
+
+// GetAlbumVisibility reports whether an album exists and is public.
+// Guests may only access albums where public is true.
+func (s *AlbumService) GetAlbumVisibility(id int64) (exists bool, public bool, err error) {
+	var a model.Album
+	if err := s.DB.Select("is_public").First(&a, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, false, nil
+		}
+		return false, false, err
+	}
+	return true, a.IsPublic, nil
 }
 
 // GetAlbum returns a single album detail.
@@ -83,6 +111,7 @@ func (s *AlbumService) GetAlbum(id int64) (*AlbumItem, error) {
 		Title:       a.Title,
 		Description: a.Description,
 		SortOrder:   a.SortOrder,
+		IsPublic:    a.IsPublic,
 		CreatedAt:   a.CreatedAt,
 		UpdatedAt:   a.UpdatedAt,
 	}
