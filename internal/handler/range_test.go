@@ -21,7 +21,7 @@ import (
 func insertRangePhotos(t *testing.T, h *Handler, n int) []model.Photo {
 	t.Helper()
 	base := time.Date(2020, 6, 1, 12, 0, 0, 0, time.UTC)
-	prefix := fmt.Sprintf("TEST_RANGE_%d_", time.Now().UnixNano())
+	prefix := fmt.Sprintf("RANGE_PHOTO_%d_", time.Now().UnixNano())
 	photos := make([]model.Photo, n)
 	for i := 0; i < n; i++ {
 		photos[i] = model.Photo{
@@ -49,7 +49,7 @@ func insertRangePhotos(t *testing.T, h *Handler, n int) []model.Photo {
 // their fresh ids, and registers cleanup.
 func insertNullRangePhotos(t *testing.T, h *Handler, n int) []model.Photo {
 	t.Helper()
-	prefix := fmt.Sprintf("TEST_RANGE_NULL_%d_", time.Now().UnixNano())
+	prefix := fmt.Sprintf("RANGE_NULL_%d_", time.Now().UnixNano())
 	photos := make([]model.Photo, n)
 	for i := 0; i < n; i++ {
 		var id int64
@@ -147,7 +147,7 @@ func TestPhotoRange_SubInterval(t *testing.T) {
 func TestPhotoRange_AlbumScoped(t *testing.T) {
 	h := setupHandler(t)
 	photos := insertRangePhotos(t, h, 6)
-	album, err := h.AlbumSvc.CreateAlbum("TEST_RANGE_ALBUM", "")
+	album, err := h.AlbumSvc.CreateAlbum("RANGE_ALBUM", "")
 	if err != nil {
 		t.Fatalf("create album: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestPhotoRange_AlbumScoped(t *testing.T) {
 func TestPhotoRange_Uncategorized(t *testing.T) {
 	h := setupHandler(t)
 	photos := insertRangePhotos(t, h, 6)
-	album, _ := h.AlbumSvc.CreateAlbum("TEST_RANGE_UC", "")
+	album, _ := h.AlbumSvc.CreateAlbum("RANGE_UC", "")
 	t.Cleanup(func() { _ = h.AlbumSvc.DeleteAlbum(album.ID) })
 	// Categorize 4 of them; 2 remain uncategorized
 	h.AlbumSvc.BatchAddPhotos(album.ID, []int64{photos[0].ID, photos[1].ID, photos[2].ID, photos[3].ID})
@@ -239,7 +239,7 @@ func TestPhotoRange_NullAndDatedAnchors(t *testing.T) {
 	h := setupHandler(t)
 	dated := insertRangePhotos(t, h, 2) // 2020-06-01 12:00, 13:00
 	nulls := insertNullRangePhotos(t, h, 1)
-	album, err := h.AlbumSvc.CreateAlbum("TEST_RANGE_NULL", "")
+	album, err := h.AlbumSvc.CreateAlbum("RANGE_NULL", "")
 	if err != nil {
 		t.Fatalf("create album: %v", err)
 	}
