@@ -44,7 +44,18 @@ func (h *Handler) AlbumDates(c *gin.Context) {
 		}
 	}
 
+	roleScope := ""
+	if c.GetString("role") == "guest" {
+		roleScope = "guest:"
+	}
+	cacheKey := "cache:album_dates:" + roleScope + strconv.FormatInt(id, 10)
+
 	var rows []albumDateCount
+	if h.redisGetJSON(cacheKey, &rows) {
+		c.JSON(http.StatusOK, rows)
+		return
+	}
+
 	if err := h.DB.Raw(
 		`SELECT to_char(p.taken_at, 'YYYY-MM-DD') AS date, COUNT(*) AS count
 		 FROM photos p
@@ -58,6 +69,7 @@ func (h *Handler) AlbumDates(c *gin.Context) {
 	if rows == nil {
 		rows = []albumDateCount{}
 	}
+	h.redisSetJSON(cacheKey, rows, ttlDates)
 	c.JSON(http.StatusOK, rows)
 }
 
@@ -78,6 +90,19 @@ type AlbumItem struct {
 // ListAlbums returns all albums (guests see only public ones).
 // GET /api/v1/albums
 func (h *Handler) ListAlbums(c *gin.Context) {
+	// Role-scoped cache (guest list only contains public albums)
+	roleScope := ""
+	if c.GetString("role") == "guest" {
+		roleScope = "guest:"
+	}
+	cacheKey := "cache:albums:" + roleScope
+
+	var items []AlbumItem
+	if h.redisGetJSON(cacheKey, &items) {
+		c.JSON(http.StatusOK, gin.H{"items": items, "total": len(items)})
+		return
+	}
+
 	var (
 		svcItems []service.AlbumItem
 		err      error
@@ -92,11 +117,12 @@ func (h *Handler) ListAlbums(c *gin.Context) {
 		return
 	}
 
-	items := make([]AlbumItem, len(svcItems))
+	items = make([]AlbumItem, len(svcItems))
 	for i, it := range svcItems {
 		items[i] = AlbumItem(it)
 	}
 
+	h.redisSetJSON(cacheKey, items, ttlAlbums)
 	c.JSON(http.StatusOK, gin.H{
 		"items": items,
 		"total": len(items),
@@ -273,6 +299,8 @@ func (h *Handler) CreateAlbum(c *gin.Context) {
 			return
 		}
 	}
+	// Album list changed
+	h.clearAllAlbumCaches()
 	c.JSON(http.StatusCreated, AlbumItem(*item))
 }
 
@@ -312,8 +340,7 @@ func (h *Handler) UpdateAlbum(c *gin.Context) {
 		return
 	}
 	// is_public changes visibility → clear all scoped photo caches
-	h.clearAlbumCache(id)
-	h.clearFirstPageCache()
+	h.clearAllAlbumCaches()
 	c.JSON(http.StatusOK, AlbumItem(*item))
 }
 
@@ -330,6 +357,8 @@ func (h *Handler) DeleteAlbum(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "delete failed"})
 		return
 	}
+	// Album list changed
+	h.clearAllAlbumCaches()
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -359,8 +388,7 @@ func (h *Handler) BatchRemovePhotos(c *gin.Context) {
 	}
 
 	// Album membership changed → clear scoped caches
-	h.clearAlbumCache(albumID)
-	h.clearFirstPageCache()
+	h.clearAllAlbumCaches()
 	c.JSON(http.StatusOK, gin.H{"removed": removed})
 }
 
@@ -388,38 +416,8 @@ func (h *Handler) RemoveAlbumPhoto(c *gin.Context) {
 	}
 
 	// Invalidate album-photos Redis cache
-	h.clearAlbumCache(albumID)
+	h.clearAllAlbumCaches()
 	c.JSON(http.StatusOK, gin.H{"ok": true})
-}
-
-// clearAlbumCache removes all cached first-page responses for an album,
-// including role-scoped guest variants.
-func (h *Handler) clearAlbumCache(albumID int64) {
-	if h.Redis == nil {
-		return
-	}
-	ctx := context.Background()
-	idStr := strconv.FormatInt(albumID, 10)
-	prefixes := []string{
-		"cache:album_photos:" + idStr + ":",
-		"cache:album_photos:guest:" + idStr + ":",
-	}
-	for _, prefix := range prefixes {
-		var cursor uint64
-		for {
-			keys, next, err := h.Redis.Scan(ctx, cursor, prefix+"*", 100).Result()
-			if err != nil {
-				break
-			}
-			if len(keys) > 0 {
-				h.Redis.Del(ctx, keys...)
-			}
-			cursor = next
-			if cursor == 0 {
-				break
-			}
-		}
-	}
 }
 
 // ── Batch Add Photos ────────────────────────────────────
@@ -453,7 +451,7 @@ func (h *Handler) BatchAddPhotos(c *gin.Context) {
 		return
 	}
 
-	h.clearAlbumCache(albumID)
+	h.clearAllAlbumCaches()
 	c.JSON(http.StatusOK, gin.H{
 		"added":   result.Added,
 		"skipped": result.Skipped,
