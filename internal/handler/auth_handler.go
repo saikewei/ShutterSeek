@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"shutterseek/internal/middleware"
+	"shutterseek/internal/model"
 	"shutterseek/internal/service"
 )
 
@@ -41,6 +42,7 @@ func (h *Handler) Login(c *gin.Context) {
 	}
 
 	middleware.SetTokenCookie(c, token)
+	h.AuthSvc.LogEvent(u.ID, u.Username, model.LogEventLogin, c.ClientIP())
 	c.JSON(http.StatusOK, gin.H{
 		"id":       u.ID,
 		"username": u.Username,
@@ -51,6 +53,10 @@ func (h *Handler) Login(c *gin.Context) {
 // Logout clears the JWT cookie.
 // POST /api/v1/auth/logout
 func (h *Handler) Logout(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+	if u, err := h.AuthSvc.FindUserByID(userID); err == nil {
+		h.AuthSvc.LogEvent(u.ID, u.Username, model.LogEventLogout, c.ClientIP())
+	}
 	middleware.ClearTokenCookie(c)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
@@ -64,6 +70,8 @@ func (h *Handler) Me(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
 		return
 	}
+	// JWT session restore counts as an activity event
+	h.AuthSvc.LogEvent(u.ID, u.Username, model.LogEventSession, c.ClientIP())
 	c.JSON(http.StatusOK, gin.H{
 		"id":       u.ID,
 		"username": u.Username,
@@ -130,6 +138,31 @@ func (h *Handler) ValidateInvite(c *gin.Context) {
 		status = "invalid"
 	}
 	c.JSON(http.StatusOK, gin.H{"valid": valid, "status": status})
+}
+
+// ListLogs returns user activity logs, newest first.
+// GET /api/v1/auth/logs  [Admin]
+func (h *Handler) ListLogs(c *gin.Context) {
+	limit := 100
+	if l := c.Query("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil && n > 0 && n <= 200 {
+			limit = n
+		}
+	}
+	var beforeID int64
+	if b := c.Query("before_id"); b != "" {
+		beforeID, _ = strconv.ParseInt(b, 10, 64)
+	}
+
+	logs, total, err := h.AuthSvc.ListLogs(limit, beforeID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
+		return
+	}
+	if logs == nil {
+		logs = []model.UserLog{}
+	}
+	c.JSON(http.StatusOK, gin.H{"items": logs, "total": total})
 }
 
 type redeemReq struct {

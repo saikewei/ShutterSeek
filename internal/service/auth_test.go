@@ -393,3 +393,105 @@ func TestValidateInviteCode_Unknown(t *testing.T) {
 		t.Fatalf("expected ErrInviteInvalid, got %v", err)
 	}
 }
+
+// ═══════════════════════════════════════════════════════
+// User Logs
+// ═══════════════════════════════════════════════════════
+
+func setupLogTest(t *testing.T) (*AuthService, *model.User) {
+	t.Helper()
+	svc := setupAuthSvc(t)
+	u, err := svc.CreateUser("TEST_log_user", "secret123", "guest")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	t.Cleanup(func() {
+		svc.DB.Exec("DELETE FROM user_logs WHERE user_id = ?", u.ID)
+		deleteUser(svc.DB, u.ID)
+	})
+	return svc, u
+}
+
+func TestLogEvent_RecordsAllTypes(t *testing.T) {
+	svc, u := setupLogTest(t)
+
+	for _, ev := range []string{model.LogEventLogin, model.LogEventSession, model.LogEventLogout} {
+		if err := svc.LogEvent(u.ID, u.Username, ev, "127.0.0.1"); err != nil {
+			t.Fatalf("log %s: %v", ev, err)
+		}
+	}
+
+	var logs []model.UserLog
+	svc.DB.Where("user_id = ?", u.ID).Order("id").Find(&logs)
+	if len(logs) != 3 {
+		t.Fatalf("expected 3 logs, got %d", len(logs))
+	}
+	if logs[0].EventType != model.LogEventLogin || logs[1].EventType != model.LogEventSession || logs[2].EventType != model.LogEventLogout {
+		t.Fatalf("wrong event types: %v %v %v", logs[0].EventType, logs[1].EventType, logs[2].EventType)
+	}
+	if logs[0].IP != "127.0.0.1" || logs[0].Username != u.Username {
+		t.Fatalf("wrong ip/username: %+v", logs[0])
+	}
+}
+
+func TestLogEvent_PrunesBeyondLimit(t *testing.T) {
+	svc, u := setupLogTest(t)
+
+	// Insert over the retention cap directly, then one more via LogEvent
+	// to trigger pruning.
+	for i := 0; i < userLogRetentionMax+5; i++ {
+		svc.DB.Create(&model.UserLog{UserID: u.ID, Username: u.Username, EventType: model.LogEventSession})
+	}
+	if err := svc.LogEvent(u.ID, u.Username, model.LogEventLogin, ""); err != nil {
+		t.Fatalf("log: %v", err)
+	}
+
+	var count int64
+	svc.DB.Model(&model.UserLog{}).Count(&count)
+	if count != userLogRetentionMax {
+		t.Fatalf("expected %d logs after prune, got %d", userLogRetentionMax, count)
+	}
+}
+
+func TestListLogs_NewestFirstAndPagination(t *testing.T) {
+	svc, u := setupLogTest(t)
+
+	for i := 0; i < 5; i++ {
+		if err := svc.LogEvent(u.ID, u.Username, model.LogEventSession, ""); err != nil {
+			t.Fatalf("log: %v", err)
+		}
+	}
+
+	// First page: limit 3
+	logs, total, err := svc.ListLogs(3, 0)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if total < 5 {
+		t.Fatalf("expected total >= 5, got %d", total)
+	}
+	if len(logs) != 3 {
+		t.Fatalf("expected 3, got %d", len(logs))
+	}
+	// Newest first
+	for i := 1; i < len(logs); i++ {
+		if logs[i].ID > logs[i-1].ID {
+			t.Fatalf("not newest-first: %d before %d", logs[i].ID, logs[i-1].ID)
+		}
+	}
+
+	// Second page with before_id = last id of first page
+	lastID := logs[len(logs)-1].ID
+	logs2, _, err := svc.ListLogs(10, lastID)
+	if err != nil {
+		t.Fatalf("list2: %v", err)
+	}
+	if len(logs2) == 0 {
+		t.Fatal("expected older logs on page 2")
+	}
+	for _, l := range logs2 {
+		if l.ID >= lastID {
+			t.Fatalf("page 2 contains id %d >= before_id %d", l.ID, lastID)
+		}
+	}
+}
