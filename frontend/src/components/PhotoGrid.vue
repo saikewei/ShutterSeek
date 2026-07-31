@@ -385,6 +385,7 @@ async function doRangeSelect(fromId: number, toId: number) {
   rangeLoading.value = true
   try {
     const ids = await props.rangeFn!(fromId, toId)
+    if (!selectMode.value) return // 期间退出了选择模式，丢弃结果
     const s = new Set(selected.value)
     for (const id of ids) s.add(id)
     selected.value = s
