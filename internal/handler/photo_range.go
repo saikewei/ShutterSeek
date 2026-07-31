@@ -44,9 +44,13 @@ func (h *Handler) PhotoRange(c *gin.Context) {
 	} else {
 		a, b = anchors[1], anchors[0]
 	}
-	loT, loID, hiT, hiID := a.TakenAt, a.ID, b.TakenAt, b.ID
-	if photoTupleLess(b.TakenAt, b.ID, a.TakenAt, a.ID) {
-		loT, loID, hiT, hiID = b.TakenAt, b.ID, a.TakenAt, a.ID
+	// A NULL taken_at is scanned by GORM as Go zero time, but the range SQL
+	// compares against COALESCE(taken_at, 'epoch'), i.e. 1970-01-01. Normalize
+	// zero anchors to that sentinel so the bound arguments agree with the query.
+	at, bt := effectiveTakenAt(a.TakenAt), effectiveTakenAt(b.TakenAt)
+	loT, loID, hiT, hiID := at, a.ID, bt, b.ID
+	if photoTupleLess(bt, b.ID, at, a.ID) {
+		loT, loID, hiT, hiID = bt, b.ID, at, a.ID
 	}
 
 	q := `SELECT id FROM photos
@@ -76,7 +80,10 @@ func (h *Handler) PhotoRange(c *gin.Context) {
 	if c.GetString("role") == "guest" {
 		q += " AND id IN (SELECT ap.photo_id FROM album_photos ap JOIN albums a ON a.id = ap.album_id WHERE a.is_public = true)"
 	}
-	q += " ORDER BY taken_at DESC NULLS LAST, id DESC"
+	// Cap the materialized rows: exceeding rangeSelectLimit means the range is
+	// too large, and the 400 below reports it without scanning the whole table.
+	q += " ORDER BY taken_at DESC NULLS LAST, id DESC LIMIT ?"
+	args = append(args, rangeSelectLimit+1)
 
 	var ids []int64
 	if err := h.DB.Raw(q, args...).Scan(&ids).Error; err != nil {
@@ -92,11 +99,23 @@ func (h *Handler) PhotoRange(c *gin.Context) {
 }
 
 // photoTupleLess reports whether (t1, id1) sorts before (t2, id2) in the
-// taken_at ASC, id ASC sense. A zero taken_at (NULL) counts as oldest, which
-// matches the COALESCE(taken_at, 'epoch') used in the SQL comparison.
+// taken_at ASC, id ASC sense. Callers must pass effective (epoch-normalized)
+// times for NULL anchors, matching the COALESCE(taken_at, 'epoch') used in the
+// range SQL.
 func photoTupleLess(t1 time.Time, id1 int64, t2 time.Time, id2 int64) bool {
 	if !t1.Equal(t2) {
 		return t1.Before(t2)
 	}
 	return id1 < id2
+}
+
+// effectiveTakenAt maps a zero time.Time — how GORM scans a NULL taken_at into
+// the non-pointer field — to the epoch sentinel that COALESCE(taken_at,
+// 'epoch') uses in the range SQL, so Go-side anchor bounds agree with the
+// database comparison.
+func effectiveTakenAt(t time.Time) time.Time {
+	if t.IsZero() {
+		return time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
+	}
+	return t
 }
