@@ -11,6 +11,9 @@ frontend/node_modules/
 # 缩略图 (不提交)
 thumbnails/
 
+# certmagic 证书存储 (含私钥，绝不提交)
+certs/
+
 # 热重载
 .air.toml
 tmp/
