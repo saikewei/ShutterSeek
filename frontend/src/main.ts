@@ -8,6 +8,7 @@ import AlbumDetail from './views/AlbumDetail.vue'
 import Login from './views/Login.vue'
 import InviteRedeem from './views/InviteRedeem.vue'
 import AdminInvites from './views/AdminInvites.vue'
+import AdminLogs from './views/AdminLogs.vue'
 import { authState, checkAuth } from './stores/auth'
 
 const routes = [
@@ -17,6 +18,7 @@ const routes = [
   { path: '/albums', component: AlbumList },
   { path: '/albums/:id', component: AlbumDetail },
   { path: '/admin/invites', component: AdminInvites },
+  { path: '/admin/logs', component: AdminLogs },
 ]
 
 const router = createRouter({
