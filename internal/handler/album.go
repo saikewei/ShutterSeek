@@ -333,6 +333,37 @@ func (h *Handler) DeleteAlbum(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+// BatchRemovePhotos removes multiple photos from an album.
+// DELETE /api/v1/albums/:id/photos
+func (h *Handler) BatchRemovePhotos(c *gin.Context) {
+	albumID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid album id"})
+		return
+	}
+
+	var req batchAddReq
+	if err := c.ShouldBindJSON(&req); err != nil || len(req.PhotoIDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "photo_ids required"})
+		return
+	}
+
+	removed, err := h.AlbumSvc.BatchRemovePhotos(albumID, req.PhotoIDs)
+	if err != nil {
+		if errors.Is(err, service.ErrAlbumNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "album not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "remove failed"})
+		return
+	}
+
+	// Album membership changed → clear scoped caches
+	h.clearAlbumCache(albumID)
+	h.clearFirstPageCache()
+	c.JSON(http.StatusOK, gin.H{"removed": removed})
+}
+
 // RemoveAlbumPhoto removes a photo from an album.
 // DELETE /api/v1/albums/:id/photos/:photo_id
 func (h *Handler) RemoveAlbumPhoto(c *gin.Context) {
