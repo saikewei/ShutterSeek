@@ -30,6 +30,20 @@ func (h *Handler) AlbumDates(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
+
+	// Guest visibility guard
+	if c.GetString("role") == "guest" {
+		exists, public, err := h.AlbumSvc.GetAlbumVisibility(id)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
+			return
+		}
+		if !exists || !public {
+			c.JSON(http.StatusNotFound, gin.H{"error": "album not found"})
+			return
+		}
+	}
+
 	var rows []albumDateCount
 	if err := h.DB.Raw(
 		`SELECT to_char(p.taken_at, 'YYYY-MM-DD') AS date, COUNT(*) AS count
@@ -56,14 +70,23 @@ type AlbumItem struct {
 	CoverURL     string    `json:"cover_url"`
 	PhotoCount   int64     `json:"photo_count"`
 	SortOrder    int32     `json:"sort_order"`
+	IsPublic     bool      `json:"is_public"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
-// ListAlbums returns all albums.
+// ListAlbums returns all albums (guests see only public ones).
 // GET /api/v1/albums
 func (h *Handler) ListAlbums(c *gin.Context) {
-	svcItems, err := h.AlbumSvc.ListAlbums()
+	var (
+		svcItems []service.AlbumItem
+		err      error
+	)
+	if c.GetString("role") == "guest" {
+		svcItems, err = h.AlbumSvc.ListPublicAlbums()
+	} else {
+		svcItems, err = h.AlbumSvc.ListAlbums()
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "list albums failed"})
 		return
@@ -96,6 +119,10 @@ func (h *Handler) GetAlbum(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "album not found"})
 		return
 	}
+	if c.GetString("role") == "guest" && !item.IsPublic {
+		c.JSON(http.StatusNotFound, gin.H{"error": "album not found"})
+		return
+	}
 
 	c.JSON(http.StatusOK, AlbumItem(*item))
 }
@@ -117,6 +144,19 @@ func (h *Handler) ListAlbumPhotos(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
+	}
+
+	// Guest visibility guard
+	if c.GetString("role") == "guest" {
+		exists, public, err := h.AlbumSvc.GetAlbumVisibility(albumID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
+			return
+		}
+		if !exists || !public {
+			c.JSON(http.StatusNotFound, gin.H{"error": "album not found"})
+			return
+		}
 	}
 
 	limit := 50
@@ -145,10 +185,14 @@ func (h *Handler) ListAlbumPhotos(c *gin.Context) {
 		}
 	}
 
-	// Redis cache for first page
+	// Redis cache for first page — guests get role-scoped keys
 	cacheKey := ""
 	if !hasCursor {
-		cacheKey = "cache:album_photos:" + strconv.FormatInt(albumID, 10) + ":" + strconv.Itoa(limit)
+		roleScope := ""
+		if c.GetString("role") == "guest" {
+			roleScope = "guest:"
+		}
+		cacheKey = "cache:album_photos:" + roleScope + strconv.FormatInt(albumID, 10) + ":" + strconv.Itoa(limit)
 		if cached, ok := h.redisGet(cacheKey); ok {
 			c.JSON(http.StatusOK, cached)
 			return
@@ -302,26 +346,32 @@ func (h *Handler) RemoveAlbumPhoto(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-// clearAlbumCache removes all cached first-page responses for an album.
+// clearAlbumCache removes all cached first-page responses for an album,
+// including role-scoped guest variants.
 func (h *Handler) clearAlbumCache(albumID int64) {
 	if h.Redis == nil {
 		return
 	}
-	prefix := "cache:album_photos:" + strconv.FormatInt(albumID, 10) + ":"
 	ctx := context.Background()
-
-	var cursor uint64
-	for {
-		keys, next, err := h.Redis.Scan(ctx, cursor, prefix+"*", 100).Result()
-		if err != nil {
-			return
-		}
-		if len(keys) > 0 {
-			h.Redis.Del(ctx, keys...)
-		}
-		cursor = next
-		if cursor == 0 {
-			break
+	idStr := strconv.FormatInt(albumID, 10)
+	prefixes := []string{
+		"cache:album_photos:" + idStr + ":",
+		"cache:album_photos:guest:" + idStr + ":",
+	}
+	for _, prefix := range prefixes {
+		var cursor uint64
+		for {
+			keys, next, err := h.Redis.Scan(ctx, cursor, prefix+"*", 100).Result()
+			if err != nil {
+				break
+			}
+			if len(keys) > 0 {
+				h.Redis.Del(ctx, keys...)
+			}
+			cursor = next
+			if cursor == 0 {
+				break
+			}
 		}
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"shutterseek/internal/handler"
+	"shutterseek/internal/middleware"
 )
 
 // Setup registers all routes and returns the Gin engine.
@@ -14,21 +15,40 @@ func Setup(h *handler.Handler, thumbDir string) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
 
-	// API v1
+	// Public routes (no auth required)
+	v1Public := r.Group("/api/v1")
+	{
+		v1Public.POST("/auth/login", h.Login)
+		v1Public.POST("/invites/redeem", h.RedeemInvite)
+	}
+
+	// Authenticated routes
 	v1 := r.Group("/api/v1")
+	v1.Use(middleware.AuthRequired(h.AuthSvc))
 	{
 		v1.GET("/photos", h.ListPhotos)
 		v1.GET("/photos/dates", h.PhotoDates)
 		v1.GET("/photos/:id/original", h.GetOriginal)
 		v1.GET("/albums", h.ListAlbums)
-		v1.POST("/albums", h.CreateAlbum)
 		v1.GET("/albums/:id", h.GetAlbum)
-			v1.GET("/albums/:id/dates", h.AlbumDates)
-		v1.PUT("/albums/:id", h.UpdateAlbum)
-		v1.DELETE("/albums/:id", h.DeleteAlbum)
+		v1.GET("/albums/:id/dates", h.AlbumDates)
 		v1.GET("/albums/:id/photos", h.ListAlbumPhotos)
-		v1.POST("/albums/:id/photos", h.BatchAddPhotos)
-		v1.DELETE("/albums/:id/photos/:photo_id", h.RemoveAlbumPhoto)
+		v1.GET("/auth/me", h.Me)
+		v1.POST("/auth/logout", h.Logout)
+
+		// Admin only
+		admin := v1.Group("")
+		admin.Use(middleware.AdminOnly())
+		{
+			admin.POST("/albums", h.CreateAlbum)
+			admin.PUT("/albums/:id", h.UpdateAlbum)
+			admin.DELETE("/albums/:id", h.DeleteAlbum)
+			admin.POST("/albums/:id/photos", h.BatchAddPhotos)
+			admin.DELETE("/albums/:id/photos/:photo_id", h.RemoveAlbumPhoto)
+			admin.POST("/invites", h.CreateInvite)
+			admin.GET("/invites", h.ListInvites)
+			admin.DELETE("/invites/:id", h.DeleteInvite)
+		}
 	}
 	r.GET("/api/health", h.Health)
 
