@@ -184,10 +184,11 @@ func (s *AlbumService) CreateAlbum(title, description string) (*AlbumItem, error
 	return s.GetAlbum(a.ID)
 }
 
-// UpdateAlbum updates an album's title, description, and/or cover photo.
-// Pass nil for fields you don't want to change.
+// UpdateAlbum updates an album's title, description, cover photo, and/or
+// public visibility. Pass nil for fields you don't want to change.
 // coverPhotoID: nil = no change, pointer to -1 = clear (auto), pointer to N = set to N.
-func (s *AlbumService) UpdateAlbum(id int64, title, description *string, coverPhotoID *int64) (*AlbumItem, error) {
+// isPublic: nil = no change, pointer to true/false = set visibility.
+func (s *AlbumService) UpdateAlbum(id int64, title, description *string, coverPhotoID *int64, isPublic *bool) (*AlbumItem, error) {
 	tx := s.DB.Begin()
 	defer func() {
 		if r := recover(); r != nil {
@@ -223,6 +224,9 @@ func (s *AlbumService) UpdateAlbum(id int64, title, description *string, coverPh
 			}
 			a.CoverPhotoID = coverPhotoID
 		}
+	}
+	if isPublic != nil {
+		a.IsPublic = *isPublic
 	}
 	a.UpdatedAt = time.Now()
 

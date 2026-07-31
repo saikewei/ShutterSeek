@@ -246,6 +246,7 @@ func (h *Handler) ListAlbumPhotos(c *gin.Context) {
 type createAlbumReq struct {
 	Title       string `json:"title" binding:"required"`
 	Description string `json:"description"`
+	IsPublic    bool   `json:"is_public"`
 }
 
 // CreateAlbum creates a new album.
@@ -262,6 +263,16 @@ func (h *Handler) CreateAlbum(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "create failed"})
 		return
 	}
+
+	// Create always starts private; apply is_public immediately if requested
+	if req.IsPublic {
+		public := true
+		item, err = h.AlbumSvc.UpdateAlbum(item.ID, nil, nil, nil, &public)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "create failed"})
+			return
+		}
+	}
 	c.JSON(http.StatusCreated, AlbumItem(*item))
 }
 
@@ -269,6 +280,7 @@ type updateAlbumReq struct {
 	Title        *string `json:"title"`
 	Description  *string `json:"description"`
 	CoverPhotoID *int64  `json:"cover_photo_id"`
+	IsPublic     *bool   `json:"is_public"`
 }
 
 // UpdateAlbum updates an album.
@@ -286,7 +298,7 @@ func (h *Handler) UpdateAlbum(c *gin.Context) {
 		return
 	}
 
-	item, err := h.AlbumSvc.UpdateAlbum(id, req.Title, req.Description, req.CoverPhotoID)
+	item, err := h.AlbumSvc.UpdateAlbum(id, req.Title, req.Description, req.CoverPhotoID, req.IsPublic)
 	if err != nil {
 		if errors.Is(err, service.ErrAlbumNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "album not found"})
@@ -299,6 +311,9 @@ func (h *Handler) UpdateAlbum(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "update failed"})
 		return
 	}
+	// is_public changes visibility → clear all scoped photo caches
+	h.clearAlbumCache(id)
+	h.clearFirstPageCache()
 	c.JSON(http.StatusOK, AlbumItem(*item))
 }
 

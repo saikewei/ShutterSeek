@@ -352,6 +352,29 @@ func (h *Handler) GetOriginal(c *gin.Context) {
 
 // ── Redis ───────────────────────────────────────────────
 
+// clearFirstPageCache removes all cached first-page photo responses.
+// Call after mutations that change photo visibility (e.g. is_public toggle).
+func (h *Handler) clearFirstPageCache() {
+	if h.Redis == nil {
+		return
+	}
+	ctx := context.Background()
+	var cursor uint64
+	for {
+		keys, next, err := h.Redis.Scan(ctx, cursor, "cache:first_page:*", 100).Result()
+		if err != nil {
+			return
+		}
+		if len(keys) > 0 {
+			h.Redis.Del(ctx, keys...)
+		}
+		cursor = next
+		if cursor == 0 {
+			break
+		}
+	}
+}
+
 func (h *Handler) redisGet(key string) (PhotoListResponse, bool) {
 	if h.Redis == nil {
 		return PhotoListResponse{}, false
