@@ -6,7 +6,7 @@
       <button @click="doLogout" class="text-xs text-neutral-400 hover:text-neutral-200 transition-colors">退出</button>
     </header>
 
-    <main class="flex-1 overflow-auto">
+    <main class="flex-1 overflow-auto overflow-x-hidden">
       <router-view />
     </main>
 
