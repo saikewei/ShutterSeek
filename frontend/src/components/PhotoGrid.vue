@@ -26,6 +26,7 @@
 
         <span v-if="selectMode" class="text-xs text-neutral-400">
           已选 {{ selected.size }} 张
+          <span v-if="rangeLoading"> · 选择中...</span>
         </span>
       </div>
 
@@ -48,7 +49,7 @@
           :key="photo.id"
           class="group cursor-pointer relative rounded-lg overflow-hidden bg-neutral-800"
           :class="{ 'ring-2 ring-white': selectMode && selected.has(photo.id) }"
-          @click="onPhotoClick(photo)"
+          @click="onPhotoClick(photo, $event)"
           @contextmenu.prevent="$emit('photoContextmenu', photo, $event)"
         >
           <img
@@ -198,6 +199,7 @@ const props = defineProps<{
   albumTitles?: Record<number, string>
   stickyOffset?: number
   datesFn?: () => Promise<Array<{ date: string; count: number }>>
+  rangeFn?: (fromId: number, toId: number) => Promise<number[]>
 }>()
 
 defineEmits<{
@@ -356,18 +358,41 @@ function onKeyDown(e: KeyboardEvent) {
 
 const selectMode = ref(false)
 const selected = ref<Set<number>>(new Set())
+const anchorId = ref<number | null>(null)
+const rangeLoading = ref(false)
 
-function enterSelectMode() { selectMode.value = true; selected.value = new Set() }
-function exitSelectMode() { selectMode.value = false; selected.value = new Set() }
+function enterSelectMode() { selectMode.value = true; selected.value = new Set(); anchorId.value = null }
+function exitSelectMode() { selectMode.value = false; selected.value = new Set(); anchorId.value = null }
 
-function onPhotoClick(photo: Photo) {
+function onPhotoClick(photo: Photo, e: MouseEvent) {
   if (selectMode.value) {
+    if (e.shiftKey && anchorId.value !== null && props.rangeFn) {
+      doRangeSelect(anchorId.value, photo.id)
+      return
+    }
     const s = new Set(selected.value)
     if (s.has(photo.id)) s.delete(photo.id)
     else s.add(photo.id)
     selected.value = s
+    anchorId.value = photo.id
   } else {
     openLightbox(photo)
+  }
+}
+
+async function doRangeSelect(fromId: number, toId: number) {
+  if (rangeLoading.value) return
+  rangeLoading.value = true
+  try {
+    const ids = await props.rangeFn!(fromId, toId)
+    const s = new Set(selected.value)
+    for (const id of ids) s.add(id)
+    selected.value = s
+    anchorId.value = toId
+  } catch (e: any) {
+    console.error('range select failed', e)
+  } finally {
+    rangeLoading.value = false
   }
 }
 
