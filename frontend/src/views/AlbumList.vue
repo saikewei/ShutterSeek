@@ -34,6 +34,9 @@
         <!-- Inline context menu -->
         <div v-if="menuAlbum === album" class="absolute inset-0 z-10 bg-neutral-900/95 rounded-lg flex flex-col items-center justify-center gap-1" @click.stop>
           <button @click.stop="openRename(album)" class="px-4 py-1.5 text-sm text-neutral-300 hover:text-white transition-colors">重命名</button>
+          <button @click.stop="togglePublic(album)" class="px-4 py-1.5 text-sm text-neutral-300 hover:text-white transition-colors">
+            {{ album.is_public ? '设为私有' : '设为公开' }}
+          </button>
           <button @click.stop="confirmDelete(album)" class="px-4 py-1.5 text-sm text-red-400 hover:text-red-300 transition-colors">删除</button>
           <button @click.stop="menuAlbum = null" class="mt-2 text-xs text-neutral-500 hover:text-neutral-400">取消</button>
         </div>
@@ -166,5 +169,15 @@ async function doDelete() {
   await deleteAlbum(deleteTarget.value.id)
   deleteTarget.value = null
   await load()
+}
+
+// ── Public toggle ─────────────────────────────────────
+
+async function togglePublic(album: Album) {
+  menuAlbum.value = null
+  try {
+    await updateAlbum(album.id, { is_public: !album.is_public })
+    await load()
+  } catch { /* backend rejects */ }
 }
 </script>
