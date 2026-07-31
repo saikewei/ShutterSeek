@@ -20,6 +20,7 @@ func Setup(h *handler.Handler, thumbDir string) *gin.Engine {
 	{
 		v1Public.POST("/auth/login", h.Login)
 		v1Public.POST("/invites/redeem", h.RedeemInvite)
+		v1Public.GET("/invites/validate/:code", h.ValidateInvite)
 	}
 
 	// Authenticated routes

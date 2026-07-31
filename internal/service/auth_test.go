@@ -338,3 +338,58 @@ func TestRedeemInviteCode_UnknownCode(t *testing.T) {
 		t.Fatalf("expected ErrInviteInvalid, got %v", err)
 	}
 }
+
+// ═══════════════════════════════════════════════════════
+// Invite Validation
+// ═══════════════════════════════════════════════════════
+
+func TestValidateInviteCode_Valid(t *testing.T) {
+	svc := setupAuthSvc(t)
+	admin, _ := svc.CreateUser("TEST_vl_admin", "secret123", "admin")
+	defer deleteUser(svc.DB, admin.ID)
+	detail, _ := svc.CreateInviteCode(admin.ID)
+	defer svc.DB.Where("id = ?", detail.ID).Delete(&model.InviteCode{})
+
+	if err := svc.ValidateInviteCode(detail.Code); err != nil {
+		t.Fatalf("valid code should pass, got %v", err)
+	}
+}
+
+func TestValidateInviteCode_Used(t *testing.T) {
+	svc := setupAuthSvc(t)
+	admin, _ := svc.CreateUser("TEST_vl2_admin", "secret123", "admin")
+	defer deleteUser(svc.DB, admin.ID)
+	detail, _ := svc.CreateInviteCode(admin.ID)
+	defer svc.DB.Where("id = ?", detail.ID).Delete(&model.InviteCode{})
+
+	u, _ := svc.RedeemInviteCode(detail.Code, "TEST_vl2_g", "guestpass1")
+	defer deleteUser(svc.DB, u.ID)
+
+	if err := svc.ValidateInviteCode(detail.Code); !errors.Is(err, ErrInviteInvalid) {
+		t.Fatalf("used code should be invalid, got %v", err)
+	}
+}
+
+func TestValidateInviteCode_Expired(t *testing.T) {
+	svc := setupAuthSvc(t)
+	admin, _ := svc.CreateUser("TEST_vl3_admin", "secret123", "admin")
+	defer deleteUser(svc.DB, admin.ID)
+	ic := model.InviteCode{
+		Code:      "expired-validate-code-123",
+		CreatedBy: admin.ID,
+		ExpiresAt: time.Now().Add(-time.Hour),
+	}
+	svc.DB.Create(&ic)
+	defer svc.DB.Where("id = ?", ic.ID).Delete(&model.InviteCode{})
+
+	if err := svc.ValidateInviteCode(ic.Code); !errors.Is(err, ErrInviteExpired) {
+		t.Fatalf("expected ErrInviteExpired, got %v", err)
+	}
+}
+
+func TestValidateInviteCode_Unknown(t *testing.T) {
+	svc := setupAuthSvc(t)
+	if err := svc.ValidateInviteCode("nonexistent-validate-code"); !errors.Is(err, ErrInviteInvalid) {
+		t.Fatalf("expected ErrInviteInvalid, got %v", err)
+	}
+}

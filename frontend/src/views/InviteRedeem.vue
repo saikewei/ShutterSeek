@@ -6,7 +6,7 @@
     <div class="absolute -bottom-40 -right-40 w-[28rem] h-[28rem] rounded-full bg-amber-500/10 blur-3xl" />
 
     <!-- 邀请注册卡片 -->
-    <div class="relative w-full max-w-sm px-6">
+    <div v-if="!checking" class="relative w-full max-w-sm px-6">
       <div class="bg-neutral-900/60 backdrop-blur-xl border border-neutral-800 rounded-2xl p-8 shadow-2xl shadow-black/50">
         <div class="flex flex-col items-center mb-8">
           <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-sky-400 to-sky-600 flex items-center justify-center shadow-lg shadow-sky-500/25">
@@ -74,9 +74,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { redeemInvite } from '@/api/auth'
+import { redeemInvite, validateInvite } from '@/api/auth'
 import { setUser } from '@/stores/auth'
 
 const route = useRoute()
@@ -87,6 +87,23 @@ const password = ref('')
 const confirmPassword = ref('')
 const error = ref('')
 const loading = ref(false)
+const checking = ref(true)
+
+// Validate the invite code on entry — redirect to login if expired/invalid
+onMounted(async () => {
+  try {
+    const res = await validateInvite(code)
+    if (!res.valid) {
+      router.replace('/login')
+      return
+    }
+  } catch {
+    router.replace('/login')
+    return
+  } finally {
+    checking.value = false
+  }
+})
 
 async function doRedeem() {
   error.value = ''

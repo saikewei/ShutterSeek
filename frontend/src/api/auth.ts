@@ -51,3 +51,13 @@ export async function redeemInvite(
   const { data } = await api.post<User>('/invites/redeem', { code, username, password })
   return data
 }
+
+export interface InviteValidation {
+  valid: boolean
+  status: 'valid' | 'expired' | 'invalid'
+}
+
+export async function validateInvite(code: string): Promise<InviteValidation> {
+  const { data } = await api.get<InviteValidation>(`/invites/validate/${code}`)
+  return data
+}

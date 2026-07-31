@@ -117,6 +117,21 @@ func (h *Handler) DeleteInvite(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+// ValidateInvite checks whether an invite code is valid and unexpired.
+// GET /api/v1/invites/validate/:code  (no auth)
+func (h *Handler) ValidateInvite(c *gin.Context) {
+	code := c.Param("code")
+	err := h.AuthSvc.ValidateInviteCode(code)
+	valid := err == nil
+	status := "valid"
+	if errors.Is(err, service.ErrInviteExpired) {
+		status = "expired"
+	} else if err != nil {
+		status = "invalid"
+	}
+	c.JSON(http.StatusOK, gin.H{"valid": valid, "status": status})
+}
+
 type redeemReq struct {
 	Code     string `json:"code" binding:"required"`
 	Username string `json:"username" binding:"required"`
