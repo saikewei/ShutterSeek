@@ -2,7 +2,7 @@
   <div class="p-3">
     <div class="flex items-center justify-between mb-3">
       <p class="text-xs text-neutral-500">{{ albums.length }} albums</p>
-      <button @click="openCreate" class="px-3 py-1.5 text-xs rounded-full bg-neutral-700 text-white hover:bg-neutral-600 transition-colors">+ 新建相册</button>
+      <button v-if="isAdmin" @click="openCreate" class="px-3 py-1.5 text-xs rounded-full bg-neutral-700 text-white hover:bg-neutral-600 transition-colors">+ 新建相册</button>
     </div>
 
     <div v-if="loading" class="text-center text-neutral-500 py-12 text-sm">Loading...</div>
@@ -26,6 +26,7 @@
 
         <!-- Context menu button -->
         <button
+          v-if="isAdmin"
           class="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-black/60 text-neutral-300 hover:text-white hover:bg-black/80 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-sm"
           @click.stop="toggleMenu(album)"
         >⋯</button>
@@ -38,7 +39,11 @@
         </div>
 
         <div class="p-3">
-          <p class="text-sm font-medium text-white truncate">{{ album.title }}</p>
+          <p class="text-sm font-medium text-white truncate flex items-center gap-1">
+            <span>{{ album.title }}</span>
+            <span v-if="album.is_public" class="text-[10px] text-emerald-400" title="公开相册">🔓</span>
+            <span v-else class="text-[10px] text-neutral-500" title="私有相册">🔒</span>
+          </p>
           <p class="text-xs text-neutral-400">{{ album.photo_count.toLocaleString() }} photos</p>
         </div>
       </div>
@@ -63,6 +68,10 @@
             class="w-full px-3 py-2 text-sm rounded-lg bg-neutral-700 text-white border border-neutral-600 outline-none focus:border-neutral-400 resize-none h-16"
             placeholder="描述（可选）"
           />
+          <label class="flex items-center gap-2 cursor-pointer mt-1">
+            <input type="checkbox" v-model="dialog.isPublic" class="rounded accent-white" />
+            <span class="text-xs text-neutral-300">公开（访客可见）</span>
+          </label>
           <div class="flex justify-end gap-2 mt-3">
             <button @click="closeDialog" class="px-3 py-1.5 text-xs rounded-full text-neutral-400 hover:text-white transition-colors">取消</button>
             <button @click="confirmDialog" class="px-4 py-1.5 text-xs rounded-full bg-white text-black font-medium hover:bg-neutral-200 transition-colors">确定</button>
@@ -91,6 +100,7 @@
 <script setup lang="ts">
 import { ref, onMounted, nextTick } from 'vue'
 import { fetchAlbums, createAlbum, updateAlbum, deleteAlbum, type Album } from '@/api/albums'
+import { isAdmin } from '@/stores/auth'
 
 const albums = ref<Album[]>([])
 const loading = ref(true)
@@ -104,19 +114,19 @@ onMounted(load)
 
 // ── Create / Rename dialog ────────────────────────────
 
-const dialog = ref<{ open: boolean; mode: 'create' | 'rename'; title: string; description: string; albumId: number | null }>({
-  open: false, mode: 'create', title: '', description: '', albumId: null
+const dialog = ref<{ open: boolean; mode: 'create' | 'rename'; title: string; description: string; isPublic: boolean; albumId: number | null }>({
+  open: false, mode: 'create', title: '', description: '', isPublic: false, albumId: null
 })
 const titleInput = ref<HTMLInputElement | null>(null)
 
 function openCreate() {
-  dialog.value = { open: true, mode: 'create', title: '', description: '', albumId: null }
+  dialog.value = { open: true, mode: 'create', title: '', description: '', isPublic: false, albumId: null }
   nextTick(() => titleInput.value?.focus())
 }
 
 function openRename(album: Album) {
   menuAlbum.value = null
-  dialog.value = { open: true, mode: 'rename', title: album.title, description: '', albumId: album.id }
+  dialog.value = { open: true, mode: 'rename', title: album.title, description: '', isPublic: album.is_public, albumId: album.id }
   nextTick(() => titleInput.value?.focus())
 }
 
@@ -126,9 +136,9 @@ async function confirmDialog() {
   const t = dialog.value.title.trim()
   if (!t) return
   if (dialog.value.mode === 'create') {
-    await createAlbum(t, dialog.value.description)
+    await createAlbum(t, dialog.value.description, dialog.value.isPublic)
   } else if (dialog.value.albumId) {
-    await updateAlbum(dialog.value.albumId, { title: t })
+    await updateAlbum(dialog.value.albumId, { title: t, is_public: dialog.value.isPublic })
   }
   dialog.value.open = false
   await load()

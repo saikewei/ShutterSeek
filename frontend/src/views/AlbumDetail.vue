@@ -15,7 +15,7 @@
       :dates-fn="albumDatesFn"
       :album-titles="albumTitles"
       :sticky-offset="53"
-      @photo-contextmenu="onContextMenu"
+      @photo-contextmenu="(photo, event) => isAdmin && onContextMenu(photo, event)"
     />
 
     <!-- Right-click context menu -->
@@ -47,6 +47,7 @@ import PhotoGrid from '@/components/PhotoGrid.vue'
 import { fetchAlbum, fetchAlbumDates, updateAlbum, removeAlbumPhoto } from '@/api/albums'
 import { fetchPhotos } from '@/api/photos'
 import type { Photo } from '@/api/photos'
+import { isAdmin } from '@/stores/auth'
 
 const route = useRoute()
 const albumId = Number(route.params.id)

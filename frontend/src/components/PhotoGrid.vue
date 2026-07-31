@@ -13,7 +13,7 @@
         </button>
 
         <button
-          v-if="!selectMode"
+          v-if="isAdmin && !selectMode"
           @click="enterSelectMode"
           class="px-3 py-1 text-xs rounded-full bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors"
         >选择</button>
@@ -30,7 +30,7 @@
       </div>
 
       <div v-if="selectMode" class="flex items-center gap-1.5">
-        <button @click="openAlbumPicker" class="px-3 py-1 text-xs rounded-full bg-white text-black font-medium hover:bg-neutral-200 transition-colors">
+        <button v-if="isAdmin" @click="openAlbumPicker" class="px-3 py-1 text-xs rounded-full bg-white text-black font-medium hover:bg-neutral-200 transition-colors">
           添加到相册
         </button>
         <button @click="exitSelectMode" class="px-3 py-1 text-xs rounded-full text-neutral-400 hover:text-white transition-colors">取消</button>
@@ -185,6 +185,7 @@ import type { Photo, PhotoListResponse } from '@/api/photos'
 import { fetchPhotoDates } from '@/api/photos'
 import { THUMB_BASE } from '@/api/client'
 import { fetchAlbums, batchAddPhotos, type Album } from '@/api/albums'
+import { isAdmin } from '@/stores/auth'
 import Lightbox from '@/components/Lightbox.vue'
 import DateScrubber from '@/components/DateScrubber.vue'
 import type { DatePoint } from '@/components/DateScrubber.vue'
