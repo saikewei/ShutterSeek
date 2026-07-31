@@ -80,12 +80,17 @@ func (s *AuthService) ValidateToken(tokenStr string) (*Claims, error) {
 		return nil, errors.New("invalid token")
 	}
 
-	// Revocation check
+	// Revocation check. Note: jwt.NumericDate serializes with second precision,
+	// while users.updated_at has nanosecond precision — so a token issued in the
+	// same second as an account update would compare as iat < updated_at and be
+	// wrongly revoked. A 1s tolerance covers that while still invalidating real
+	// revocations (password change / force-logout always crosses a second boundary).
+	const skewTolerance = time.Second
 	var user model.User
 	if err := s.DB.Select("updated_at").First(&user, claims.UserID).Error; err != nil {
 		return nil, err
 	}
-	if claims.IssuedAt.Time.Before(user.UpdatedAt) {
+	if claims.IssuedAt.Time.Before(user.UpdatedAt.Add(-skewTolerance)) {
 		return nil, ErrTokenRevoked
 	}
 	return claims, nil
