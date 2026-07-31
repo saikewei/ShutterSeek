@@ -44,6 +44,20 @@
             />
           </div>
 
+          <div class="relative">
+            <svg class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
+            </svg>
+            <input
+              v-model="confirmPassword"
+              type="password"
+              class="w-full pl-10 pr-3 py-2.5 text-sm rounded-lg bg-neutral-800/70 text-white border border-neutral-700/80 outline-none placeholder:text-neutral-500 focus:border-sky-500/50 focus:ring-1 focus:ring-sky-500/20 transition-all"
+              placeholder="确认密码"
+              autocomplete="new-password"
+              @keyup.enter="doRedeem"
+            />
+          </div>
+
           <p v-if="error" class="text-xs text-red-400">{{ error }}</p>
 
           <button
@@ -70,6 +84,7 @@ const router = useRouter()
 const code = route.params.code as string
 const username = ref('')
 const password = ref('')
+const confirmPassword = ref('')
 const error = ref('')
 const loading = ref(false)
 
@@ -77,6 +92,10 @@ async function doRedeem() {
   error.value = ''
   if (password.value.length < 6) {
     error.value = '密码至少需要6个字符'
+    return
+  }
+  if (password.value !== confirmPassword.value) {
+    error.value = '两次输入的密码不一致'
     return
   }
   loading.value = true
