@@ -12,12 +12,12 @@
 
       <!-- Info (mobile only — EXIF is popover-style; hidden while panel is open) -->
       <button v-if="photo && isMobile && !exifOpen" @click="exifOpen = true"
-        class="absolute top-4 right-16 z-10 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/70 hover:text-white text-xs transition-colors"
+        class="absolute top-4 right-16 z-10 h-10 flex items-center px-3 rounded-lg bg-white/10 hover:bg-white/20 text-white/70 hover:text-white text-xs transition-colors"
         title="图片信息">信息</button>
 
       <!-- Rotate -->
       <button @click="rot = (rot + 90) % 360"
-        class="absolute top-4 left-4 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/80 hover:text-white transition-colors"
+        class="absolute top-4 left-4 z-10 h-10 flex items-center gap-1.5 px-3 rounded-lg bg-white/10 hover:bg-white/20 text-white/80 hover:text-white transition-colors"
         title="旋转">
         <span class="text-lg leading-none">↻</span>
         <span class="text-xs">旋转</span>
@@ -25,7 +25,7 @@
 
       <!-- Reset zoom -->
       <button v-if="scale !== 1" @click="resetZoom"
-        class="absolute top-4 left-28 z-10 text-white/50 hover:text-white text-sm px-2 py-1">Reset</button>
+        class="absolute top-4 left-28 z-10 h-10 flex items-center text-white/50 hover:text-white text-sm px-2">Reset</button>
 
       <!-- Prev / Next -->
       <button v-if="hasPrev" @click.stop="$emit('prev')"
