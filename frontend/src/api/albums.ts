@@ -58,6 +58,13 @@ export async function removeAlbumPhoto(albumId: number, photoId: number): Promis
   await api.delete(`/albums/${albumId}/photos/${photoId}`)
 }
 
+export async function removeAlbumPhotos(albumId: number, photoIds: number[]): Promise<{ removed: number }> {
+  const { data } = await api.delete<{ removed: number }>(`/albums/${albumId}/photos`, {
+    data: { photo_ids: photoIds },
+  })
+  return data
+}
+
 export async function fetchAlbumDates(albumId: number): Promise<Array<{ date: string; count: number }>> {
   const { data } = await api.get(`/albums/${albumId}/dates`)
   return data
