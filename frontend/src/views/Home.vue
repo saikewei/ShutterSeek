@@ -1,13 +1,13 @@
 <template>
   <div>
-    <PhotoGrid ref="gridRef" :fetch-fn="wrapFetch" :album-titles="albumTitles" />
+    <PhotoGrid ref="gridRef" :fetch-fn="wrapFetch" :album-titles="albumTitles" :range-fn="rangeFn" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import PhotoGrid from '@/components/PhotoGrid.vue'
-import { fetchPhotos } from '@/api/photos'
+import { fetchPhotos, fetchPhotoRange } from '@/api/photos'
 import { fetchAlbums } from '@/api/albums'
 
 const albumTitles = ref<Record<number, string>>({})
@@ -26,5 +26,9 @@ function wrapFetch(
   signal?: AbortSignal
 ) {
   return fetchPhotos(params, signal)
+}
+
+function rangeFn(fromId: number, toId: number) {
+  return fetchPhotoRange({ from_id: fromId, to_id: toId }).then(r => r.photo_ids)
 }
 </script>
