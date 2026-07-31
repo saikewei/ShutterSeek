@@ -1,5 +1,31 @@
 <template>
-  <div class="flex h-screen bg-neutral-950 text-white">
+  <!-- Mobile guest shell: top bar + bottom tabs, no sidebar -->
+  <div v-if="isGuestMobile" class="flex flex-col h-screen bg-neutral-950 text-white">
+    <header class="shrink-0 px-4 py-3 border-b border-neutral-800 bg-neutral-900 flex items-center justify-between">
+      <h1 class="text-sm font-semibold tracking-wide text-white">ShutterSeek</h1>
+      <button @click="doLogout" class="text-xs text-neutral-400 hover:text-neutral-200 transition-colors">退出</button>
+    </header>
+
+    <main class="flex-1 overflow-auto">
+      <router-view />
+    </main>
+
+    <nav class="shrink-0 flex border-t border-neutral-800 bg-neutral-900">
+      <router-link
+        to="/"
+        class="flex-1 py-3 text-xs text-center transition-colors"
+        :class="$route.path === '/' ? 'text-white bg-neutral-800' : 'text-neutral-400'"
+      >全部照片</router-link>
+      <router-link
+        to="/albums"
+        class="flex-1 py-3 text-xs text-center transition-colors"
+        :class="$route.path.startsWith('/albums') ? 'text-white bg-neutral-800' : 'text-neutral-400'"
+      >相册</router-link>
+    </nav>
+  </div>
+
+  <!-- Desktop shell -->
+  <div v-else class="flex h-screen bg-neutral-950 text-white">
     <!-- Sidebar -->
     <nav v-if="!hideSidebar" class="w-48 shrink-0 bg-neutral-900 border-r border-neutral-800 flex flex-col">
       <div class="px-4 py-4 border-b border-neutral-800">
@@ -46,6 +72,7 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { authState, isAdmin, clearUser } from '@/stores/auth'
+import { isGuestMobile } from '@/stores/device'
 import { logout } from '@/api/auth'
 
 const route = useRoute()

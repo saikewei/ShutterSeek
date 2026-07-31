@@ -13,6 +13,12 @@
         </button>
 
         <button
+          v-if="isGuestMobile && !selectMode"
+          @click="monthPickerOpen = true"
+          class="px-3 py-1 text-xs rounded-full bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors"
+        >月份</button>
+
+        <button
           v-if="isAdmin && !selectMode"
           @click="enterSelectMode"
           class="px-3 py-1 text-xs rounded-full bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors"
@@ -151,8 +157,8 @@
       </div>
     </Teleport>
 
-    <!-- Date scrubber -->
-    <DateScrubber :dates="datePoints" :active-month="activeMonth" @jump="jumpToDate" />
+    <!-- Date scrubber (desktop only; mobile uses the month-picker modal) -->
+    <DateScrubber v-if="!isGuestMobile" :dates="datePoints" :active-month="activeMonth" @jump="jumpToDate" />
 
     <!-- Album picker dialog -->
     <Teleport to="body">
@@ -198,6 +204,20 @@
         </div>
       </div>
     </Teleport>
+
+    <!-- Mobile month picker modal -->
+    <Teleport to="body">
+      <div v-if="monthPickerOpen" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+        <div class="absolute inset-0 bg-black/60" @click="monthPickerOpen = false" />
+        <div class="relative w-full max-h-[70vh] flex flex-col px-3 pb-3">
+          <div class="mb-2 flex items-center justify-between">
+            <h2 class="text-sm font-medium text-white">跳转到月份</h2>
+            <button @click="monthPickerOpen = false" class="text-xs text-neutral-400 hover:text-white">关闭</button>
+          </div>
+          <DateScrubber embedded :dates="datePoints" :active-month="activeMonth" @jump="onMonthJump" />
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -208,6 +228,7 @@ import { fetchPhotoDates } from '@/api/photos'
 import { THUMB_BASE } from '@/api/client'
 import { fetchAlbums, batchAddPhotos, removeAlbumPhotos, type Album } from '@/api/albums'
 import { isAdmin } from '@/stores/auth'
+import { isGuestMobile } from '@/stores/device'
 import Lightbox from '@/components/Lightbox.vue'
 import DateScrubber from '@/components/DateScrubber.vue'
 import type { DatePoint } from '@/components/DateScrubber.vue'
@@ -328,12 +349,20 @@ const activeMonth = computed(() => {
 
 const jumpCooldown = ref(false)
 
+// Mobile month picker
+const monthPickerOpen = ref(false)
+
 function jumpToDate(monthKey: string) {
   jumpMonth.value = monthKey
   hasNewer.value = monthKey !== ''
   jumpCooldown.value = true
   setTimeout(() => { jumpCooldown.value = false }, 500)
   reload()
+}
+
+function onMonthJump(monthKey: string) {
+  monthPickerOpen.value = false
+  jumpToDate(monthKey)
 }
 
 function scrollToTop() {
