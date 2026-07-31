@@ -32,6 +32,9 @@
       </div>
 
       <div v-if="selectMode" class="flex items-center gap-1.5">
+        <button v-if="isAdmin && removeFromAlbumId !== undefined" @click="confirmRemoveOpen = true" class="px-3 py-1 text-xs rounded-full bg-red-600/80 text-white hover:bg-red-600 transition-colors">
+          从相册删除
+        </button>
         <button v-if="isAdmin" @click="openAlbumPicker" class="px-3 py-1 text-xs rounded-full bg-white text-black font-medium hover:bg-neutral-200 transition-colors">
           添加到相册
         </button>
@@ -178,6 +181,23 @@
         </div>
       </div>
     </Teleport>
+
+    <!-- Remove from album confirmation -->
+    <Teleport to="body">
+      <div v-if="confirmRemoveOpen" class="fixed inset-0 z-50 flex items-center justify-center">
+        <div class="absolute inset-0 bg-black/60" @click="confirmRemoveOpen = false" />
+        <div class="relative bg-neutral-800 rounded-xl p-5 w-80 shadow-xl border border-neutral-700">
+          <h2 class="text-sm font-medium text-white mb-1">从相册移除</h2>
+          <p class="text-xs text-neutral-400 mb-4">确定从相册移除选中的 {{ selected.size }} 张照片吗？</p>
+          <div class="flex justify-end gap-2">
+            <button @click="confirmRemoveOpen = false" class="px-3 py-1.5 text-xs rounded-full text-neutral-400 hover:text-white">取消</button>
+            <button @click="doRemoveFromAlbum" :disabled="removingFromAlbum" class="px-4 py-1.5 text-xs rounded-full bg-red-600 text-white font-medium hover:bg-red-500 disabled:opacity-50">
+              {{ removingFromAlbum ? '移除中...' : '移除' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -186,7 +206,7 @@ import { ref, computed, onMounted, onUnmounted, reactive, watch } from 'vue'
 import type { Photo, PhotoListResponse } from '@/api/photos'
 import { fetchPhotoDates } from '@/api/photos'
 import { THUMB_BASE } from '@/api/client'
-import { fetchAlbums, batchAddPhotos, type Album } from '@/api/albums'
+import { fetchAlbums, batchAddPhotos, removeAlbumPhotos, type Album } from '@/api/albums'
 import { isAdmin } from '@/stores/auth'
 import Lightbox from '@/components/Lightbox.vue'
 import DateScrubber from '@/components/DateScrubber.vue'
@@ -201,10 +221,12 @@ const props = defineProps<{
   stickyOffset?: number
   datesFn?: () => Promise<Array<{ date: string; count: number }>>
   rangeFn?: (fromId: number, toId: number, opts?: { album_id?: string }) => Promise<number[]>
+  removeFromAlbumId?: number
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   photoContextmenu: [photo: Photo, event: MouseEvent]
+  removedFromAlbum: []
 }>()
 
 const jumpMonth = ref('')
@@ -424,6 +446,30 @@ async function doBatchAdd(albumId: number) {
     addingResult.value = `已添加 ${r.added} 张` + (r.skipped > 0 ? `，${r.skipped} 张已存在` : '')
   } catch {
     addingResult.value = '添加失败'
+  }
+}
+
+// ── Remove from album (batch) ────────────────────────
+
+const confirmRemoveOpen = ref(false)
+const removingFromAlbum = ref(false)
+
+async function doRemoveFromAlbum() {
+  if (props.removeFromAlbumId === undefined || selected.value.size === 0) return
+  if (removingFromAlbum.value) return
+  removingFromAlbum.value = true
+  const ids = Array.from(selected.value)
+  try {
+    await removeAlbumPhotos(props.removeFromAlbumId, ids)
+    // Remove from the visible list
+    for (const id of ids) removePhotoById(id)
+    emit('removedFromAlbum')
+    exitSelectMode()
+  } catch {
+    // keep selection so the user can retry
+  } finally {
+    confirmRemoveOpen.value = false
+    removingFromAlbum.value = false
   }
 }
 

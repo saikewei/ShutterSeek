@@ -16,7 +16,9 @@
       :album-titles="albumTitles"
       :sticky-offset="53"
       :range-fn="rangeFn"
+      :remove-from-album-id="albumId"
       @photo-contextmenu="(photo, event) => isAdmin && onContextMenu(photo, event)"
+      @removed-from-album="refreshAlbum"
     />
 
     <!-- Right-click context menu -->
@@ -57,10 +59,13 @@ const gridRef = ref<InstanceType<typeof PhotoGrid> | null>(null)
 const albumTitles: Record<number, string> = {}
 
 // Load album info
-fetchAlbum(albumId).then(a => {
-  album.value = a
-  albumTitles[a.id] = a.title
-})
+function refreshAlbum() {
+  fetchAlbum(albumId).then(a => {
+    album.value = a
+    albumTitles[a.id] = a.title
+  })
+}
+refreshAlbum()
 
 const ctxMenu = reactive<{
   show: boolean; x: number; y: number; photo: Photo | null; confirming: boolean
