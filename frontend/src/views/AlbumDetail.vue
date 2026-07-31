@@ -15,7 +15,10 @@
       :dates-fn="albumDatesFn"
       :album-titles="albumTitles"
       :sticky-offset="53"
-      @photo-contextmenu="onContextMenu"
+      :range-fn="rangeFn"
+      :remove-from-album-id="albumId"
+      @photo-contextmenu="(photo, event) => isAdmin && onContextMenu(photo, event)"
+      @removed-from-album="refreshAlbum"
     />
 
     <!-- Right-click context menu -->
@@ -45,8 +48,9 @@ import { ref, reactive } from 'vue'
 import { useRoute } from 'vue-router'
 import PhotoGrid from '@/components/PhotoGrid.vue'
 import { fetchAlbum, fetchAlbumDates, updateAlbum, removeAlbumPhoto } from '@/api/albums'
-import { fetchPhotos } from '@/api/photos'
+import { fetchPhotos, fetchPhotoRange } from '@/api/photos'
 import type { Photo } from '@/api/photos'
+import { isAdmin } from '@/stores/auth'
 
 const route = useRoute()
 const albumId = Number(route.params.id)
@@ -55,10 +59,13 @@ const gridRef = ref<InstanceType<typeof PhotoGrid> | null>(null)
 const albumTitles: Record<number, string> = {}
 
 // Load album info
-fetchAlbum(albumId).then(a => {
-  album.value = a
-  albumTitles[a.id] = a.title
-})
+function refreshAlbum() {
+  fetchAlbum(albumId).then(a => {
+    album.value = a
+    albumTitles[a.id] = a.title
+  })
+}
+refreshAlbum()
 
 const ctxMenu = reactive<{
   show: boolean; x: number; y: number; photo: Photo | null; confirming: boolean
@@ -70,6 +77,10 @@ function albumDatesFn() {
 
 function wrapFetch(params: any, signal?: AbortSignal) {
   return fetchPhotos({ ...params, album_id: String(albumId) }, signal)
+}
+
+function rangeFn(fromId: number, toId: number, opts?: { album_id?: string }) {
+  return fetchPhotoRange({ from_id: fromId, to_id: toId, album_id: opts?.album_id ?? String(albumId) }).then(r => r.photo_ids)
 }
 
 function onContextMenu(photo: Photo, event: MouseEvent) {

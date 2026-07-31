@@ -13,7 +13,7 @@
         </button>
 
         <button
-          v-if="!selectMode"
+          v-if="isAdmin && !selectMode"
           @click="enterSelectMode"
           class="px-3 py-1 text-xs rounded-full bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors"
         >选择</button>
@@ -26,11 +26,16 @@
 
         <span v-if="selectMode" class="text-xs text-neutral-400">
           已选 {{ selected.size }} 张
+          <span v-if="rangeLoading"> · 选择中...</span>
+          <span v-if="rangeError" class="text-xs text-red-400 ml-2">{{ rangeError }}</span>
         </span>
       </div>
 
       <div v-if="selectMode" class="flex items-center gap-1.5">
-        <button @click="openAlbumPicker" class="px-3 py-1 text-xs rounded-full bg-white text-black font-medium hover:bg-neutral-200 transition-colors">
+        <button v-if="isAdmin && removeFromAlbumId !== undefined" @click="confirmRemoveOpen = true" class="px-3 py-1 text-xs rounded-full bg-red-600/80 text-white hover:bg-red-600 transition-colors">
+          从相册删除
+        </button>
+        <button v-if="isAdmin" @click="openAlbumPicker" class="px-3 py-1 text-xs rounded-full bg-white text-black font-medium hover:bg-neutral-200 transition-colors">
           添加到相册
         </button>
         <button @click="exitSelectMode" class="px-3 py-1 text-xs rounded-full text-neutral-400 hover:text-white transition-colors">取消</button>
@@ -48,7 +53,7 @@
           :key="photo.id"
           class="group cursor-pointer relative rounded-lg overflow-hidden bg-neutral-800"
           :class="{ 'ring-2 ring-white': selectMode && selected.has(photo.id) }"
-          @click="onPhotoClick(photo)"
+          @click="onPhotoClick(photo, $event)"
           @contextmenu.prevent="$emit('photoContextmenu', photo, $event)"
         >
           <img
@@ -133,7 +138,7 @@
               </div>
             </div>
 
-            <label class="flex items-center gap-2 cursor-pointer">
+            <label v-if="isAdmin" class="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" v-model="uncategorizedOnly" class="rounded accent-white" />
               <span class="text-xs text-neutral-300">仅显示未归类照片</span>
             </label>
@@ -176,6 +181,23 @@
         </div>
       </div>
     </Teleport>
+
+    <!-- Remove from album confirmation -->
+    <Teleport to="body">
+      <div v-if="confirmRemoveOpen" class="fixed inset-0 z-50 flex items-center justify-center">
+        <div class="absolute inset-0 bg-black/60" @click="confirmRemoveOpen = false" />
+        <div class="relative bg-neutral-800 rounded-xl p-5 w-80 shadow-xl border border-neutral-700">
+          <h2 class="text-sm font-medium text-white mb-1">从相册移除</h2>
+          <p class="text-xs text-neutral-400 mb-4">确定从相册移除选中的 {{ selected.size }} 张照片吗？</p>
+          <div class="flex justify-end gap-2">
+            <button @click="confirmRemoveOpen = false" class="px-3 py-1.5 text-xs rounded-full text-neutral-400 hover:text-white">取消</button>
+            <button @click="doRemoveFromAlbum" :disabled="removingFromAlbum" class="px-4 py-1.5 text-xs rounded-full bg-red-600 text-white font-medium hover:bg-red-500 disabled:opacity-50">
+              {{ removingFromAlbum ? '移除中...' : '移除' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -184,7 +206,8 @@ import { ref, computed, onMounted, onUnmounted, reactive, watch } from 'vue'
 import type { Photo, PhotoListResponse } from '@/api/photos'
 import { fetchPhotoDates } from '@/api/photos'
 import { THUMB_BASE } from '@/api/client'
-import { fetchAlbums, batchAddPhotos, type Album } from '@/api/albums'
+import { fetchAlbums, batchAddPhotos, removeAlbumPhotos, type Album } from '@/api/albums'
+import { isAdmin } from '@/stores/auth'
 import Lightbox from '@/components/Lightbox.vue'
 import DateScrubber from '@/components/DateScrubber.vue'
 import type { DatePoint } from '@/components/DateScrubber.vue'
@@ -197,10 +220,13 @@ const props = defineProps<{
   albumTitles?: Record<number, string>
   stickyOffset?: number
   datesFn?: () => Promise<Array<{ date: string; count: number }>>
+  rangeFn?: (fromId: number, toId: number, opts?: { album_id?: string }) => Promise<number[]>
+  removeFromAlbumId?: number
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   photoContextmenu: [photo: Photo, event: MouseEvent]
+  removedFromAlbum: []
 }>()
 
 const jumpMonth = ref('')
@@ -355,18 +381,47 @@ function onKeyDown(e: KeyboardEvent) {
 
 const selectMode = ref(false)
 const selected = ref<Set<number>>(new Set())
+const anchorId = ref<number | null>(null)
+const rangeLoading = ref(false)
+const rangeError = ref('')
 
-function enterSelectMode() { selectMode.value = true; selected.value = new Set() }
-function exitSelectMode() { selectMode.value = false; selected.value = new Set() }
+function enterSelectMode() { selectMode.value = true; selected.value = new Set(); anchorId.value = null; rangeError.value = '' }
+function exitSelectMode() { selectMode.value = false; selected.value = new Set(); anchorId.value = null; rangeError.value = '' }
 
-function onPhotoClick(photo: Photo) {
+function onPhotoClick(photo: Photo, e: MouseEvent) {
   if (selectMode.value) {
+    if (e.shiftKey && anchorId.value !== null && props.rangeFn) {
+      doRangeSelect(anchorId.value, photo.id)
+      return
+    }
     const s = new Set(selected.value)
     if (s.has(photo.id)) s.delete(photo.id)
     else s.add(photo.id)
     selected.value = s
+    anchorId.value = photo.id
   } else {
     openLightbox(photo)
+  }
+}
+
+async function doRangeSelect(fromId: number, toId: number) {
+  if (rangeLoading.value) return
+  rangeLoading.value = true
+  rangeError.value = ''
+  try {
+    const ids = await props.rangeFn!(fromId, toId, { album_id: uncategorizedOnly.value ? 'none' : undefined })
+    if (!selectMode.value) return // 期间退出了选择模式，丢弃结果
+    const s = new Set(selected.value)
+    for (const id of ids) s.add(id)
+    selected.value = s
+    anchorId.value = toId
+  } catch (e: any) {
+    console.error('range select failed', e)
+    rangeError.value = e?.response?.data?.error === 'range too large'
+      ? 'Range too large (max 5000)'
+      : 'Range select failed'
+  } finally {
+    rangeLoading.value = false
   }
 }
 
@@ -391,6 +446,30 @@ async function doBatchAdd(albumId: number) {
     addingResult.value = `已添加 ${r.added} 张` + (r.skipped > 0 ? `，${r.skipped} 张已存在` : '')
   } catch {
     addingResult.value = '添加失败'
+  }
+}
+
+// ── Remove from album (batch) ────────────────────────
+
+const confirmRemoveOpen = ref(false)
+const removingFromAlbum = ref(false)
+
+async function doRemoveFromAlbum() {
+  if (props.removeFromAlbumId === undefined || selected.value.size === 0) return
+  if (removingFromAlbum.value) return
+  removingFromAlbum.value = true
+  const ids = Array.from(selected.value)
+  try {
+    await removeAlbumPhotos(props.removeFromAlbumId, ids)
+    // Remove from the visible list
+    for (const id of ids) removePhotoById(id)
+    emit('removedFromAlbum')
+    exitSelectMode()
+  } catch {
+    // keep selection so the user can retry
+  } finally {
+    confirmRemoveOpen.value = false
+    removingFromAlbum.value = false
   }
 }
 

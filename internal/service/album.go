@@ -34,6 +34,7 @@ type AlbumItem struct {
 	CoverURL     string    `json:"cover_url"`
 	PhotoCount   int64     `json:"photo_count"`
 	SortOrder    int32     `json:"sort_order"`
+	IsPublic     bool      `json:"is_public"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
@@ -46,8 +47,21 @@ type AlbumPhotoPage struct {
 	HasMore    bool
 }
 func (s *AlbumService) ListAlbums() ([]AlbumItem, error) {
+	return s.listAlbums("")
+}
+
+// ListPublicAlbums returns only albums that guests can see (is_public = true).
+func (s *AlbumService) ListPublicAlbums() ([]AlbumItem, error) {
+	return s.listAlbums("is_public = true")
+}
+
+func (s *AlbumService) listAlbums(where string) ([]AlbumItem, error) {
+	q := s.DB.Order("sort_order, id")
+	if where != "" {
+		q = q.Where(where)
+	}
 	var albums []model.Album
-	if err := s.DB.Order("sort_order, id").Find(&albums).Error; err != nil {
+	if err := q.Find(&albums).Error; err != nil {
 		return nil, err
 	}
 
@@ -58,6 +72,7 @@ func (s *AlbumService) ListAlbums() ([]AlbumItem, error) {
 			Title:       a.Title,
 			Description: a.Description,
 			SortOrder:   a.SortOrder,
+			IsPublic:    a.IsPublic,
 			CreatedAt:   a.CreatedAt,
 			UpdatedAt:   a.UpdatedAt,
 		}
@@ -69,6 +84,19 @@ func (s *AlbumService) ListAlbums() ([]AlbumItem, error) {
 		items[i].CoverURL = s.coverURL(a.ID, a.CoverPhotoID)
 	}
 	return items, nil
+}
+
+// GetAlbumVisibility reports whether an album exists and is public.
+// Guests may only access albums where public is true.
+func (s *AlbumService) GetAlbumVisibility(id int64) (exists bool, public bool, err error) {
+	var a model.Album
+	if err := s.DB.Select("is_public").First(&a, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, false, nil
+		}
+		return false, false, err
+	}
+	return true, a.IsPublic, nil
 }
 
 // GetAlbum returns a single album detail.
@@ -83,6 +111,7 @@ func (s *AlbumService) GetAlbum(id int64) (*AlbumItem, error) {
 		Title:       a.Title,
 		Description: a.Description,
 		SortOrder:   a.SortOrder,
+		IsPublic:    a.IsPublic,
 		CreatedAt:   a.CreatedAt,
 		UpdatedAt:   a.UpdatedAt,
 	}
@@ -155,10 +184,11 @@ func (s *AlbumService) CreateAlbum(title, description string) (*AlbumItem, error
 	return s.GetAlbum(a.ID)
 }
 
-// UpdateAlbum updates an album's title, description, and/or cover photo.
-// Pass nil for fields you don't want to change.
+// UpdateAlbum updates an album's title, description, cover photo, and/or
+// public visibility. Pass nil for fields you don't want to change.
 // coverPhotoID: nil = no change, pointer to -1 = clear (auto), pointer to N = set to N.
-func (s *AlbumService) UpdateAlbum(id int64, title, description *string, coverPhotoID *int64) (*AlbumItem, error) {
+// isPublic: nil = no change, pointer to true/false = set visibility.
+func (s *AlbumService) UpdateAlbum(id int64, title, description *string, coverPhotoID *int64, isPublic *bool) (*AlbumItem, error) {
 	tx := s.DB.Begin()
 	defer func() {
 		if r := recover(); r != nil {
@@ -195,6 +225,9 @@ func (s *AlbumService) UpdateAlbum(id int64, title, description *string, coverPh
 			a.CoverPhotoID = coverPhotoID
 		}
 	}
+	if isPublic != nil {
+		a.IsPublic = *isPublic
+	}
 	a.UpdatedAt = time.Now()
 
 	if err := tx.Save(&a).Error; err != nil {
@@ -226,6 +259,51 @@ func (s *AlbumService) DeleteAlbum(id int64) error {
 		return err
 	}
 	return tx.Commit().Error
+}
+
+// BatchRemovePhotos removes multiple photos from an album in one transaction.
+// Returns the number of rows actually removed. If the album cover is among
+// the removed photos, the cover is cleared.
+func (s *AlbumService) BatchRemovePhotos(albumID int64, photoIDs []int64) (int64, error) {
+	tx := s.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	var a model.Album
+	if err := tx.First(&a, albumID).Error; err != nil {
+		tx.Rollback()
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, ErrAlbumNotFound
+		}
+		return 0, err
+	}
+
+	res := tx.Where("album_id = ? AND photo_id IN ?", albumID, photoIDs).
+		Delete(&model.AlbumPhoto{})
+	if res.Error != nil {
+		tx.Rollback()
+		return 0, res.Error
+	}
+	removed := res.RowsAffected
+
+	// If the cover photo was among the removed, clear it
+	if a.CoverPhotoID != nil {
+		for _, pid := range photoIDs {
+			if *a.CoverPhotoID == pid {
+				a.CoverPhotoID = nil
+				tx.Save(&a)
+				break
+			}
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		return 0, err
+	}
+	return removed, nil
 }
 
 // RemoveAlbumPhoto removes a single photo from an album.
