@@ -27,6 +27,7 @@
         <span v-if="selectMode" class="text-xs text-neutral-400">
           已选 {{ selected.size }} 张
           <span v-if="rangeLoading"> · 选择中...</span>
+          <span v-if="rangeError" class="text-xs text-red-400 ml-2">{{ rangeError }}</span>
         </span>
       </div>
 
@@ -199,7 +200,7 @@ const props = defineProps<{
   albumTitles?: Record<number, string>
   stickyOffset?: number
   datesFn?: () => Promise<Array<{ date: string; count: number }>>
-  rangeFn?: (fromId: number, toId: number) => Promise<number[]>
+  rangeFn?: (fromId: number, toId: number, opts?: { album_id?: string }) => Promise<number[]>
 }>()
 
 defineEmits<{
@@ -360,9 +361,10 @@ const selectMode = ref(false)
 const selected = ref<Set<number>>(new Set())
 const anchorId = ref<number | null>(null)
 const rangeLoading = ref(false)
+const rangeError = ref('')
 
-function enterSelectMode() { selectMode.value = true; selected.value = new Set(); anchorId.value = null }
-function exitSelectMode() { selectMode.value = false; selected.value = new Set(); anchorId.value = null }
+function enterSelectMode() { selectMode.value = true; selected.value = new Set(); anchorId.value = null; rangeError.value = '' }
+function exitSelectMode() { selectMode.value = false; selected.value = new Set(); anchorId.value = null; rangeError.value = '' }
 
 function onPhotoClick(photo: Photo, e: MouseEvent) {
   if (selectMode.value) {
@@ -383,8 +385,9 @@ function onPhotoClick(photo: Photo, e: MouseEvent) {
 async function doRangeSelect(fromId: number, toId: number) {
   if (rangeLoading.value) return
   rangeLoading.value = true
+  rangeError.value = ''
   try {
-    const ids = await props.rangeFn!(fromId, toId)
+    const ids = await props.rangeFn!(fromId, toId, { album_id: uncategorizedOnly.value ? 'none' : undefined })
     if (!selectMode.value) return // 期间退出了选择模式，丢弃结果
     const s = new Set(selected.value)
     for (const id of ids) s.add(id)
@@ -392,6 +395,9 @@ async function doRangeSelect(fromId: number, toId: number) {
     anchorId.value = toId
   } catch (e: any) {
     console.error('range select failed', e)
+    rangeError.value = e?.response?.data?.error === 'range too large'
+      ? 'Range too large (max 5000)'
+      : 'Range select failed'
   } finally {
     rangeLoading.value = false
   }

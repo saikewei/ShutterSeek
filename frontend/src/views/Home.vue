@@ -28,7 +28,7 @@ function wrapFetch(
   return fetchPhotos(params, signal)
 }
 
-function rangeFn(fromId: number, toId: number) {
-  return fetchPhotoRange({ from_id: fromId, to_id: toId }).then(r => r.photo_ids)
+function rangeFn(fromId: number, toId: number, opts?: { album_id?: string }) {
+  return fetchPhotoRange({ from_id: fromId, to_id: toId, album_id: opts?.album_id }).then(r => r.photo_ids)
 }
 </script>

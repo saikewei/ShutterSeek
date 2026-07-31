@@ -74,8 +74,8 @@ function wrapFetch(params: any, signal?: AbortSignal) {
   return fetchPhotos({ ...params, album_id: String(albumId) }, signal)
 }
 
-function rangeFn(fromId: number, toId: number) {
-  return fetchPhotoRange({ from_id: fromId, to_id: toId, album_id: String(albumId) }).then(r => r.photo_ids)
+function rangeFn(fromId: number, toId: number, opts?: { album_id?: string }) {
+  return fetchPhotoRange({ from_id: fromId, to_id: toId, album_id: opts?.album_id ?? String(albumId) }).then(r => r.photo_ids)
 }
 
 function onContextMenu(photo: Photo, event: MouseEvent) {
