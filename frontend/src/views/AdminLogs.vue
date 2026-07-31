@@ -1,12 +1,12 @@
 <template>
   <div class="p-4">
-    <div class="flex items-center justify-between mb-4">
+    <div class="flex items-center justify-between mb-4 max-w-3xl mx-auto">
       <h1 class="text-base font-medium text-white">用户日志</h1>
       <p class="text-xs text-neutral-500">共 {{ total.toLocaleString() }} 条</p>
     </div>
 
     <div v-if="loading && logs.length === 0" class="text-center text-neutral-500 py-12 text-sm">Loading...</div>
-    <div v-else>
+    <div v-else class="max-w-3xl mx-auto">
       <div class="bg-neutral-800 rounded-lg border border-neutral-700 overflow-hidden">
         <table class="w-full text-sm">
           <thead>
