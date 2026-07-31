@@ -1,7 +1,7 @@
 <template>
   <div class="flex h-screen bg-neutral-950 text-white">
     <!-- Sidebar -->
-    <nav class="w-48 shrink-0 bg-neutral-900 border-r border-neutral-800 flex flex-col">
+    <nav v-if="!hideSidebar" class="w-48 shrink-0 bg-neutral-900 border-r border-neutral-800 flex flex-col">
       <div class="px-4 py-4 border-b border-neutral-800">
         <h1 class="text-sm font-semibold tracking-wide text-white">ShutterSeek</h1>
       </div>
@@ -37,11 +37,14 @@
 </template>
 
 <script setup lang="ts">
-import { useRouter } from 'vue-router'
+import { computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { authState, isAdmin, clearUser } from '@/stores/auth'
 import { logout } from '@/api/auth'
 
+const route = useRoute()
 const router = useRouter()
+const hideSidebar = computed(() => route.meta.hideSidebar)
 
 async function doLogout() {
   try { await logout() } catch { /* ignore */ }

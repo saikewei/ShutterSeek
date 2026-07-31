@@ -11,8 +11,8 @@ import AdminInvites from './views/AdminInvites.vue'
 import { authState, checkAuth } from './stores/auth'
 
 const routes = [
-  { path: '/login', component: Login, meta: { noAuth: true } },
-  { path: '/invite/:code', component: InviteRedeem, meta: { noAuth: true } },
+  { path: '/login', component: Login, meta: { noAuth: true, hideSidebar: true } },
+  { path: '/invite/:code', component: InviteRedeem, meta: { noAuth: true, hideSidebar: true } },
   { path: '/', component: Home },
   { path: '/albums', component: AlbumList },
   { path: '/albums/:id', component: AlbumDetail },
