@@ -8,7 +8,12 @@
       <!-- Close -->
       <button @click="$emit('close')"
         class="absolute top-4 z-10 text-white/70 hover:text-white text-2xl w-10 h-10"
-        :style="{ right: photo ? '308px' : '16px' }">✕</button>
+        :style="{ right: photo && !isMobile ? '308px' : '16px' }">✕</button>
+
+      <!-- Info (mobile only — EXIF is popover-style) -->
+      <button v-if="photo && isMobile" @click="exifOpen = !exifOpen"
+        class="absolute top-4 right-16 z-10 w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white/80 hover:text-white text-lg transition-colors"
+        title="图片信息">ℹ</button>
 
       <!-- Rotate -->
       <button @click="rot = (rot + 90) % 360"
@@ -31,7 +36,7 @@
       <!-- Photo container -->
       <div
         ref="container"
-        :style="{ paddingRight: photo ? '288px' : '0' }"
+        :style="{ paddingRight: photo && !isMobile ? '288px' : '0' }"
         class="w-full h-full flex items-center justify-center overflow-hidden transition-[padding] duration-200"
         @wheel.prevent="onWheel"
         @mousedown="onMouseDown"
@@ -60,11 +65,20 @@
         <div v-if="loading" class="text-white/50 text-sm absolute">Loading...</div>
       </div>
 
-      <!-- EXIF sidebar -->
+      <!-- EXIF sidebar — always-on desktop; popover on mobile -->
+      <!-- Overlay (mobile, click to dismiss) -->
+      <div v-if="photo && isMobile && exifOpen" class="absolute inset-0 bg-black/50" @click="exifOpen = false" />
+
       <Transition name="exif">
-        <div v-if="photo" class="absolute right-0 top-0 bottom-0 w-72 bg-neutral-900/70 backdrop-blur border-l border-white/10 overflow-y-auto pointer-events-auto">
+        <div
+          v-if="photo && (!isMobile || exifOpen)"
+          class="absolute right-0 top-0 bottom-0 w-72 bg-neutral-900/80 backdrop-blur border-l border-white/10 overflow-y-auto pointer-events-auto"
+        >
           <div class="p-4 space-y-3 text-sm">
-            <h3 class="text-white/80 font-medium text-base border-b border-white/10 pb-2">{{ photo.file_name }}</h3>
+            <div class="flex items-center justify-between border-b border-white/10 pb-2">
+              <h3 class="text-white/80 font-medium text-base">{{ photo.file_name }}</h3>
+              <button v-if="isMobile" @click="exifOpen = false" class="text-white/50 hover:text-white text-lg leading-none">✕</button>
+            </div>
 
             <div v-if="photo.taken_at" class="flex justify-between">
               <span class="text-white/40">Date</span>
@@ -117,6 +131,7 @@
 import { ref, watch } from 'vue'
 import { Dialog } from '@headlessui/vue'
 import type { Photo } from '@/api/photos'
+import { isMobile } from '@/stores/device'
 
 const props = defineProps<{
   open: boolean
@@ -130,6 +145,7 @@ defineEmits<{ close: []; prev: []; next: [] }>()
 const loading = ref(true)
 const container = ref<HTMLElement | null>(null)
 const rot = ref(0)
+const exifOpen = ref(false) // mobile: EXIF panel is popover-style
 
 // zoom + pan state
 const scale = ref(1)
@@ -146,6 +162,7 @@ watch(() => props.photo, () => {
   loading.value = true
   resetZoom()
   rot.value = 0
+  exifOpen.value = false
 })
 
 const isPortrait = () => props.photo && props.photo.height > props.photo.width
