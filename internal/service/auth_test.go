@@ -31,6 +31,13 @@ func setupAuthSvc(t *testing.T) *AuthService {
 	return NewAuthService(db, "test-secret-key")
 }
 
+// deleteUser removes a user, first clearing any invite_codes that reference it
+// (used_by FK) to avoid foreign-key violations during cleanup.
+func deleteUser(db *gorm.DB, id int64) {
+	db.Exec("DELETE FROM invite_codes WHERE used_by = ?", id)
+	db.Where("id = ?", id).Delete(&model.User{})
+}
+
 // testDSN builds a Postgres DSN from SHUTTERSEEK_* env vars.
 // Empty when credentials are unavailable (tests will skip).
 func testDSN() string {
@@ -78,7 +85,7 @@ func TestGenerateAndValidateToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	defer svc.DB.Where("id = ?", u.ID).Delete(&model.User{})
+	defer deleteUser(svc.DB, u.ID)
 
 	token, err := svc.GenerateToken(u.ID, u.Role)
 	if err != nil {
@@ -99,7 +106,7 @@ func TestValidateToken_Tampered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	defer svc.DB.Where("id = ?", u.ID).Delete(&model.User{})
+	defer deleteUser(svc.DB, u.ID)
 
 	token, _ := svc.GenerateToken(u.ID, u.Role)
 	// Corrupt the payload (change a char in the middle)
@@ -115,7 +122,7 @@ func TestValidateToken_Revoked(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	defer svc.DB.Where("id = ?", u.ID).Delete(&model.User{})
+	defer deleteUser(svc.DB, u.ID)
 
 	token, _ := svc.GenerateToken(u.ID, u.Role)
 
@@ -137,7 +144,7 @@ func TestCreateUser_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	defer svc.DB.Where("id = ?", u.ID).Delete(&model.User{})
+	defer deleteUser(svc.DB, u.ID)
 	if u.ID == 0 {
 		t.Fatal("expected non-zero ID")
 	}
@@ -155,7 +162,7 @@ func TestCreateUser_DuplicateUsername(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create first: %v", err)
 	}
-	defer svc.DB.Where("id = ?", u.ID).Delete(&model.User{})
+	defer deleteUser(svc.DB, u.ID)
 
 	if _, err := svc.CreateUser("TEST_create_dup", "other123", "guest"); !errors.Is(err, ErrUserExists) {
 		t.Fatalf("expected ErrUserExists, got %v", err)
@@ -182,7 +189,7 @@ func TestFindUserByUsername(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	defer svc.DB.Where("id = ?", u.ID).Delete(&model.User{})
+	defer deleteUser(svc.DB, u.ID)
 
 	found, err := svc.FindUserByUsername("TEST_find_by_name")
 	if err != nil {
@@ -210,7 +217,7 @@ func TestSeedAdmin_NoAdmin(t *testing.T) {
 	// login check
 	u, _ := svc.FindUserByUsername("admin")
 	if u != nil {
-		svc.DB.Where("id = ?", u.ID).Delete(&model.User{})
+		deleteUser(svc.DB, u.ID)
 	}
 }
 
@@ -224,7 +231,7 @@ func TestCreateAndListInviteCodes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create admin: %v", err)
 	}
-	defer svc.DB.Where("id = ?", admin.ID).Delete(&model.User{})
+	defer deleteUser(svc.DB, admin.ID)
 
 	detail, err := svc.CreateInviteCode(admin.ID)
 	if err != nil {
@@ -256,7 +263,7 @@ func TestCreateAndListInviteCodes(t *testing.T) {
 func TestDeleteInviteCode(t *testing.T) {
 	svc := setupAuthSvc(t)
 	admin, _ := svc.CreateUser("TEST_inv_del_admin", "secret123", "admin")
-	defer svc.DB.Where("id = ?", admin.ID).Delete(&model.User{})
+	defer deleteUser(svc.DB, admin.ID)
 
 	detail, _ := svc.CreateInviteCode(admin.ID)
 	if err := svc.DeleteInviteCode(detail.ID); err != nil {
@@ -270,7 +277,7 @@ func TestDeleteInviteCode(t *testing.T) {
 func TestRedeemInviteCode_Success(t *testing.T) {
 	svc := setupAuthSvc(t)
 	admin, _ := svc.CreateUser("TEST_rd_admin", "secret123", "admin")
-	defer svc.DB.Where("id = ?", admin.ID).Delete(&model.User{})
+	defer deleteUser(svc.DB, admin.ID)
 	detail, _ := svc.CreateInviteCode(admin.ID)
 	defer svc.DB.Where("id = ?", detail.ID).Delete(&model.InviteCode{})
 
@@ -278,7 +285,7 @@ func TestRedeemInviteCode_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("redeem: %v", err)
 	}
-	defer svc.DB.Where("id = ?", u.ID).Delete(&model.User{})
+	defer deleteUser(svc.DB, u.ID)
 	if u.Role != "guest" {
 		t.Fatalf("expected guest role, got %s", u.Role)
 	}
@@ -294,12 +301,12 @@ func TestRedeemInviteCode_Success(t *testing.T) {
 func TestRedeemInviteCode_AlreadyUsed(t *testing.T) {
 	svc := setupAuthSvc(t)
 	admin, _ := svc.CreateUser("TEST_rd2_admin", "secret123", "admin")
-	defer svc.DB.Where("id = ?", admin.ID).Delete(&model.User{})
+	defer deleteUser(svc.DB, admin.ID)
 	detail, _ := svc.CreateInviteCode(admin.ID)
 	defer svc.DB.Where("id = ?", detail.ID).Delete(&model.InviteCode{})
 
 	u1, _ := svc.RedeemInviteCode(detail.Code, "TEST_rd2_g1", "guestpass1")
-	defer svc.DB.Where("id = ?", u1.ID).Delete(&model.User{})
+	defer deleteUser(svc.DB, u1.ID)
 
 	if _, err := svc.RedeemInviteCode(detail.Code, "TEST_rd2_g2", "guestpass2"); !errors.Is(err, ErrInviteInvalid) {
 		t.Fatalf("expected ErrInviteInvalid for used code, got %v", err)
@@ -309,7 +316,7 @@ func TestRedeemInviteCode_AlreadyUsed(t *testing.T) {
 func TestRedeemInviteCode_Expired(t *testing.T) {
 	svc := setupAuthSvc(t)
 	admin, _ := svc.CreateUser("TEST_rd3_admin", "secret123", "admin")
-	defer svc.DB.Where("id = ?", admin.ID).Delete(&model.User{})
+	defer deleteUser(svc.DB, admin.ID)
 
 	// Create an already-expired invite directly
 	ic := model.InviteCode{
