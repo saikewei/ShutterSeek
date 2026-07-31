@@ -5,8 +5,8 @@
     <div class="fixed inset-0 flex items-center justify-center overflow-hidden"
          @click.self="$emit('close')">
 
-      <!-- Close -->
-      <button @click="$emit('close')"
+      <!-- Close (hidden on mobile while the EXIF panel covers it) -->
+      <button v-if="!(isMobile && exifOpen)" @click="$emit('close')"
         class="absolute top-4 z-10 text-white/70 hover:text-white text-2xl w-10 h-10"
         :style="{ right: photo && !isMobile ? '308px' : '16px' }">✕</button>
 
