@@ -15,6 +15,7 @@
       :dates-fn="albumDatesFn"
       :album-titles="albumTitles"
       :sticky-offset="53"
+      :range-fn="rangeFn"
       @photo-contextmenu="(photo, event) => isAdmin && onContextMenu(photo, event)"
     />
 
@@ -45,7 +46,7 @@ import { ref, reactive } from 'vue'
 import { useRoute } from 'vue-router'
 import PhotoGrid from '@/components/PhotoGrid.vue'
 import { fetchAlbum, fetchAlbumDates, updateAlbum, removeAlbumPhoto } from '@/api/albums'
-import { fetchPhotos } from '@/api/photos'
+import { fetchPhotos, fetchPhotoRange } from '@/api/photos'
 import type { Photo } from '@/api/photos'
 import { isAdmin } from '@/stores/auth'
 
@@ -71,6 +72,10 @@ function albumDatesFn() {
 
 function wrapFetch(params: any, signal?: AbortSignal) {
   return fetchPhotos({ ...params, album_id: String(albumId) }, signal)
+}
+
+function rangeFn(fromId: number, toId: number) {
+  return fetchPhotoRange({ from_id: fromId, to_id: toId, album_id: String(albumId) }).then(r => r.photo_ids)
 }
 
 function onContextMenu(photo: Photo, event: MouseEvent) {
