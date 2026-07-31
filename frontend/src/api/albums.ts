@@ -8,6 +8,7 @@ export interface Album {
   cover_url: string
   photo_count: number
   sort_order: number
+  is_public: boolean
   created_at: string
   updated_at: string
 }
@@ -36,14 +37,14 @@ export async function fetchAlbumPhotos(
   return data
 }
 
-export async function createAlbum(title: string, description?: string): Promise<Album> {
-  const { data } = await api.post<Album>('/albums', { title, description: description || '' })
+export async function createAlbum(title: string, description?: string, isPublic = false): Promise<Album> {
+  const { data } = await api.post<Album>('/albums', { title, description: description || '', is_public: isPublic })
   return data
 }
 
 export async function updateAlbum(
   id: number,
-  fields: { title?: string; description?: string; cover_photo_id?: number | null }
+  fields: { title?: string; description?: string; cover_photo_id?: number | null; is_public?: boolean }
 ): Promise<Album> {
   const { data } = await api.put<Album>(`/albums/${id}`, fields)
   return data
