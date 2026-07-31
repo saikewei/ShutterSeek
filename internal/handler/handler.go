@@ -23,6 +23,8 @@ const (
 	keyFirstPage   = "cache:first_page:"
 	ttlTotal       = 5 * time.Minute
 	ttlFirstPage   = 60 * time.Second
+	ttlAlbums      = 60 * time.Second
+	ttlDates       = 5 * time.Minute
 )
 
 // Handler holds shared dependencies for all HTTP handlers.
@@ -51,7 +53,24 @@ type DateCount struct {
 // PhotoDates returns date distribution for all photos.
 // GET /api/v1/photos/dates
 func (h *Handler) PhotoDates(c *gin.Context) {
+	// Role-scoped cache key (guest sees only public-album photos)
+	roleScope := ""
+	if c.GetString("role") == "guest" {
+		roleScope = "guest:"
+	}
+	cacheKey := "cache:photo_dates:" + roleScope
+	if albumIDStr := c.Query("album_id"); albumIDStr != "" {
+		if albumID, err := strconv.ParseInt(albumIDStr, 10, 64); err == nil && albumID > 0 {
+			cacheKey = "cache:photo_dates:" + roleScope + "album:" + strconv.FormatInt(albumID, 10)
+		}
+	}
+
 	var rows []DateCount
+	if h.redisGetJSON(cacheKey, &rows) {
+		c.JSON(http.StatusOK, rows)
+		return
+	}
+
 	query := "SELECT to_char(p.taken_at, 'YYYY-MM-DD') AS date, COUNT(*) AS count FROM photos p"
 	args := []interface{}{}
 
@@ -81,6 +100,7 @@ func (h *Handler) PhotoDates(c *gin.Context) {
 	if rows == nil {
 		rows = []DateCount{}
 	}
+	h.redisSetJSON(cacheKey, rows, ttlDates)
 	c.JSON(http.StatusOK, rows)
 }
 
@@ -373,6 +393,64 @@ func (h *Handler) clearFirstPageCache() {
 			break
 		}
 	}
+}
+
+// clearAllAlbumCaches removes every cache key that could be affected by an
+// album write (list, dates, first page, album photos — all role scopes).
+// Album writes are infrequent, so clearing broadly is cheap and safe.
+func (h *Handler) clearAllAlbumCaches() {
+	if h.Redis == nil {
+		return
+	}
+	ctx := context.Background()
+	patterns := []string{
+		"cache:albums*",
+		"cache:photo_dates*",
+		"cache:album_dates*",
+		"cache:first_page*",
+		"cache:album_photos*",
+	}
+	for _, pat := range patterns {
+		var cursor uint64
+		for {
+			keys, next, err := h.Redis.Scan(ctx, cursor, pat, 100).Result()
+			if err != nil {
+				break
+			}
+			if len(keys) > 0 {
+				h.Redis.Del(ctx, keys...)
+			}
+			cursor = next
+			if cursor == 0 {
+				break
+			}
+		}
+	}
+}
+
+// redisSetJSON stores a value as JSON in Redis (no-op when Redis is nil).
+func (h *Handler) redisSetJSON(key string, v interface{}, ttl time.Duration) {
+	if h.Redis == nil {
+		return
+	}
+	data, err := json.Marshal(v)
+	if err != nil {
+		return
+	}
+	h.Redis.Set(context.Background(), key, data, ttl)
+}
+
+// redisGetJSON reads a JSON value from Redis into dst. Returns false on
+// miss or error (also when Redis is nil).
+func (h *Handler) redisGetJSON(key string, dst interface{}) bool {
+	if h.Redis == nil {
+		return false
+	}
+	data, err := h.Redis.Get(context.Background(), key).Bytes()
+	if err != nil {
+		return false
+	}
+	return json.Unmarshal(data, dst) == nil
 }
 
 func (h *Handler) redisGet(key string) (PhotoListResponse, bool) {
