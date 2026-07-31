@@ -246,6 +246,23 @@ func (s *AuthService) DeleteInviteCode(id int64) error {
 	return nil
 }
 
+// ValidateInviteCode reports whether an invite code is currently redeemable.
+// Returns ErrInviteInvalid when the code is unknown or already used,
+// ErrInviteExpired when it has passed its expiry.
+func (s *AuthService) ValidateInviteCode(code string) error {
+	var ic model.InviteCode
+	if err := s.DB.Where("code = ?", code).First(&ic).Error; err != nil {
+		return ErrInviteInvalid
+	}
+	if ic.UsedBy != nil {
+		return ErrInviteInvalid
+	}
+	if time.Now().After(ic.ExpiresAt) {
+		return ErrInviteExpired
+	}
+	return nil
+}
+
 // RedeemInviteCode creates a guest user from a valid, unused invite code.
 // The code is atomically marked as used in the same transaction.
 func (s *AuthService) RedeemInviteCode(code, username, password string) (*model.User, error) {
