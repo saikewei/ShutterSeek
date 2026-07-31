@@ -4,7 +4,6 @@ services:
     container_name: shutterseek
     restart: unless-stopped
     ports:
-      - "8080:8080"
       - "${SHUTTERSEEK_TLS_PORT:-8443}:${SHUTTERSEEK_TLS_PORT:-8443}"
     volumes:
       - /volume1/Main/Photos:/photos:ro
