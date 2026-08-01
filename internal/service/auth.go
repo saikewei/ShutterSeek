@@ -332,12 +332,15 @@ func (s *AuthService) LogEvent(userID int64, username, eventType, ip string) err
 		return err
 	}
 
-	var count int64
-	s.DB.Model(&model.UserLog{}).Count(&count)
-	if count > userLogRetentionMax {
-		excess := count - userLogRetentionMax
-		s.DB.Where("id IN (SELECT id FROM user_logs ORDER BY id ASC LIMIT ?)", excess).
-			Delete(&model.UserLog{})
+	// Prune efficiently: the id of the userLogRetentionMax-th newest row
+	// (PK index scan of only that many rows, unlike a full COUNT(*)). If it
+	// exists, there are more rows than the cap — delete everything older.
+	// NULL means the table has <= cap rows and nothing to prune.
+	var keepFrom *int64
+	s.DB.Raw("SELECT id FROM user_logs ORDER BY id DESC LIMIT 1 OFFSET ?", userLogRetentionMax-1).
+		Scan(&keepFrom)
+	if keepFrom != nil {
+		s.DB.Exec("DELETE FROM user_logs WHERE id < ?", *keepFrom)
 	}
 	return nil
 }
