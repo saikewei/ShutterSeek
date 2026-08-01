@@ -5,6 +5,7 @@ package service
 import (
 	"bytes"
 	"fmt"
+	"image/jpeg"
 	"os"
 	"path/filepath"
 	"strings"
@@ -265,6 +266,32 @@ func TestServeRAW_A6000Fallback(t *testing.T) {
 		t.Fatal("preview not cached")
 	}
 	t.Logf("a6000 served: %d bytes", buf.Len())
+}
+
+func TestServeRAW_NEFFullSize(t *testing.T) {
+	path := "/photos/photo/Z6/UBI_2484.NEF"
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		t.Skip("NEF test file not found")
+	}
+
+	dir := t.TempDir()
+	svc := NewOriginalService("/photos", dir)
+	var buf bytes.Buffer
+	if err := svc.ServeOriginal(&buf, "photo/Z6/UBI_2484.NEF"); err != nil {
+		t.Fatalf("serve NEF: %v", err)
+	}
+	// Full-size NEF preview is ~1.8MB; a buggy path serves a 13KB thumbnail.
+	if buf.Len() < 500000 {
+		t.Fatalf("NEF preview too small: %d bytes (expected full-size ~1.8MB)", buf.Len())
+	}
+	cfg, err := jpeg.DecodeConfig(bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("decode NEF preview: %v", err)
+	}
+	if cfg.Width < 2000 {
+		t.Fatalf("NEF preview too small: %dx%d (expected full-size)", cfg.Width, cfg.Height)
+	}
+	t.Logf("NEF served: %d bytes, %dx%d", buf.Len(), cfg.Width, cfg.Height)
 }
 
 // need fmt for TestCacheWriteAndPrune
