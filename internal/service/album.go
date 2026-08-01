@@ -10,6 +10,10 @@ import (
 	"shutterseek/internal/model"
 )
 
+// cstZone is Asia/Shanghai (UTC+8, no DST). Photo dates are displayed and
+// grouped in local time; month-jump boundaries must parse in this zone too.
+var cstZone = time.FixedZone("CST", 8*3600)
+
 // Sentinel errors for album service.
 var (
 	ErrAlbumNotFound  = errors.New("album not found")
@@ -141,7 +145,7 @@ func (s *AlbumService) ListAlbumPhotos(albumID int64, limit int, afterTime time.
 	// Head preload for month jump
 	var head []model.Photo
 	if month != "" {
-		if t, err := time.Parse("2006-01", month); err == nil {
+		if t, err := time.ParseInLocation("2006-01", month, cstZone); err == nil {
 			nextMonth := t.AddDate(0, 1, 0)
 			s.DB.Where("id IN (?)", sub).
 				Where("taken_at >= ?", nextMonth).

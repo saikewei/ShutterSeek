@@ -27,6 +27,11 @@ const (
 	ttlDates       = 5 * time.Minute
 )
 
+// cstZone is Asia/Shanghai (UTC+8, no DST). Photo dates are stored as UTC in
+// the DB but displayed and grouped in local (+08) time; all date parsing and
+// formatting must use this zone so jumps, cursors and displays agree.
+var cstZone = time.FixedZone("CST", 8*3600)
+
 // Handler holds shared dependencies for all HTTP handlers.
 type Handler struct {
 	Pool     *pgxpool.Pool
@@ -150,7 +155,7 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 		parts := split2(cur, ",")
 		if len(parts) == 2 {
 			ts := strings.Replace(parts[0], " ", "T", 1)
-			if t, err := time.Parse("2006-01-02T15:04:05", ts); err == nil && !t.IsZero() {
+			if t, err := time.ParseInLocation("2006-01-02T15:04:05", ts, cstZone); err == nil && !t.IsZero() {
 				afterTime = t
 			}
 			if n, err := strconv.ParseInt(parts[1], 10, 64); err == nil {
@@ -199,7 +204,7 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 	// Reverse pagination: load newer photos
 	newerT := c.Query("newer_t")
 	if newerT != "" {
-		if t, err := time.Parse("2006-01-02T15:04:05", newerT); err == nil && !t.IsZero() {
+		if t, err := time.ParseInLocation("2006-01-02T15:04:05", newerT, cstZone); err == nil && !t.IsZero() {
 			if newerID, err2 := strconv.ParseInt(c.Query("newer_id"), 10, 64); err2 == nil {
 				q = q.Where("(taken_at, id) > (?, ?)", t, newerID)
 			}
@@ -213,7 +218,7 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 // boundary, so the view reads "target + a preview of what comes next").
 		var headPhotos []model.Photo
 		if date != "" {
-			if t, err := time.Parse("2006-01-02", date); err == nil {
+			if t, err := time.ParseInLocation("2006-01-02", date, cstZone); err == nil {
 				nextDay := t.AddDate(0, 0, 1)
 				headQ := h.DB.Where("taken_at >= ?", nextDay)
 				headQ = h.guestPhotoFilter(c, headQ)
@@ -227,7 +232,7 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 				q = q.Where("taken_at < ?", nextDay)
 			}
 		} else if month != "" {
-			if t, err := time.Parse("2006-01", month); err == nil {
+			if t, err := time.ParseInLocation("2006-01", month, cstZone); err == nil {
 				nextMonth := t.AddDate(0, 1, 0)
 				// Preload a few photos from the next month (newer) as head
 				headQ := h.DB.Where("taken_at >= ?", nextMonth)
@@ -293,12 +298,12 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 	// Jump boundary: date (day) or month, mutually exclusive
 	var boundary *time.Time
 	if date != "" {
-		if t, err := time.Parse("2006-01-02", date); err == nil {
+		if t, err := time.ParseInLocation("2006-01-02", date, cstZone); err == nil {
 			b := t.AddDate(0, 0, 1)
 			boundary = &b
 		}
 	} else if month != "" {
-		if t, err := time.Parse("2006-01", month); err == nil {
+		if t, err := time.ParseInLocation("2006-01", month, cstZone); err == nil {
 			b := t.AddDate(0, 1, 0)
 			boundary = &b
 		}
@@ -551,5 +556,7 @@ func formatTime(t time.Time) string {
 	if t.IsZero() {
 		return ""
 	}
-	return t.Format("2006-01-02T15:04:05")
+	// Format in +08 local time so the displayed date matches the date
+	// distribution (GROUP BY uses the DB session zone, Asia/Shanghai).
+	return t.In(cstZone).Format("2006-01-02T15:04:05")
 }
