@@ -167,11 +167,12 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 	cacheKey := ""
 	uncategorized := c.Query("album_id") == "none"
 	month := c.Query("month")
+	date := c.Query("date")
 	albumIDCache := c.Query("album_id")
 	if albumIDCache == "none" {
 		albumIDCache = ""
 	}
-	if !hasCursor && !uncategorized && month == "" && c.Query("newer_t") == "" {
+	if !hasCursor && !uncategorized && month == "" && date == "" && c.Query("newer_t") == "" {
 		if albumIDCache != "" {
 			cacheKey = keyFirstPage + roleScope + "album:" + albumIDCache + ":" + strconv.Itoa(limit)
 		} else {
@@ -208,9 +209,24 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 		q = q.Order("taken_at DESC, id DESC").Limit(limit + 1)
 	}
 
-// Filter: jump to month — with head preload
+// Filter: jump to day/month — with head preload (newer photos just past the
+// boundary, so the view reads "target + a preview of what comes next").
 		var headPhotos []model.Photo
-		if month != "" {
+		if date != "" {
+			if t, err := time.Parse("2006-01-02", date); err == nil {
+				nextDay := t.AddDate(0, 0, 1)
+				headQ := h.DB.Where("taken_at >= ?", nextDay)
+				headQ = h.guestPhotoFilter(c, headQ)
+				if albumIDStr != "" {
+					if aid, err2 := strconv.ParseInt(albumIDStr, 10, 64); err2 == nil && aid > 0 {
+						headQ = headQ.Where("id IN (SELECT photo_id FROM album_photos WHERE album_id = ?)", aid)
+					}
+				}
+				headQ.Order("taken_at ASC, id ASC").Limit(15).Find(&headPhotos)
+				// Main query: target day and earlier
+				q = q.Where("taken_at < ?", nextDay)
+			}
+		} else if month != "" {
 			if t, err := time.Parse("2006-01", month); err == nil {
 				nextMonth := t.AddDate(0, 1, 0)
 				// Preload a few photos from the next month (newer) as head
@@ -274,6 +290,20 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 		}
 	}
 
+	// Jump boundary: date (day) or month, mutually exclusive
+	var boundary *time.Time
+	if date != "" {
+		if t, err := time.Parse("2006-01-02", date); err == nil {
+			b := t.AddDate(0, 0, 1)
+			boundary = &b
+		}
+	} else if month != "" {
+		if t, err := time.Parse("2006-01", month); err == nil {
+			b := t.AddDate(0, 1, 0)
+			boundary = &b
+		}
+	}
+
 	var total int64
 	switch {
 	case roleScope != "": // guest — count only public-album photos
@@ -284,10 +314,8 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 				tq = tq.Where("id IN (SELECT photo_id FROM album_photos WHERE album_id = ?)", albumID)
 			}
 		}
-		if month != "" {
-			if t, err := time.Parse("2006-01", month); err == nil {
-				tq = tq.Where("taken_at < ?", t.AddDate(0, 1, 0))
-			}
+		if boundary != nil {
+			tq = tq.Where("taken_at < ?", *boundary)
 		}
 		tq.Count(&total)
 	case uncategorized:
@@ -296,15 +324,17 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 		if albumID, err := strconv.ParseInt(albumIDStr, 10, 64); err == nil && albumID > 0 {
 			tq := h.DB.Model(&model.Photo{}).
 				Where("taken_at IS NOT NULL AND id IN (SELECT photo_id FROM album_photos WHERE album_id = ?)", albumID)
-			if month != "" {
-				if t, err := time.Parse("2006-01", month); err == nil {
-					tq = tq.Where("taken_at < ?", t.AddDate(0, 1, 0))
-				}
+			if boundary != nil {
+				tq = tq.Where("taken_at < ?", *boundary)
 			}
 			tq.Count(&total)
 		}
 	default:
-		total = h.totalPhotoCountCached()
+		if boundary != nil {
+			h.DB.Model(&model.Photo{}).Where("taken_at IS NOT NULL AND taken_at < ?", *boundary).Count(&total)
+		} else {
+			total = h.totalPhotoCountCached()
+		}
 	}
 
 	resp := PhotoListResponse{

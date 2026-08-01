@@ -502,6 +502,43 @@ func TestUpdateAlbum_NotFound(t *testing.T) {
 	}
 }
 
+func TestListPhotos_DateJump(t *testing.T) {
+	h := setupHandler(t)
+	gin.SetMode(gin.TestMode)
+
+	// Find a real photo date to jump to
+	var latestDate string
+	h.DB.Raw("SELECT to_char(taken_at, 'YYYY-MM-DD') FROM photos WHERE taken_at IS NOT NULL ORDER BY taken_at DESC LIMIT 1").Scan(&latestDate)
+	if latestDate == "" {
+		t.Skip("no photos with taken_at")
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/api/v1/photos?date="+latestDate+"&limit=50", nil)
+	h.ListPhotos(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp PhotoListResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	// Jump to the latest day: total should be the count of photos on/before that day
+	if resp.Total == 0 {
+		t.Fatal("expected photos for latest-date jump")
+	}
+	// First item (before any head) must be on/before the target day
+	if len(resp.Items) > 0 {
+		first := resp.Items[0]
+		if first.TakenAt > latestDate+"T23:59:59" {
+			t.Fatalf("first photo %s is after target day %s (head should only precede)", first.TakenAt, latestDate)
+		}
+	}
+	t.Logf("date=%s total=%d head_count=%d items=%d", latestDate, resp.Total, resp.HeadCount, len(resp.Items))
+}
+
 // helpers
 func itoa(n int64) string {
 	return strconv.FormatInt(n, 10)
