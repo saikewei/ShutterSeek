@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"image"
 	"image/jpeg"
@@ -154,14 +155,21 @@ func (s *OriginalService) serveRAW(w io.Writer, path string) error {
 		return fmt.Errorf("read raw: %w", err)
 	}
 
-	// 1. Extract the largest embedded JPEG (NEF/ARW/DNG-with-preview etc.)
+	// 1. TIFF IFD — precise preview location (NEF/ARW/CR2/DNG etc.)
+	if jpegData := extractTIFFJPEG(rawData); len(jpegData) >= minPreviewSize {
+		s.cacheWrite(filepath.Base(path)+".jpg", jpegData)
+		_, err = w.Write(jpegData)
+		return err
+	}
+
+	// 2. Global binary scan (non-TIFF containers or IFD-missed previews)
 	if jpegData := extractJPEG(rawData); len(jpegData) >= minPreviewSize {
 		s.cacheWrite(filepath.Base(path)+".jpg", jpegData)
 		_, err = w.Write(jpegData)
 		return err
 	}
 
-	// 2. Decode via Go (DNG and other RAW with decodable image data).
+	// 3. Decode via Go (DNG and other RAW with decodable image data).
 	// Guard the output size so a decoded thumbnail is rejected.
 	f.Seek(0, 0)
 	if img, _, err := image.Decode(f); err == nil {
@@ -173,8 +181,7 @@ func (s *OriginalService) serveRAW(w io.Writer, path string) error {
 		}
 	}
 
-	// 3. exiftool fallback (older cameras e.g. Sony a6000, or formats whose
-	// full preview exiftool reads more reliably).
+	// 4. exiftool — last resort only (rare: formats no Go path handles).
 	if data, err := extractWithExiftool(path); err == nil {
 		s.cacheWrite(filepath.Base(path)+".jpg", data)
 		_, err = w.Write(data)
@@ -205,6 +212,101 @@ func extractWithExiftool(path string) ([]byte, error) {
 		return best, nil
 	}
 	return nil, fmt.Errorf("exiftool extraction failed")
+}
+
+// extractTIFFJPEG finds the largest embedded JPEG preview by walking the
+// TIFF IFD tree and reading each JPEGInterchangeFormat (0x0201) offset.
+// RAW formats (NEF/ARW/CR2/DNG) are TIFF containers; this precisely locates
+// full-size previews that a global binary scan can miss (e.g. Sony a6000,
+// where extractJPEG only finds the 9KB thumbnail but the 419KB PreviewImage
+// sits behind a JPEGInterchangeFormat tag). No external process needed.
+func extractTIFFJPEG(data []byte) []byte {
+	if len(data) < 8 {
+		return nil
+	}
+	var order binary.ByteOrder
+	switch {
+	case data[0] == 'I' && data[1] == 'I':
+		order = binary.LittleEndian
+	case data[0] == 'M' && data[1] == 'M':
+		order = binary.BigEndian
+	default:
+		return nil
+	}
+	if order.Uint16(data[2:4]) != 42 { // TIFF magic
+		return nil
+	}
+	start := int(order.Uint32(data[4:8]))
+	if start < 8 || start >= len(data) {
+		return nil
+	}
+
+	var best []byte
+	var walk func(off, depth int)
+	walk = func(off, depth int) {
+		if off < 8 || off+2 > len(data) || depth > 8 {
+			return
+		}
+		count := int(order.Uint16(data[off : off+2]))
+		if count > 512 {
+			return
+		}
+		dir := off + 2
+		for i := 0; i < count; i++ {
+			e := dir + i*12
+			if e+12 > len(data) {
+				return
+			}
+			tag := order.Uint16(data[e : e+2])
+			typ := order.Uint16(data[e+2 : e+4])
+			cnt := order.Uint32(data[e+4 : e+8])
+			valOff := e + 8
+			switch tag {
+			case 0x0201: // JPEGInterchangeFormat: absolute file offset (LONG)
+				if typ == 4 && cnt == 1 && valOff+4 <= len(data) {
+					o := int(order.Uint32(data[valOff : valOff+4]))
+					if o > 0 && o < len(data) {
+						if seg := extractJPEG(data[o:]); len(seg) > len(best) {
+							best = seg
+						}
+					}
+				}
+			case 0x8769, 0x8825: // ExifIFD / GPS IFD pointer
+				if typ == 4 && cnt == 1 && valOff+4 <= len(data) {
+					walk(int(order.Uint32(data[valOff:valOff+4])), depth+1)
+				}
+			case 0x014A: // SubIFDs: array of IFD pointers
+				if typ == 4 && cnt >= 1 && cnt <= 64 {
+					var ptrs []uint32
+					if int(cnt)*4 <= 4 {
+						for k := uint32(0); k < cnt; k++ {
+							ptrs = append(ptrs, order.Uint32(data[valOff+4*int(k):valOff+4*int(k)+4]))
+						}
+					} else {
+						addr := int(order.Uint32(data[valOff : valOff+4]))
+						for k := uint32(0); k < cnt; k++ {
+							o := addr + 4*int(k)
+							if o+4 > len(data) {
+								break
+							}
+							ptrs = append(ptrs, order.Uint32(data[o:o+4]))
+						}
+					}
+					for _, p := range ptrs {
+						walk(int(p), depth+1)
+					}
+				}
+			}
+		}
+		next := dir + count*12
+		if next+4 <= len(data) {
+			if n := int(order.Uint32(data[next : next+4])); n > 0 {
+				walk(n, depth+1)
+			}
+		}
+	}
+	walk(start, 0)
+	return best
 }
 
 // extractJPEG finds the largest valid JPEG segment in binary data.
