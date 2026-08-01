@@ -437,11 +437,14 @@ func TestLogEvent_RecordsAllTypes(t *testing.T) {
 func TestLogEvent_PrunesBeyondLimit(t *testing.T) {
 	svc, u := setupLogTest(t)
 
-	// Insert over the retention cap directly, then invoke the prune.
+	// Insert over the retention cap directly, then one more via LogEvent
+	// to trigger pruning.
 	for i := 0; i < userLogRetentionMax+5; i++ {
 		svc.DB.Create(&model.UserLog{UserID: u.ID, Username: u.Username, EventType: model.LogEventSession})
 	}
-	svc.pruneLogs()
+	if err := svc.LogEvent(u.ID, u.Username, model.LogEventLogin, ""); err != nil {
+		t.Fatalf("log: %v", err)
+	}
 
 	var count int64
 	svc.DB.Model(&model.UserLog{}).Count(&count)
