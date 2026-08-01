@@ -130,77 +130,79 @@ func (s *OriginalService) serveTIFF(w io.Writer, path string) error {
 }
 
 // serveRAW extracts the embedded JPEG preview from a RAW file.
+// Strategy: largest embedded JPEG first (via binary scan), then Go decode
+// (DNG-style), then exiftool. image.Decode must NOT be first — Go's TIFF
+// decoder reads a small thumbnail from many RAW containers (e.g. Nikon NEF
+// IFD0) and would otherwise serve a 160x120 image instead of the full-size
+// preview.
 func (s *OriginalService) serveRAW(w io.Writer, path string) error {
-	// Check cache first
+	// Check cache first (ignore tiny/broken previews)
 	cacheKey := s.PreviewDir + "/" + filepath.Base(path) + ".jpg"
-	if data, err := os.ReadFile(cacheKey); err == nil {
+	if data, err := os.ReadFile(cacheKey); err == nil && len(data) >= minPreviewSize {
 		_, err = w.Write(data)
 		return err
 	}
 
-	// Use Go's standard library to read RAW as a TIFF-like container.
-	// Most RAW formats embed a full-resolution JPEG preview accessible via Go's
-	// image.DecodeConfig + reading the MakerNote offset.
-	//
-	// For now, try image.Decode which works for DNG files
-	// For other RAW, fall back to reading the embedded JPEG preview bytes.
 	f, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("open raw: %w", err)
 	}
 	defer f.Close()
 
-	// Try to decode directly (works for DNG)
+	rawData, err := io.ReadAll(f)
+	if err != nil {
+		return fmt.Errorf("read raw: %w", err)
+	}
+
+	// 1. Extract the largest embedded JPEG (NEF/ARW/DNG-with-preview etc.)
+	if jpegData := extractJPEG(rawData); len(jpegData) >= minPreviewSize {
+		s.cacheWrite(filepath.Base(path)+".jpg", jpegData)
+		_, err = w.Write(jpegData)
+		return err
+	}
+
+	// 2. Decode via Go (DNG and other RAW with decodable image data).
+	// Guard the output size so a decoded thumbnail is rejected.
+	f.Seek(0, 0)
 	if img, _, err := image.Decode(f); err == nil {
-		// Cache and serve
 		var buf bytes.Buffer
-		if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 92}); err == nil {
+		if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 92}); err == nil && buf.Len() >= minPreviewSize {
 			s.cacheWrite(filepath.Base(path)+".jpg", buf.Bytes())
 			_, _ = w.Write(buf.Bytes())
 			return nil
 		}
 	}
 
-	// RAW preview extraction via Go native binary search.
-	// Most RAW files have a JPEG preview embedded as a byte sequence
-	// that starts with 0xFF 0xD8 and ends with 0xFF 0xD9.
-	f.Seek(0, 0)
-	rawData, err := io.ReadAll(f)
-	if err != nil {
-		return fmt.Errorf("read raw: %w", err)
-	}
-
-	jpegData := extractJPEG(rawData)
-	if jpegData != nil && len(jpegData) > 20000 { // >20KB: likely a real preview
-		s.cacheWrite(filepath.Base(path)+".jpg", jpegData)
-		_, err = w.Write(jpegData)
-		return err
-	}
-
-	// Fallback: use exiftool for older cameras (e.g. Sony a6000)
-	// that don't embed a full-size JPEG preview in the RAW container.
+	// 3. exiftool fallback (older cameras e.g. Sony a6000, or formats whose
+	// full preview exiftool reads more reliably).
 	if data, err := extractWithExiftool(path); err == nil {
 		s.cacheWrite(filepath.Base(path)+".jpg", data)
 		_, err = w.Write(data)
 		return err
 	}
 
-	if jpegData != nil {
-		// Return the small thumbnail as last resort
-		s.cacheWrite(filepath.Base(path)+".jpg", jpegData)
-		_, err = w.Write(jpegData)
-		return err
-	}
-	return fmt.Errorf("no embedded jpeg found in %s", filepath.Base(path))
+	return fmt.Errorf("no usable preview in %s", filepath.Base(path))
 }
 
-// extractWithExiftool tries to extract a JPEG preview using exiftool.
+// minPreviewSize is the smallest extracted preview we consider a real
+// full-size image (not a thumbnail).
+const minPreviewSize = 20000
+
+// extractWithExiftool extracts a JPEG preview using exiftool.
+// JpgFromRaw is tried first (full-size in Nikon NEF); among the tags that
+// yield a valid large JPEG, the largest is returned.
 func extractWithExiftool(path string) ([]byte, error) {
-	for _, tag := range []string{"-PreviewImage", "-JpgFromRaw"} {
+	var best []byte
+	for _, tag := range []string{"-JpgFromRaw", "-PreviewImage"} {
 		data, err := exec.Command("exiftool", "-b", tag, path).Output()
-		if err == nil && len(data) > 20000 && data[0] == 0xFF && data[1] == 0xD8 {
-			return data, nil
+		if err == nil && len(data) >= minPreviewSize && data[0] == 0xFF && data[1] == 0xD8 {
+			if len(data) > len(best) {
+				best = data
+			}
 		}
+	}
+	if best != nil {
+		return best, nil
 	}
 	return nil, fmt.Errorf("exiftool extraction failed")
 }

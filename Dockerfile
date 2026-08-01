@@ -17,7 +17,7 @@ RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /app/server ./cmd/server/
 
 # Stage 3: Runtime
 FROM alpine:3.21
-RUN apk add --no-cache ca-certificates tzdata libwebp-tools
+RUN apk add --no-cache ca-certificates tzdata libwebp-tools exiftool
 WORKDIR /app
 COPY --from=backend-builder /app/server .
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
