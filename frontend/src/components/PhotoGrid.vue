@@ -46,28 +46,27 @@
         </button>
         <button @click="exitSelectMode" class="px-3 py-1 text-xs rounded-full text-neutral-400 hover:text-white transition-colors">取消</button>
       </div>
+
+      <!-- Day navigation (sticky filter bar, always visible; compact on mobile) -->
+      <div v-if="!selectMode" class="flex items-center gap-1 text-xs">
+        <button
+          @click="prevDay"
+          class="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors whitespace-nowrap"
+          title="前一天"
+        >{{ isGuestMobile ? '◀' : '◀ 前一天' }}</button>
+        <span class="text-neutral-400 whitespace-nowrap px-0.5" title="当前日期">{{ dayLabel() }}</span>
+        <button
+          @click="nextDay"
+          class="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors whitespace-nowrap"
+          title="后一天"
+        >{{ isGuestMobile ? '▶' : '后一天 ▶' }}</button>
+      </div>
     </div>
 
     <!-- Grid with date separators -->
-    <div v-for="(group, idx) in groups" :key="group.label">
+    <div v-for="group in groups" :key="group.label">
       <div class="sticky z-10 bg-neutral-950/95 backdrop-blur px-2 py-2 text-sm font-semibold tracking-wide border-b border-neutral-800" :style="{ top: (stickyOffset || 0) + 37 + 'px' }" :data-date="group.label">
-        <div class="flex items-center justify-between">
-          <span class="border-l-2 border-neutral-500 pl-2.5 text-neutral-200">{{ group.label }}</span>
-          <!-- Day navigation on the first group header (sticky, always visible) -->
-          <div v-if="idx === 0" class="flex items-center gap-1.5 text-xs font-normal">
-            <button
-              @click="prevDay"
-              class="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors"
-              title="前一天"
-            >◀ 前一天</button>
-            <span class="text-neutral-400 whitespace-nowrap px-1" title="当前日期">{{ dayLabel() }}</span>
-            <button
-              @click="nextDay"
-              class="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors"
-              title="后一天"
-            >后一天 ▶</button>
-          </div>
-        </div>
+        <span class="border-l-2 border-neutral-500 pl-2.5 text-neutral-200">{{ group.label }}</span>
       </div>
       <div class="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-1 p-1">
         <div
@@ -400,20 +399,41 @@ function jumpToDay(dateStr: string) {
   reload()
 }
 
+// The nearest day with photos before/after focusDate, from the loaded
+// date distribution. Returns null when no photo day exists on that side
+// (jump boundary). Falls back to ±1 calendar day while dates haven't loaded.
+function nearestDay(dir: 'prev' | 'next'): string | null {
+  const dates = allDates.value.map(d => d.date).filter(Boolean)
+  if (dates.length > 0) {
+    if (dir === 'prev') {
+      const earlier = dates.filter(d => d < focusDate.value).sort()
+      if (earlier.length > 0) return earlier[earlier.length - 1]
+      return null // no older photos
+    }
+    const later = dates.filter(d => d > focusDate.value).sort()
+    if (later.length > 0) return later[0]
+    return null // no newer photos
+  }
+  // fallback while date distribution isn't loaded yet
+  const d = new Date(focusDate.value + 'T00:00:00')
+  d.setDate(d.getDate() + (dir === 'prev' ? -1 : 1))
+  return fmtDay(d)
+}
+
 function prevDay() {
   if (!focusDate.value) return
-  const d = new Date(focusDate.value + 'T00:00:00')
-  d.setDate(d.getDate() - 1)
-  focusDate.value = fmtDay(d)
-  jumpToDay(focusDate.value)
+  const target = nearestDay('prev')
+  if (!target) return // already at the oldest photo day
+  focusDate.value = target
+  jumpToDay(target)
 }
 
 function nextDay() {
   if (!focusDate.value) return
-  const d = new Date(focusDate.value + 'T00:00:00')
-  d.setDate(d.getDate() + 1)
-  focusDate.value = fmtDay(d)
-  jumpToDay(focusDate.value)
+  const target = nearestDay('next')
+  if (!target) return // already at the newest photo day
+  focusDate.value = target
+  jumpToDay(target)
 }
 
 function onMonthJump(monthKey: string) {
