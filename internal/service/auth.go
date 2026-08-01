@@ -321,16 +321,22 @@ func (s *AuthService) RedeemInviteCode(code, username, password string) (*model.
 // userLogRetentionMax caps the number of user_logs rows kept in the DB.
 const userLogRetentionMax = 2000
 
-// sessionLogInterval throttles session log rows. session events fire on
-// every page refresh (auth/me), and each INSERT pays a WAL fsync — on a slow
-// disk that makes every refresh slow. At most one session row per user per
-// interval is written; login/logout are never throttled.
+// sessionLogInterval throttles session log rows. Session events fire on every
+// page refresh (auth/me); at most one row per user per interval is written so
+// the log volume stays bounded. login/logout are never throttled.
 const sessionLogInterval = 5 * time.Minute
 
 var sessionLimiter sync.Map // userID → last session log time
 
 // LogEvent records a user activity event (login / session / logout) and
 // prunes rows beyond the retention cap.
+//
+// The insert runs inside a transaction with synchronous_commit = off: on the
+// NAS's slow disk every synchronous commit pays a ~200ms WAL fsync, which
+// made every page refresh slow. user_logs is auxiliary/audit data, so losing
+// the last few rows on a crash is acceptable — but photos, albums and other
+// key writes keep full synchronous durability (SET LOCAL scopes the setting
+// to this one transaction only, and the GORM connection is never touched).
 func (s *AuthService) LogEvent(userID int64, username, eventType, ip string) error {
 	if eventType == model.LogEventSession {
 		now := time.Now()
@@ -340,12 +346,26 @@ func (s *AuthService) LogEvent(userID int64, username, eventType, ip string) err
 		sessionLimiter.Store(userID, now)
 	}
 
-	if err := s.DB.Create(&model.UserLog{
+	tx := s.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+	if err := tx.Exec("SET LOCAL synchronous_commit = off").Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+	if err := tx.Create(&model.UserLog{
 		UserID:    userID,
 		Username:  username,
 		EventType: eventType,
 		IP:        ip,
 	}).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+	if err := tx.Commit().Error; err != nil {
 		return err
 	}
 
