@@ -32,6 +32,7 @@ export interface PhotoListParams {
   album_id?: string
   with_albums?: boolean
   month?: string
+  date?: string
 }
 
 export async function fetchPhotos(params?: PhotoListParams, signal?: AbortSignal): Promise<PhotoListResponse> {
@@ -44,6 +45,7 @@ export async function fetchPhotos(params?: PhotoListParams, signal?: AbortSignal
       album_id: params.album_id || undefined,
       with_albums: params.with_albums ? 'true' : undefined,
       month: params.month || undefined,
+      date: params.date || undefined,
     } : undefined,
     signal
   })
