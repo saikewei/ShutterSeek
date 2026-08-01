@@ -54,7 +54,6 @@
           class="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors whitespace-nowrap"
           title="前一天"
         >{{ isGuestMobile ? '◀' : '◀ 前一天' }}</button>
-        <span class="text-neutral-400 whitespace-nowrap px-0.5" title="当前日期">{{ dayLabel() }}</span>
         <button
           @click="nextDay"
           class="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors whitespace-nowrap"
@@ -379,12 +378,6 @@ function jumpToDate(monthKey: string) {
 
 const focusDate = ref('') // YYYY-MM-DD — the day nav anchor
 const jumpDate = ref('')  // pending date jump param
-
-function dayLabel(): string {
-  if (!focusDate.value) return '—'
-  const [y, m, d] = focusDate.value.split('-')
-  return `${Number(m)}月${Number(d)}日`
-}
 
 function fmtDay(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0')
