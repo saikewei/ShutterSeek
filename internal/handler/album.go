@@ -202,7 +202,7 @@ func (h *Handler) ListAlbumPhotos(c *gin.Context) {
 		parts := split2(cur, ",")
 		if len(parts) == 2 {
 			ts := parts[0]
-			if t, err := time.Parse("2006-01-02T15:04:05", ts); err == nil && !t.IsZero() {
+			if t, err := time.ParseInLocation("2006-01-02T15:04:05", ts, cstZone); err == nil && !t.IsZero() {
 				afterTime = t
 			}
 			if n, err := strconv.ParseInt(parts[1], 10, 64); err == nil {
