@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -321,13 +320,6 @@ func (s *AuthService) RedeemInviteCode(code, username, password string) (*model.
 // userLogRetentionMax caps the number of user_logs rows kept in the DB.
 const userLogRetentionMax = 2000
 
-// sessionLogInterval throttles session log rows. Session events fire on every
-// page refresh (auth/me); at most one row per user per interval is written so
-// the log volume stays bounded. login/logout are never throttled.
-const sessionLogInterval = 5 * time.Minute
-
-var sessionLimiter sync.Map // userID → last session log time
-
 // LogEvent records a user activity event (login / session / logout) and
 // prunes rows beyond the retention cap.
 //
@@ -338,14 +330,6 @@ var sessionLimiter sync.Map // userID → last session log time
 // key writes keep full synchronous durability (SET LOCAL scopes the setting
 // to this one transaction only, and the GORM connection is never touched).
 func (s *AuthService) LogEvent(userID int64, username, eventType, ip string) error {
-	if eventType == model.LogEventSession {
-		now := time.Now()
-		if v, ok := sessionLimiter.Load(userID); ok && now.Sub(v.(time.Time)) < sessionLogInterval {
-			return nil // throttled — already logged a session recently
-		}
-		sessionLimiter.Store(userID, now)
-	}
-
 	tx := s.DB.Begin()
 	defer func() {
 		if r := recover(); r != nil {
