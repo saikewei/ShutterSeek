@@ -49,9 +49,25 @@
     </div>
 
     <!-- Grid with date separators -->
-    <div v-for="group in groups" :key="group.label">
+    <div v-for="(group, idx) in groups" :key="group.label">
       <div class="sticky z-10 bg-neutral-950/95 backdrop-blur px-2 py-2 text-sm font-semibold tracking-wide border-b border-neutral-800" :style="{ top: (stickyOffset || 0) + 37 + 'px' }" :data-date="group.label">
-        <span class="border-l-2 border-neutral-500 pl-2.5 text-neutral-200">{{ group.label }}</span>
+        <div class="flex items-center justify-between">
+          <span class="border-l-2 border-neutral-500 pl-2.5 text-neutral-200">{{ group.label }}</span>
+          <!-- Day navigation on the first group header (sticky, always visible) -->
+          <div v-if="idx === 0" class="flex items-center gap-1.5 text-xs font-normal">
+            <button
+              @click="prevDay"
+              class="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors"
+              title="前一天"
+            >◀ 前一天</button>
+            <span class="text-neutral-400 whitespace-nowrap px-1" title="当前日期">{{ dayLabel() }}</span>
+            <button
+              @click="nextDay"
+              class="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors"
+              title="后一天"
+            >后一天 ▶</button>
+          </div>
+        </div>
       </div>
       <div class="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-1 p-1">
         <div
@@ -235,7 +251,7 @@ import type { DatePoint } from '@/components/DateScrubber.vue'
 
 const props = defineProps<{
   fetchFn: (
-    params: { limit: number; cursor?: string; newer_t?: string; newer_id?: number; album_id?: string; with_albums?: boolean; month?: string },
+    params: { limit: number; cursor?: string; newer_t?: string; newer_id?: number; album_id?: string; with_albums?: boolean; month?: string; date?: string },
     signal?: AbortSignal
   ) => Promise<PhotoListResponse>
   albumTitles?: Record<number, string>
@@ -358,6 +374,46 @@ function jumpToDate(monthKey: string) {
   jumpCooldown.value = true
   setTimeout(() => { jumpCooldown.value = false }, 500)
   reload()
+}
+
+// ── Day navigation (previous / next day) ─────────────
+
+const focusDate = ref('') // YYYY-MM-DD — the day nav anchor
+const jumpDate = ref('')  // pending date jump param
+
+function dayLabel(): string {
+  if (!focusDate.value) return '—'
+  const [y, m, d] = focusDate.value.split('-')
+  return `${Number(m)}月${Number(d)}日`
+}
+
+function fmtDay(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+function jumpToDay(dateStr: string) {
+  jumpDate.value = dateStr
+  hasNewer.value = dateStr !== ''
+  jumpCooldown.value = true
+  setTimeout(() => { jumpCooldown.value = false }, 500)
+  reload()
+}
+
+function prevDay() {
+  if (!focusDate.value) return
+  const d = new Date(focusDate.value + 'T00:00:00')
+  d.setDate(d.getDate() - 1)
+  focusDate.value = fmtDay(d)
+  jumpToDay(focusDate.value)
+}
+
+function nextDay() {
+  if (!focusDate.value) return
+  const d = new Date(focusDate.value + 'T00:00:00')
+  d.setDate(d.getDate() + 1)
+  focusDate.value = fmtDay(d)
+  jumpToDay(focusDate.value)
 }
 
 function onMonthJump(monthKey: string) {
@@ -520,12 +576,14 @@ async function loadPage() {
 
   const myLoadId = ++loadId
   const monthParam = jumpMonth.value || undefined
+  const dateParam = jumpDate.value || undefined
+  const jumpParam = dateParam || monthParam // date takes precedence
 
   controller?.abort()
   controller = new AbortController()
   const { signal } = controller
 
-  const limit = wasInterrupted ? 200 : monthParam ? 80 : calcLimit()
+  const limit = wasInterrupted ? 200 : jumpParam ? 80 : calcLimit()
   wasInterrupted = false
 
   loading.value = true
@@ -537,6 +595,7 @@ async function loadPage() {
         album_id: uncategorizedOnly.value ? 'none' : undefined,
         with_albums: !!props.albumTitles,
         month: monthParam,
+        date: dateParam,
       },
       signal
     )
@@ -549,9 +608,16 @@ async function loadPage() {
     cursor = data.next_cursor
     hasMore.value = data.next_cursor !== ''
 
+    // Initialize the day-nav anchor from the first photo on first load
+    if (!focusDate.value && photos.value.length > 0) {
+      const first = photos.value[0].taken_at
+      if (first) focusDate.value = first.slice(0, 10)
+    }
+
     headCount.value = (data as any).head_count || 0
-    if (monthParam) {
+    if (jumpParam) {
       jumpMonth.value = ''
+      jumpDate.value = ''
       if (headCount.value > 0) {
         const headerOffset = (props.stickyOffset || 0) + 37 + 38
         const hc = headCount.value
