@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"image"
 	"image/jpeg"
@@ -130,79 +131,182 @@ func (s *OriginalService) serveTIFF(w io.Writer, path string) error {
 }
 
 // serveRAW extracts the embedded JPEG preview from a RAW file.
+// Strategy: largest embedded JPEG first (via binary scan), then Go decode
+// (DNG-style), then exiftool. image.Decode must NOT be first — Go's TIFF
+// decoder reads a small thumbnail from many RAW containers (e.g. Nikon NEF
+// IFD0) and would otherwise serve a 160x120 image instead of the full-size
+// preview.
 func (s *OriginalService) serveRAW(w io.Writer, path string) error {
-	// Check cache first
+	// Check cache first (ignore tiny/broken previews)
 	cacheKey := s.PreviewDir + "/" + filepath.Base(path) + ".jpg"
-	if data, err := os.ReadFile(cacheKey); err == nil {
+	if data, err := os.ReadFile(cacheKey); err == nil && len(data) >= minPreviewSize {
 		_, err = w.Write(data)
 		return err
 	}
 
-	// Use Go's standard library to read RAW as a TIFF-like container.
-	// Most RAW formats embed a full-resolution JPEG preview accessible via Go's
-	// image.DecodeConfig + reading the MakerNote offset.
-	//
-	// For now, try image.Decode which works for DNG files
-	// For other RAW, fall back to reading the embedded JPEG preview bytes.
 	f, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("open raw: %w", err)
 	}
 	defer f.Close()
 
-	// Try to decode directly (works for DNG)
+	rawData, err := io.ReadAll(f)
+	if err != nil {
+		return fmt.Errorf("read raw: %w", err)
+	}
+
+	// 1. TIFF IFD — precise preview location (NEF/ARW/CR2/DNG etc.)
+	if jpegData := extractTIFFJPEG(rawData); len(jpegData) >= minPreviewSize {
+		s.cacheWrite(filepath.Base(path)+".jpg", jpegData)
+		_, err = w.Write(jpegData)
+		return err
+	}
+
+	// 2. Global binary scan (non-TIFF containers or IFD-missed previews)
+	if jpegData := extractJPEG(rawData); len(jpegData) >= minPreviewSize {
+		s.cacheWrite(filepath.Base(path)+".jpg", jpegData)
+		_, err = w.Write(jpegData)
+		return err
+	}
+
+	// 3. Decode via Go (DNG and other RAW with decodable image data).
+	// Guard the output size so a decoded thumbnail is rejected.
+	f.Seek(0, 0)
 	if img, _, err := image.Decode(f); err == nil {
-		// Cache and serve
 		var buf bytes.Buffer
-		if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 92}); err == nil {
+		if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 92}); err == nil && buf.Len() >= minPreviewSize {
 			s.cacheWrite(filepath.Base(path)+".jpg", buf.Bytes())
 			_, _ = w.Write(buf.Bytes())
 			return nil
 		}
 	}
 
-	// RAW preview extraction via Go native binary search.
-	// Most RAW files have a JPEG preview embedded as a byte sequence
-	// that starts with 0xFF 0xD8 and ends with 0xFF 0xD9.
-	f.Seek(0, 0)
-	rawData, err := io.ReadAll(f)
-	if err != nil {
-		return fmt.Errorf("read raw: %w", err)
-	}
-
-	jpegData := extractJPEG(rawData)
-	if jpegData != nil && len(jpegData) > 20000 { // >20KB: likely a real preview
-		s.cacheWrite(filepath.Base(path)+".jpg", jpegData)
-		_, err = w.Write(jpegData)
-		return err
-	}
-
-	// Fallback: use exiftool for older cameras (e.g. Sony a6000)
-	// that don't embed a full-size JPEG preview in the RAW container.
+	// 4. exiftool — last resort only (rare: formats no Go path handles).
 	if data, err := extractWithExiftool(path); err == nil {
 		s.cacheWrite(filepath.Base(path)+".jpg", data)
 		_, err = w.Write(data)
 		return err
 	}
 
-	if jpegData != nil {
-		// Return the small thumbnail as last resort
-		s.cacheWrite(filepath.Base(path)+".jpg", jpegData)
-		_, err = w.Write(jpegData)
-		return err
-	}
-	return fmt.Errorf("no embedded jpeg found in %s", filepath.Base(path))
+	return fmt.Errorf("no usable preview in %s", filepath.Base(path))
 }
 
-// extractWithExiftool tries to extract a JPEG preview using exiftool.
+// minPreviewSize is the smallest extracted preview we consider a real
+// full-size image (not a thumbnail).
+const minPreviewSize = 20000
+
+// extractWithExiftool extracts a JPEG preview using exiftool.
+// JpgFromRaw is tried first (full-size in Nikon NEF); among the tags that
+// yield a valid large JPEG, the largest is returned.
 func extractWithExiftool(path string) ([]byte, error) {
-	for _, tag := range []string{"-PreviewImage", "-JpgFromRaw"} {
+	var best []byte
+	for _, tag := range []string{"-JpgFromRaw", "-PreviewImage"} {
 		data, err := exec.Command("exiftool", "-b", tag, path).Output()
-		if err == nil && len(data) > 20000 && data[0] == 0xFF && data[1] == 0xD8 {
-			return data, nil
+		if err == nil && len(data) >= minPreviewSize && data[0] == 0xFF && data[1] == 0xD8 {
+			if len(data) > len(best) {
+				best = data
+			}
 		}
 	}
+	if best != nil {
+		return best, nil
+	}
 	return nil, fmt.Errorf("exiftool extraction failed")
+}
+
+// extractTIFFJPEG finds the largest embedded JPEG preview by walking the
+// TIFF IFD tree and reading each JPEGInterchangeFormat (0x0201) offset.
+// RAW formats (NEF/ARW/CR2/DNG) are TIFF containers; this precisely locates
+// full-size previews that a global binary scan can miss (e.g. Sony a6000,
+// where extractJPEG only finds the 9KB thumbnail but the 419KB PreviewImage
+// sits behind a JPEGInterchangeFormat tag). No external process needed.
+func extractTIFFJPEG(data []byte) []byte {
+	if len(data) < 8 {
+		return nil
+	}
+	var order binary.ByteOrder
+	switch {
+	case data[0] == 'I' && data[1] == 'I':
+		order = binary.LittleEndian
+	case data[0] == 'M' && data[1] == 'M':
+		order = binary.BigEndian
+	default:
+		return nil
+	}
+	if order.Uint16(data[2:4]) != 42 { // TIFF magic
+		return nil
+	}
+	start := int(order.Uint32(data[4:8]))
+	if start < 8 || start >= len(data) {
+		return nil
+	}
+
+	var best []byte
+	var walk func(off, depth int)
+	walk = func(off, depth int) {
+		if off < 8 || off+2 > len(data) || depth > 8 {
+			return
+		}
+		count := int(order.Uint16(data[off : off+2]))
+		if count > 512 {
+			return
+		}
+		dir := off + 2
+		for i := 0; i < count; i++ {
+			e := dir + i*12
+			if e+12 > len(data) {
+				return
+			}
+			tag := order.Uint16(data[e : e+2])
+			typ := order.Uint16(data[e+2 : e+4])
+			cnt := order.Uint32(data[e+4 : e+8])
+			valOff := e + 8
+			switch tag {
+			case 0x0201: // JPEGInterchangeFormat: absolute file offset (LONG)
+				if typ == 4 && cnt == 1 && valOff+4 <= len(data) {
+					o := int(order.Uint32(data[valOff : valOff+4]))
+					if o > 0 && o < len(data) {
+						if seg := extractJPEG(data[o:]); len(seg) > len(best) {
+							best = seg
+						}
+					}
+				}
+			case 0x8769, 0x8825: // ExifIFD / GPS IFD pointer
+				if typ == 4 && cnt == 1 && valOff+4 <= len(data) {
+					walk(int(order.Uint32(data[valOff:valOff+4])), depth+1)
+				}
+			case 0x014A: // SubIFDs: array of IFD pointers
+				if typ == 4 && cnt >= 1 && cnt <= 64 {
+					var ptrs []uint32
+					if int(cnt)*4 <= 4 {
+						for k := uint32(0); k < cnt; k++ {
+							ptrs = append(ptrs, order.Uint32(data[valOff+4*int(k):valOff+4*int(k)+4]))
+						}
+					} else {
+						addr := int(order.Uint32(data[valOff : valOff+4]))
+						for k := uint32(0); k < cnt; k++ {
+							o := addr + 4*int(k)
+							if o+4 > len(data) {
+								break
+							}
+							ptrs = append(ptrs, order.Uint32(data[o:o+4]))
+						}
+					}
+					for _, p := range ptrs {
+						walk(int(p), depth+1)
+					}
+				}
+			}
+		}
+		next := dir + count*12
+		if next+4 <= len(data) {
+			if n := int(order.Uint32(data[next : next+4])); n > 0 {
+				walk(n, depth+1)
+			}
+		}
+	}
+	walk(start, 0)
+	return best
 }
 
 // extractJPEG finds the largest valid JPEG segment in binary data.

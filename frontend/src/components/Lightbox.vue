@@ -144,7 +144,7 @@ const props = defineProps<{
   hasNext: boolean
 }>()
 
-defineEmits<{ close: []; prev: []; next: [] }>()
+const emit = defineEmits<{ close: []; prev: []; next: [] }>()
 
 const loading = ref(true)
 const container = ref<HTMLElement | null>(null)
@@ -199,9 +199,15 @@ function onWheel(e: WheelEvent) {
   zoomAt(cx, cy, scale.value * factor)
 }
 
-// ── Touch gestures (pinch zoom, one-finger pan, double-tap) ──
+// ── Touch gestures ──
+// While scale == 1 (not zoomed), a one-finger horizontal swipe switches
+// photo (prev/next). Panning the image is only enabled after a pinch-zoom
+// (scale > 1), so swiping doesn't accidentally move the image.
+const SWIPE_THRESHOLD = 50 // px
 let touchStartDist = 0
 let touchStartScale = 1
+let touchStartX = 0
+let touchStartY = 0
 let lastTouch = { x: 0, y: 0 }
 let lastTapAt = 0
 
@@ -215,8 +221,11 @@ function onTouchStart(e: TouchEvent) {
     touchStartScale = scale.value
     dragging.value = false
   } else if (e.touches.length === 1) {
-    dragging.value = true
-    lastTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+    // Only allow panning once the user has zoomed in
+    dragging.value = scale.value > 1
+    touchStartX = e.touches[0].clientX
+    touchStartY = e.touches[0].clientY
+    lastTouch = { x: touchStartX, y: touchStartY }
   }
 }
 
@@ -245,14 +254,26 @@ function onTouchMove(e: TouchEvent) {
   }
 }
 
-function onTouchEnd() {
+function onTouchEnd(e: TouchEvent) {
   dragging.value = false
   const now = Date.now()
-  if (now - lastTapAt < 300 && scale.value <= 1) {
-    // double tap → zoom in
-    zoomAt(0, 0, 2.5)
-  } else if (now - lastTapAt < 300 && scale.value > 1) {
-    resetZoom()
+
+  // Swipe to switch photo when not zoomed: horizontal dominant movement
+  if (scale.value <= 1 && e.changedTouches.length > 0) {
+    const t = e.changedTouches[0]
+    const dx = t.clientX - touchStartX
+    const dy = t.clientY - touchStartY
+    if (Math.abs(dx) > SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      if (dx < 0) emit('next')
+      else emit('prev')
+      return
+    }
+  }
+
+  // Double tap → zoom in / reset
+  if (now - lastTapAt < 300) {
+    if (scale.value > 1) resetZoom()
+    else zoomAt(0, 0, 2.5)
   }
   lastTapAt = now
 }
