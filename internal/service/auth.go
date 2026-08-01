@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"sync/atomic"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -321,14 +320,6 @@ func (s *AuthService) RedeemInviteCode(code, username, password string) (*model.
 // userLogRetentionMax caps the number of user_logs rows kept in the DB.
 const userLogRetentionMax = 2000
 
-// logPruneInterval: run the retention prune every N writes instead of every
-// write. session events are logged on every page refresh, so pruning on each
-// one makes frequent DELETEs contend with concurrent INSERTs once the table
-// passes the cap.
-const logPruneInterval = 100
-
-var logWriteCount atomic.Int64
-
 // LogEvent records a user activity event (login / session / logout) and
 // prunes rows beyond the retention cap.
 func (s *AuthService) LogEvent(userID int64, username, eventType, ip string) error {
@@ -341,25 +332,17 @@ func (s *AuthService) LogEvent(userID int64, username, eventType, ip string) err
 		return err
 	}
 
-	// Prune periodically (not every write) to keep high session-log volume
-	// from contending on DELETEs.
-	if logWriteCount.Add(1)%logPruneInterval == 0 {
-		s.pruneLogs()
-	}
-	return nil
-}
-
-// pruneLogs deletes the oldest user_logs rows beyond the retention cap.
-// Efficient: reads the id at the retention offset (PK index scan of only
-// retention rows, unlike a full COUNT(*)), then deletes id < that in one
-// indexed statement.
-func (s *AuthService) pruneLogs() {
+	// Prune efficiently: the id of the userLogRetentionMax-th newest row
+	// (PK index scan of only that many rows, unlike a full COUNT(*)). If it
+	// exists, there are more rows than the cap — delete everything older.
+	// NULL means the table has <= cap rows and nothing to prune.
 	var keepFrom *int64
 	s.DB.Raw("SELECT id FROM user_logs ORDER BY id DESC LIMIT 1 OFFSET ?", userLogRetentionMax-1).
 		Scan(&keepFrom)
 	if keepFrom != nil {
 		s.DB.Exec("DELETE FROM user_logs WHERE id < ?", *keepFrom)
 	}
+	return nil
 }
 
 // ListLogs returns user activity logs, newest first, with cursor pagination.
