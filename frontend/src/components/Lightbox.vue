@@ -204,6 +204,7 @@ function onWheel(e: WheelEvent) {
 // photo (prev/next). Panning the image is only enabled after a pinch-zoom
 // (scale > 1), so swiping doesn't accidentally move the image.
 const SWIPE_THRESHOLD = 50 // px
+let isPinching = false
 let touchStartDist = 0
 let touchStartScale = 1
 let touchStartX = 0
@@ -217,6 +218,7 @@ function touchDist(a: Touch, b: Touch) {
 
 function onTouchStart(e: TouchEvent) {
   if (e.touches.length === 2) {
+    isPinching = true
     touchStartDist = touchDist(e.touches[0], e.touches[1])
     touchStartScale = scale.value
     dragging.value = false
@@ -256,7 +258,18 @@ function onTouchMove(e: TouchEvent) {
 
 function onTouchEnd(e: TouchEvent) {
   dragging.value = false
+
+  // Fingers still down (one lifted mid-pinch) → wait for the gesture to end
+  if (e.touches.length > 0) return
+
   const now = Date.now()
+
+  // A pinch gesture must not be treated as a tap/swipe: keep the zoom.
+  if (isPinching) {
+    isPinching = false
+    lastTapAt = now // so a quick tap right after isn't misread as double-tap
+    return
+  }
 
   // Swipe to switch photo when not zoomed: horizontal dominant movement
   if (scale.value <= 1 && e.changedTouches.length > 0) {
