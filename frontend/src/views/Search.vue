@@ -42,8 +42,12 @@
         未找到匹配的照片，换个词试试
       </div>
 
-      <!-- Task 4 将替换为 PhotoGrid -->
-      <div v-else class="px-4 py-8 text-center text-xs text-neutral-500">共 {{ total }} 张（网格接入见 Task 4）</div>
+      <PhotoGrid
+        v-else
+        :fetch-fn="wrapFetch"
+        :album-titles="albumTitles"
+        single-page
+      />
     </div>
   </div>
 </template>
@@ -53,6 +57,7 @@ import { ref, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchSearch, type SearchPhotoItem, type SearchResponse } from '@/api/search'
 import { fetchAlbums } from '@/api/albums'
+import PhotoGrid from '@/components/PhotoGrid.vue'
 
 const route = useRoute()
 const router = useRouter()

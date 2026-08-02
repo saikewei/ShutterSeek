@@ -257,6 +257,7 @@ const props = defineProps<{
   datesFn?: () => Promise<Array<{ date: string; count: number }>>
   rangeFn?: (fromId: number, toId: number, opts?: { album_id?: string }) => Promise<number[]>
   removeFromAlbumId?: number
+  singlePage?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -620,6 +621,7 @@ async function loadPage() {
     total.value = data.total
     cursor = data.next_cursor
     hasMore.value = data.next_cursor !== ''
+    if (props.singlePage) hasMore.value = false
 
     // Initialize the day-nav anchor from the first photo on first load
     if (!focusDate.value && photos.value.length > 0) {
@@ -673,21 +675,23 @@ onMounted(() => {
   )
   setTimeout(() => { if (sentinel.value) observer?.observe(sentinel.value) }, 1000)
 
-  // Scroll-up detection for loading newer photos
-  const scrollParent = document.querySelector('.overflow-auto') as HTMLElement
-  if (scrollParent) {
-    let ticking = false
-    scrollParent.addEventListener('scroll', () => {
-      if (ticking) return
-      ticking = true
-      requestAnimationFrame(() => {
-        atTop.value = scrollParent.scrollTop < 50
-        if (scrollParent.scrollTop < 100 && hasNewer.value && !loadingNewer.value && !jumpCooldown.value) {
-          loadNewer()
-        }
-        ticking = false
-      })
-    }, { passive: true })
+  // Scroll-up detection for loading newer photos（单页模式跳过）
+  if (!props.singlePage) {
+    const scrollParent = document.querySelector('.overflow-auto') as HTMLElement
+    if (scrollParent) {
+      let ticking = false
+      scrollParent.addEventListener('scroll', () => {
+        if (ticking) return
+        ticking = true
+        requestAnimationFrame(() => {
+          atTop.value = scrollParent.scrollTop < 50
+          if (scrollParent.scrollTop < 100 && hasNewer.value && !loadingNewer.value && !jumpCooldown.value) {
+            loadNewer()
+          }
+          ticking = false
+        })
+      }, { passive: true })
+    }
   }
 })
 
