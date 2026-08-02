@@ -13,7 +13,7 @@
         </button>
 
         <button
-          v-if="isGuestMobile && !selectMode"
+          v-if="isGuestMobile && !selectMode && !singlePage"
           @click="monthPickerOpen = true"
           class="px-3 py-1 text-xs rounded-full bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors"
         >月份</button>
@@ -48,7 +48,7 @@
       </div>
 
       <!-- Day navigation (sticky filter bar, always visible; compact on mobile) -->
-      <div v-if="!selectMode" class="flex items-center gap-1 text-xs">
+      <div v-if="!selectMode && !singlePage" class="flex items-center gap-1 text-xs">
         <button
           @click="prevDay"
           class="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors whitespace-nowrap"
@@ -172,7 +172,7 @@
     </Teleport>
 
     <!-- Date scrubber (desktop only; mobile uses the month-picker modal) -->
-    <DateScrubber v-if="!isGuestMobile" :dates="datePoints" :active-month="activeMonth" @jump="jumpToDate" />
+    <DateScrubber v-if="!isGuestMobile && !singlePage" :dates="datePoints" :active-month="activeMonth" @jump="jumpToDate" />
 
     <!-- Album picker dialog -->
     <Teleport to="body">
@@ -221,7 +221,7 @@
 
     <!-- Mobile month picker modal -->
     <Teleport to="body">
-      <div v-if="monthPickerOpen" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+      <div v-if="monthPickerOpen && !singlePage" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
         <div class="absolute inset-0 bg-black/60" @click="monthPickerOpen = false" />
         <div class="relative w-full max-h-[70vh] flex flex-col px-3 pb-3">
           <div class="mb-2 flex items-center justify-between">
