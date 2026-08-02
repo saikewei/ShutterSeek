@@ -73,6 +73,7 @@
         class="sticky z-10 bg-neutral-950/95 backdrop-blur px-2 py-2 text-sm font-semibold tracking-wide border-b border-neutral-800"
         :style="{ top: (stickyOffset || 0) + 37 + 'px' }"
         :data-date="group.label"
+        :data-date-iso="group.photos[0]?.taken_at?.slice(0, 10) || ''"
       >
         <span class="border-l-2 border-neutral-500 pl-2.5 text-neutral-200">{{ group.label }}</span>
       </div>
@@ -364,19 +365,6 @@ const datePoints = computed<DatePoint[]>(() => {
 
 const headCount = ref(0)
 
-const activeMonth = computed(() => {
-  // Skip head photos to find the actual user-visible first group
-  let skipped = 0
-  for (const g of groups.value) {
-    skipped += g.photos.length
-    if (skipped > headCount.value) {
-      const t = g.photos[0]?.taken_at
-      return t ? t.slice(0, 7) : ''
-    }
-  }
-  return ''
-})
-
 const jumpCooldown = ref(false)
 
 // Mobile month picker
@@ -385,6 +373,9 @@ const monthPickerOpen = ref(false)
 function jumpToDate(monthKey: string) {
   jumpMonth.value = monthKey
   hasNewer.value = monthKey !== ''
+  // 同步日期导航锚点到目标月的第一张照片日期（按全库日期分布）
+  const first = allDates.value.map(d => d.date).find(d => d.startsWith(monthKey))
+  focusDate.value = first || monthKey + '-01'
   jumpCooldown.value = true
   setTimeout(() => { jumpCooldown.value = false }, 500)
   reload()
@@ -394,6 +385,26 @@ function jumpToDate(monthKey: string) {
 
 const focusDate = ref('') // YYYY-MM-DD — the day nav anchor
 const jumpDate = ref('')  // pending date jump param
+
+// 月份选择器高亮：跟随当前可见日期（由滚动同步 focusDate 派生）
+const activeMonth = computed(() => (focusDate.value ? focusDate.value.slice(0, 7) : ''))
+
+// 滚动时检测当前钉在顶部的日期分组，同步日期导航锚点
+function updateVisibleDate() {
+  const sp = document.querySelector('.overflow-auto') as HTMLElement
+  if (!sp) return
+  const headers = Array.from(sp.querySelectorAll<HTMLElement>('[data-date-iso]'))
+  if (headers.length === 0) return
+  // 日期头 sticky top = stickyOffset + 37（筛选栏高度），换算到视口坐标
+  const line = sp.getBoundingClientRect().top + (props.stickyOffset || 0) + 37 + 1
+  let current = headers[0]
+  for (const h of headers) {
+    if (h.getBoundingClientRect().top <= line) current = h
+    else break
+  }
+  const iso = current.dataset.dateIso
+  if (iso && iso !== focusDate.value) focusDate.value = iso
+}
 
 function fmtDay(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0')
@@ -700,6 +711,7 @@ onMounted(() => {
         ticking = true
         requestAnimationFrame(() => {
           atTop.value = scrollParent.scrollTop < 50
+          updateVisibleDate()
           if (scrollParent.scrollTop < 100 && hasNewer.value && !loadingNewer.value && !jumpCooldown.value) {
             loadNewer()
           }
