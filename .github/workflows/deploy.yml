@@ -41,6 +41,16 @@ jobs:
           docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
 
+      - name: Build and push embedding image
+        run: |
+          docker build \
+            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/shutterseek-embedding:latest \
+            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/shutterseek-embedding:${{ github.sha }} \
+            -f embed/Dockerfile \
+            embed
+          docker push ${{ env.REGISTRY }}/${{ github.repository_owner }}/shutterseek-embedding:latest
+          docker push ${{ env.REGISTRY }}/${{ github.repository_owner }}/shutterseek-embedding:${{ github.sha }}
+
       - name: Connect Tailscale
         uses: tailscale/github-action@v2
         with:
