@@ -14,6 +14,9 @@ import (
 	"time"
 
 	goredis "github.com/redis/go-redis/v9"
+	"gorm.io/gorm"
+
+	"shutterseek/internal/model"
 )
 
 var (
@@ -134,4 +137,66 @@ func formatVector(v []float32) string {
 	}
 	b.WriteByte(']')
 	return b.String()
+}
+
+type SearchItem struct {
+	model.Photo
+	Score float64 `gorm:"column:score" json:"score"`
+}
+
+type SearchService struct {
+	DB       *gorm.DB
+	Embedder Embedder
+	MaxText  int
+}
+
+func NewSearchService(db *gorm.DB, embedder Embedder, maxText int) *SearchService {
+	return &SearchService{DB: db, Embedder: embedder, MaxText: maxText}
+}
+
+func (s *SearchService) Search(ctx context.Context, q, role string, limit int, albumID int64) ([]SearchItem, error) {
+	q = strings.TrimSpace(q)
+	if q == "" {
+		return nil, ErrEmptyQuery
+	}
+	runes := []rune(q)
+	if s.MaxText > 0 && len(runes) > s.MaxText {
+		q = string(runes[:s.MaxText])
+	}
+	vec, err := s.Embedder.Embed(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	vecStr := formatVector(vec)
+
+	query := `SELECT p.*, 1 - (pe.embedding <=> ?::vector) AS score
+		FROM photo_embeddings pe
+		JOIN photos p ON p.id = pe.photo_id
+		WHERE TRUE`
+	args := []any{vecStr}
+	if albumID > 0 {
+		query += ` AND p.id IN (SELECT photo_id FROM album_photos WHERE album_id = ?)`
+		args = append(args, albumID)
+	}
+	if role == "guest" {
+		query += ` AND p.id IN (SELECT ap.photo_id FROM album_photos ap
+			JOIN albums a ON a.id = ap.album_id WHERE a.is_public = true)`
+	}
+	query += ` ORDER BY pe.embedding <=> ?::vector LIMIT ?`
+	args = append(args, vecStr, limit)
+
+	var items []SearchItem
+	// enable_sort=off：强制规划器使用 HNSW 索引的按距离有序扫描（而非先物化
+	// 过滤集合再精确排序）。对 guest/相册等带过滤查询，避免退化为全量精确扫描
+	//（实测 guest 从 ~450ms 降至 ~1ms）。SET LOCAL 仅在本次事务生效。
+	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("SET LOCAL enable_sort = off").Error; err != nil {
+			return err
+		}
+		return tx.Raw(query, args...).Scan(&items).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return items, nil
 }
