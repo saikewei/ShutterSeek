@@ -1,6 +1,6 @@
 <template>
   <!-- Mobile guest shell: top bar + bottom tabs, no sidebar -->
-  <div v-if="isGuestMobile" class="flex flex-col h-screen bg-neutral-950 text-white">
+  <div v-if="isGuestMobile" class="flex flex-col h-screen supports-[height:100dvh]:h-dvh bg-neutral-950 text-white">
     <header class="shrink-0 px-4 py-3 border-b border-neutral-800 bg-neutral-900 flex items-center justify-between">
       <h1 class="text-sm font-semibold tracking-wide text-white">ShutterSeek</h1>
       <button @click="doLogout" class="text-xs text-neutral-400 hover:text-neutral-200 transition-colors">退出</button>
@@ -10,7 +10,7 @@
       <router-view />
     </main>
 
-    <nav class="shrink-0 flex border-t border-neutral-800 bg-neutral-900">
+    <nav class="shrink-0 flex border-t border-neutral-800 bg-neutral-900 pb-[env(safe-area-inset-bottom)]">
       <router-link
         to="/"
         class="flex-1 py-3 text-xs text-center transition-colors"
@@ -30,7 +30,7 @@
   </div>
 
   <!-- Desktop shell -->
-  <div v-else class="flex h-screen bg-neutral-950 text-white">
+  <div v-else class="flex h-screen supports-[height:100dvh]:h-dvh bg-neutral-950 text-white">
     <!-- Sidebar -->
     <nav v-if="!hideSidebar" class="w-48 shrink-0 bg-neutral-900 border-r border-neutral-800 flex flex-col">
       <div class="px-4 py-4 border-b border-neutral-800">
