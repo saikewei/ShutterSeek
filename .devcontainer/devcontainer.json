@@ -4,14 +4,14 @@
     "dockerfile": "Dockerfile"
   },
   // 容器首次启动后自动在容器内部初始化并拉取依赖
-  "postStartCommand": "sudo chown -R $(id -u):$(id -g) ~/.claude && go mod tidy",
+  "postStartCommand": "sudo chown -R $(id -u):$(id -g) ~/.codex && go mod tidy",
   // 网络 & 挂载
   "runArgs": [
     "--network=postgres-main_default"
   ],
   "mounts": [
     "source=/volume1/Main/Photos,target=/photos,type=bind,readonly",
-    "source=shutterseek-claude-data,target=/home/vscode/.claude,type=volume"
+    "source=shutterseek-codex-data,target=/home/vscode/.codex,type=volume"
   ],
   "customizations": {
     "vscode": {
@@ -19,9 +19,9 @@
         "golang.go",
         "ms-azuretools.vscode-docker",
         "eamodio.gitlens",
-        "anthropic.claude-code",
         "vue.volar",
-        "dbaeumer.vscode-eslint"
+        "dbaeumer.vscode-eslint",
+        "openai.chatgpt"
       ]
     }
   }
