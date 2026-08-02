@@ -21,6 +21,11 @@
         class="flex-1 py-3 text-xs text-center transition-colors"
         :class="$route.path.startsWith('/albums') ? 'text-white bg-neutral-800' : 'text-neutral-400'"
       >相册</router-link>
+      <router-link
+        to="/search"
+        class="flex-1 py-3 text-xs text-center transition-colors"
+        :class="$route.path === '/search' ? 'text-white bg-neutral-800' : 'text-neutral-400'"
+      >搜索</router-link>
     </nav>
   </div>
 
@@ -42,6 +47,11 @@
           class="block px-4 py-2 text-sm transition-colors"
           :class="$route.path.startsWith('/albums') ? 'text-white bg-neutral-800' : 'text-neutral-400 hover:text-white hover:bg-neutral-800/50'"
         >相册</router-link>
+        <router-link
+          to="/search"
+          class="block px-4 py-2 text-sm transition-colors"
+          :class="$route.path === '/search' ? 'text-white bg-neutral-800' : 'text-neutral-400 hover:text-white hover:bg-neutral-800/50'"
+        >搜索</router-link>
         <router-link
           v-if="isAdmin"
           to="/admin/invites"

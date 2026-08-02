@@ -6,6 +6,10 @@
         <h1 class="text-sm font-medium text-white">{{ album?.title || 'Album' }}</h1>
         <p class="text-xs text-neutral-500">{{ album?.photo_count?.toLocaleString() || 0 }} photos</p>
       </div>
+      <button
+        @click="$router.push('/search?album_id=' + albumId)"
+        class="shrink-0 text-xs text-neutral-300 hover:text-white border border-neutral-700 rounded-lg px-3 py-1.5 transition-colors"
+      >搜索相册</button>
     </header>
 
     <PhotoGrid
