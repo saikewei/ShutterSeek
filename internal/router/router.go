@@ -34,6 +34,7 @@ func Setup(h *handler.Handler, thumbDir string) *gin.Engine {
 		v1.GET("/albums/:id", h.GetAlbum)
 		v1.GET("/albums/:id/dates", h.AlbumDates)
 		v1.GET("/albums/:id/photos", h.ListAlbumPhotos)
+		v1.GET("/search", h.Search)
 		v1.GET("/auth/me", h.Me)
 		v1.POST("/auth/logout", h.Logout)
 

@@ -83,7 +83,16 @@ func main() {
 
 	origSvc := service.NewOriginalService(cfg.Thumbnail.PhotosDir, "/tmp/shutterseek_previews")
 	albumSvc := service.NewAlbumService(gormDB)
-	h := &handler.Handler{Pool: pool, Redis: rdb, DB: gormDB, OrigSvc: origSvc, AlbumSvc: albumSvc, AuthSvc: authSvc}
+	embedder := service.NewCachedEmbedder(
+		service.NewHTTPEmbedder(cfg.Embed.URL, cfg.Embed.Timeout(), cfg.Embed.Token),
+		rdb,
+	)
+	searchSvc := service.NewSearchService(gormDB, embedder, cfg.Embed.MaxText)
+	h := &handler.Handler{
+		Pool: pool, Redis: rdb, DB: gormDB,
+		OrigSvc: origSvc, AlbumSvc: albumSvc, AuthSvc: authSvc,
+		SearchSvc: searchSvc,
+	}
 	r := router.Setup(h, cfg.Thumbnail.OutputDir)
 
 	// ── Server (HTTP or HTTPS via Let's Encrypt DNS-01) ──
