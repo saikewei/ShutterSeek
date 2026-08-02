@@ -16,6 +16,8 @@ RUN if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
     curl \
     git \
     gh \
+    python3-pip \
+    python3-venv \
  && rm -rf /var/lib/apt/lists/*
 
 # Node 22
