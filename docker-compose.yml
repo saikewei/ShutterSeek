@@ -26,8 +26,39 @@ services:
       SHUTTERSEEK_CERT_DIR: /certs
       ALIYUN_ACCESS_KEY_ID: ${ALIYUN_ACCESS_KEY_ID:-}
       ALIYUN_ACCESS_KEY_SECRET: ${ALIYUN_ACCESS_KEY_SECRET:-}
+      # 文字检索（embedding sidecar）
+      SHUTTERSEEK_EMBED_URL: ${SHUTTERSEEK_EMBED_URL:-http://embedding:8000}
+      SHUTTERSEEK_EMBED_TOKEN: ${EMBED_TOKEN}
+      SHUTTERSEEK_EMBED_TIMEOUT_MS: ${SHUTTERSEEK_EMBED_TIMEOUT_MS:-10000}
+    networks:
+      - postgres-main_default
+      - shutterseek-internal
+
+  embedding:
+    image: ghcr.io/saikewei/shutterseek-embedding:latest
+    container_name: shutterseek-embedding
+    restart: unless-stopped
+    volumes:
+      - /volume1/docker/ShutterSeek/models:/models:ro
+    environment:
+      MODEL_DIR: /models
+      MODEL_FILE: model.onnx
+      ORT_THREADS: "3"
+      EMBED_TOKEN: ${EMBED_TOKEN}
+    mem_limit: 1g
+    cpus: "3.0"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+    networks:
+      - shutterseek-internal
 
 networks:
   default:
     name: postgres-main_default
     external: true
+  shutterseek-internal:
+    internal: true
