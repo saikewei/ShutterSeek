@@ -34,12 +34,13 @@ var cstZone = time.FixedZone("CST", 8*3600)
 
 // Handler holds shared dependencies for all HTTP handlers.
 type Handler struct {
-	Pool     *pgxpool.Pool
-	Redis    *goredis.Client
-	DB       *gorm.DB
-	OrigSvc  *service.OriginalService
-	AlbumSvc *service.AlbumService
-	AuthSvc  *service.AuthService
+	Pool      *pgxpool.Pool
+	Redis     *goredis.Client
+	DB        *gorm.DB
+	OrigSvc   *service.OriginalService
+	AlbumSvc  *service.AlbumService
+	AuthSvc   *service.AuthService
+	SearchSvc *service.SearchService
 }
 
 // ── Health ──────────────────────────────────────────────
@@ -214,39 +215,39 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 		q = q.Order("taken_at DESC, id DESC").Limit(limit + 1)
 	}
 
-// Filter: jump to day/month — with head preload (newer photos just past the
-// boundary, so the view reads "target + a preview of what comes next").
-		var headPhotos []model.Photo
-		if date != "" {
-			if t, err := time.ParseInLocation("2006-01-02", date, cstZone); err == nil {
-				nextDay := t.AddDate(0, 0, 1)
-				headQ := h.DB.Where("taken_at >= ?", nextDay)
-				headQ = h.guestPhotoFilter(c, headQ)
-				if albumIDStr != "" {
-					if aid, err2 := strconv.ParseInt(albumIDStr, 10, 64); err2 == nil && aid > 0 {
-						headQ = headQ.Where("id IN (SELECT photo_id FROM album_photos WHERE album_id = ?)", aid)
-					}
+	// Filter: jump to day/month — with head preload (newer photos just past the
+	// boundary, so the view reads "target + a preview of what comes next").
+	var headPhotos []model.Photo
+	if date != "" {
+		if t, err := time.ParseInLocation("2006-01-02", date, cstZone); err == nil {
+			nextDay := t.AddDate(0, 0, 1)
+			headQ := h.DB.Where("taken_at >= ?", nextDay)
+			headQ = h.guestPhotoFilter(c, headQ)
+			if albumIDStr != "" {
+				if aid, err2 := strconv.ParseInt(albumIDStr, 10, 64); err2 == nil && aid > 0 {
+					headQ = headQ.Where("id IN (SELECT photo_id FROM album_photos WHERE album_id = ?)", aid)
 				}
-				headQ.Order("taken_at ASC, id ASC").Limit(15).Find(&headPhotos)
-				// Main query: target day and earlier
-				q = q.Where("taken_at < ?", nextDay)
 			}
-		} else if month != "" {
-			if t, err := time.ParseInLocation("2006-01", month, cstZone); err == nil {
-				nextMonth := t.AddDate(0, 1, 0)
-				// Preload a few photos from the next month (newer) as head
-				headQ := h.DB.Where("taken_at >= ?", nextMonth)
-				headQ = h.guestPhotoFilter(c, headQ)
-				if albumIDStr != "" {
-					if aid, err2 := strconv.ParseInt(albumIDStr, 10, 64); err2 == nil && aid > 0 {
-						headQ = headQ.Where("id IN (SELECT photo_id FROM album_photos WHERE album_id = ?)", aid)
-					}
-				}
-				headQ.Order("taken_at ASC, id ASC").Limit(15).Find(&headPhotos)
-				// Main query: target month and older
-				q = q.Where("taken_at < ?", nextMonth)
-			}
+			headQ.Order("taken_at ASC, id ASC").Limit(15).Find(&headPhotos)
+			// Main query: target day and earlier
+			q = q.Where("taken_at < ?", nextDay)
 		}
+	} else if month != "" {
+		if t, err := time.ParseInLocation("2006-01", month, cstZone); err == nil {
+			nextMonth := t.AddDate(0, 1, 0)
+			// Preload a few photos from the next month (newer) as head
+			headQ := h.DB.Where("taken_at >= ?", nextMonth)
+			headQ = h.guestPhotoFilter(c, headQ)
+			if albumIDStr != "" {
+				if aid, err2 := strconv.ParseInt(albumIDStr, 10, 64); err2 == nil && aid > 0 {
+					headQ = headQ.Where("id IN (SELECT photo_id FROM album_photos WHERE album_id = ?)", aid)
+				}
+			}
+			headQ.Order("taken_at ASC, id ASC").Limit(15).Find(&headPhotos)
+			// Main query: target month and older
+			q = q.Where("taken_at < ?", nextMonth)
+		}
+	}
 
 	// Filter: uncategorized only
 	if uncategorized {
