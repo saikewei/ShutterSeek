@@ -11,6 +11,13 @@ frontend/node_modules/
 # 缩略图 (不提交)
 thumbnails/
 
+# 本地模型文件（INT8 ONNX + 分词器，~570MB，不提交）
+models/
+
+# Python 开发环境
+embed/.venv/
+embed/__pycache__/
+
 # certmagic 证书存储 (含私钥，绝不提交)
 certs/
 
