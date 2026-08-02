@@ -1,7 +1,11 @@
 <template>
   <div>
-    <!-- Filter bar -->
-    <div class="sticky z-20 flex items-center justify-between px-2 py-1.5 bg-neutral-950/90 backdrop-blur border-b border-neutral-800" :style="{ top: (stickyOffset || 0) + 'px' }">
+    <!-- Filter bar（单页模式无筛选语义，整栏隐藏） -->
+    <div
+      v-if="!singlePage"
+      class="sticky z-20 flex items-center justify-between px-2 py-1.5 bg-neutral-950/90 backdrop-blur border-b border-neutral-800"
+      :style="{ top: (stickyOffset || 0) + 'px' }"
+    >
       <div class="flex items-center gap-1.5">
         <button
           @click="filterOpen = true"
