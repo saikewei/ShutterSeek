@@ -31,7 +31,7 @@ services:
       SHUTTERSEEK_EMBED_TOKEN: ${EMBED_TOKEN}
       SHUTTERSEEK_EMBED_TIMEOUT_MS: ${SHUTTERSEEK_EMBED_TIMEOUT_MS:-10000}
     networks:
-      - postgres-main_default
+      - default
       - shutterseek-internal
 
   embedding:
