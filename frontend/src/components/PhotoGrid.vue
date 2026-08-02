@@ -62,9 +62,14 @@
       </div>
     </div>
 
-    <!-- Grid with date separators -->
-    <div v-for="group in groups" :key="group.label">
-      <div class="sticky z-10 bg-neutral-950/95 backdrop-blur px-2 py-2 text-sm font-semibold tracking-wide border-b border-neutral-800" :style="{ top: (stickyOffset || 0) + 37 + 'px' }" :data-date="group.label">
+    <!-- Grid with date separators (单页模式不分组、不显示日期栏) -->
+    <div v-for="group in displayGroups" :key="group.label || 'all'">
+      <div
+        v-if="group.label"
+        class="sticky z-10 bg-neutral-950/95 backdrop-blur px-2 py-2 text-sm font-semibold tracking-wide border-b border-neutral-800"
+        :style="{ top: (stickyOffset || 0) + 37 + 'px' }"
+        :data-date="group.label"
+      >
         <span class="border-l-2 border-neutral-500 pl-2.5 text-neutral-200">{{ group.label }}</span>
       </div>
       <div class="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-1 p-1">
@@ -319,6 +324,12 @@ const groups = computed<Group[]>(() => {
     }
   }
   return result
+})
+
+// 单页模式（搜索结果按相似度排序）不按日期分组，仅渲染无标题的单组
+const displayGroups = computed<Group[]>(() => {
+  if (props.singlePage) return [{ label: '', photos: photos.value }]
+  return groups.value
 })
 
 function dateLabel(iso: string): string {
