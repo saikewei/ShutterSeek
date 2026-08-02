@@ -5,6 +5,7 @@ import App from './App.vue'
 import Home from './views/Home.vue'
 import AlbumList from './views/AlbumList.vue'
 import AlbumDetail from './views/AlbumDetail.vue'
+import Search from './views/Search.vue'
 import Login from './views/Login.vue'
 import InviteRedeem from './views/InviteRedeem.vue'
 import AdminInvites from './views/AdminInvites.vue'
@@ -17,6 +18,7 @@ const routes = [
   { path: '/', component: Home },
   { path: '/albums', component: AlbumList },
   { path: '/albums/:id', component: AlbumDetail },
+  { path: '/search', component: Search },
   { path: '/admin/invites', component: AdminInvites },
   { path: '/admin/logs', component: AdminLogs },
 ]
