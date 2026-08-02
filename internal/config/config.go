@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -15,6 +16,18 @@ type Config struct {
 	Database  DatabaseConfig  `yaml:"database"`
 	Redis     RedisConfig     `yaml:"redis"`
 	Thumbnail ThumbnailConfig `yaml:"thumbnail"`
+	Embed     EmbedConfig     `yaml:"embed"`
+}
+
+type EmbedConfig struct {
+	URL       string `yaml:"url"`
+	TimeoutMS int    `yaml:"timeout_ms"`
+	MaxText   int    `yaml:"max_text"`
+	Token     string `yaml:"-"`
+}
+
+func (e EmbedConfig) Timeout() time.Duration {
+	return time.Duration(e.TimeoutMS) * time.Millisecond
 }
 
 type ServerConfig struct {
@@ -66,6 +79,7 @@ func Load(path string) (*Config, error) {
 			OutputDir: "/thumbnails/.thumbnails_1080",
 			PhotosDir: "/photos",
 		},
+		Embed: EmbedConfig{URL: "http://127.0.0.1:8000", TimeoutMS: 10000, MaxText: 200},
 	}
 
 	if err := yaml.Unmarshal(data, cfg); err != nil {
@@ -123,6 +137,22 @@ func applyEnv(cfg *Config) {
 	}
 	if v := os.Getenv("SHUTTERSEEK_THUMBNAILS_DIR"); v != "" {
 		cfg.Thumbnail.OutputDir = v
+	}
+	if v := os.Getenv("SHUTTERSEEK_EMBED_URL"); v != "" {
+		cfg.Embed.URL = v
+	}
+	if v := os.Getenv("SHUTTERSEEK_EMBED_TIMEOUT_MS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.Embed.TimeoutMS = n
+		}
+	}
+	if v := os.Getenv("SHUTTERSEEK_EMBED_MAX_TEXT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.Embed.MaxText = n
+		}
+	}
+	if v := os.Getenv("SHUTTERSEEK_EMBED_TOKEN"); v != "" {
+		cfg.Embed.Token = v
 	}
 }
 
