@@ -67,59 +67,71 @@
     </div>
 
     <!-- Grid with date separators (单页模式不分组、不显示日期栏) -->
-    <div v-for="group in displayGroups" :key="group.label || 'all'">
+    <div v-for="group in groupCells" :key="group.label || 'all'">
       <div
         v-if="group.label"
         class="sticky z-10 bg-neutral-950/95 backdrop-blur px-2 py-2 text-sm font-semibold tracking-wide border-b border-neutral-800"
         :style="{ top: (stickyOffset || 0) + 37 + 'px' }"
         :data-date="group.label"
-        :data-date-iso="group.photos[0]?.taken_at?.slice(0, 10) || ''"
+        :data-date-iso="group.cells[0]?.photo?.taken_at?.slice(0, 10) || ''"
       >
         <span class="border-l-2 border-neutral-500 pl-2.5 text-neutral-200">{{ group.label }}</span>
       </div>
       <div class="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-1 p-1">
         <div
-          v-for="photo in group.photos"
-          :key="photo.id"
+          v-for="cell in group.cells"
+          :key="cell.photo.id"
           class="group cursor-pointer relative rounded-lg overflow-hidden bg-neutral-800"
-          :class="{ 'ring-2 ring-white': selectMode && selected.has(photo.id) }"
-          @click="onPhotoClick(photo, $event)"
-          @contextmenu.prevent="$emit('photoContextmenu', photo, $event)"
+          :class="{ 'ring-2 ring-white': selectMode && selected.has(cell.photo.id) }"
+          @click="onCellClick(cell, $event)"
+          @contextmenu.prevent="$emit('photoContextmenu', cell.photo, $event)"
         >
           <img
-            :src="THUMB_BASE + '/' + photo.id + '.webp'"
-            :alt="photo.camera_model || 'Photo'"
+            :src="THUMB_BASE + '/' + cell.photo.id + '.webp'"
+            :alt="cell.photo.camera_model || 'Photo'"
             loading="lazy"
-            :class="['w-full aspect-square object-cover', photo.height > photo.width ? 'rotate-270 scale-150' : '']"
-            @error="onImgError(photo)"
+            :class="['w-full aspect-square object-cover', cell.photo.height > cell.photo.width ? 'rotate-270 scale-150' : '']"
+            @error="onImgError(cell.photo)"
           />
 
           <!-- Selection checkbox -->
           <div v-if="selectMode" class="absolute top-1.5 left-1.5">
             <div class="w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors"
-              :class="selected.has(photo.id) ? 'bg-white border-white' : 'border-white/60 bg-black/30'"
+              :class="selected.has(cell.photo.id) ? 'bg-white border-white' : 'border-white/60 bg-black/30'"
             >
-              <span v-if="selected.has(photo.id)" class="text-black text-xs">✓</span>
+              <span v-if="selected.has(cell.photo.id)" class="text-black text-xs">✓</span>
             </div>
           </div>
 
           <!-- Album tags -->
-          <div v-if="!selectMode && albumTags(photo).length" class="absolute top-1 left-1 flex flex-wrap gap-0.5 max-w-[90%]">
+          <div v-if="!selectMode && albumTags(cell.photo).length" class="absolute top-1 left-1 flex flex-wrap gap-0.5 max-w-[90%]">
             <span
-              v-for="tag in albumTags(photo).slice(0, 2)"
+              v-for="tag in albumTags(cell.photo).slice(0, 2)"
               :key="tag"
               class="px-1.5 py-0.5 text-[10px] rounded bg-black/60 text-neutral-300 truncate max-w-[80px]"
             >{{ tag }}</span>
-            <span v-if="albumTags(photo).length > 2" class="text-[10px] text-neutral-500">+{{ albumTags(photo).length - 2 }}</span>
+            <span v-if="albumTags(cell.photo).length > 2" class="text-[10px] text-neutral-500">+{{ albumTags(cell.photo).length - 2 }}</span>
           </div>
 
-          <div class="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
-            <p class="text-xs truncate text-neutral-400">{{ photo.file_name }}</p>
-            <p class="text-xs truncate">{{ photo.camera_make }} {{ photo.camera_model }}</p>
-            <p class="text-xs text-neutral-300">{{ photo.focal_length }} {{ photo.aperture }} ISO{{ photo.iso }}</p>
-            <p class="text-xs text-neutral-400">{{ photo.width }}×{{ photo.height }}</p>
+          <!-- 连拍折叠角标 / 展开收起按钮 -->
+          <div v-if="cell.collapsed" class="absolute top-1 right-1">
+            <span class="px-1.5 py-0.5 text-[10px] rounded bg-black/60 text-neutral-200">×{{ cell.burstCount }}</span>
           </div>
-          <slot name="photo-action" :photo="photo" />
+          <button
+            v-else-if="cell.collapseFirst"
+            class="absolute top-1 right-1 px-1.5 py-0.5 text-[10px] rounded bg-black/60 text-neutral-200 hover:bg-neutral-600 transition-colors"
+            title="收起连拍"
+            @click.stop="toggleBurst(cell.burstId!)"
+          >▴ 收起</button>
+
+          <div class="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+            <p class="text-xs truncate text-neutral-400">{{ cell.photo.file_name }}</p>
+            <p class="text-xs truncate">{{ cell.photo.camera_make }} {{ cell.photo.camera_model }}</p>
+            <p class="text-xs text-neutral-300">{{ cell.photo.focal_length }} {{ cell.photo.aperture }} ISO{{ cell.photo.iso }}</p>
+            <p class="text-xs text-neutral-400">{{ cell.photo.width }}×{{ cell.photo.height }}</p>
+            <p v-if="cell.burstCount" class="text-xs text-neutral-300">连拍 ×{{ cell.burstCount }}</p>
+          </div>
+          <slot name="photo-action" :photo="cell.photo" />
         </div>
       </div>
     </div>
@@ -336,6 +348,69 @@ const displayGroups = computed<Group[]>(() => {
   if (props.singlePage) return [{ label: '', photos: photos.value }]
   return groups.value
 })
+
+// ── 连拍堆叠 ──────────────────────────────────────
+
+interface BurstCell {
+  photo: Photo
+  burstId?: string
+  burstCount?: number
+  collapsed?: boolean
+  collapseFirst?: boolean
+}
+
+const expandedBursts = ref<Set<string>>(new Set())
+
+function toggleBurst(id: string) {
+  const s = new Set(expandedBursts.value)
+  if (s.has(id)) s.delete(id)
+  else s.add(id)
+  expandedBursts.value = s
+}
+
+// 同一秒的连续照片合并为一组；singlePage（搜索）与选择模式不折叠
+function buildCells(list: Photo[]): BurstCell[] {
+  const out: BurstCell[] = []
+  if (props.singlePage || selectMode.value) {
+    for (const p of list) out.push({ photo: p })
+    return out
+  }
+  const run: Photo[] = []
+  const flush = () => {
+    if (run.length === 1) {
+      out.push({ photo: run[0] })
+    } else if (run.length > 1) {
+      const bid = run[0].taken_at + '#' + run[0].id
+      if (expandedBursts.value.has(bid)) {
+        run.forEach((p, i) => {
+          out.push({ photo: p, burstId: bid, burstCount: run.length, collapseFirst: i === 0 })
+        })
+      } else {
+        out.push({ photo: run[0], burstId: bid, burstCount: run.length, collapsed: true })
+      }
+    }
+    run.length = 0
+  }
+  for (const p of list) {
+    const same = !!p.taken_at && run.length > 0 && run[0].taken_at === p.taken_at
+    if (!same) flush()
+    run.push(p)
+  }
+  flush()
+  return out
+}
+
+const groupCells = computed(() =>
+  displayGroups.value.map(g => ({ label: g.label, cells: buildCells(g.photos) })),
+)
+
+function onCellClick(cell: BurstCell, e: MouseEvent) {
+  if (cell.collapsed && cell.burstId) {
+    toggleBurst(cell.burstId)
+    return
+  }
+  onPhotoClick(cell.photo, e)
+}
 
 function dateLabel(iso: string): string {
   if (!iso) return '未标注日期'
