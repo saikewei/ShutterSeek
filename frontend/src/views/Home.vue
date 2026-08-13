@@ -1,11 +1,6 @@
 <template>
   <div>
-    <button
-      v-if="isAdmin"
-      class="fixed top-3 right-3 z-40 text-xs px-3 py-1.5 rounded bg-neutral-800 hover:bg-neutral-700 transition-colors"
-      @click="uploadOpen = true"
-    >上传</button>
-    <PhotoGrid ref="gridRef" :fetch-fn="wrapFetch" :album-titles="albumTitles" :range-fn="rangeFn" />
+    <PhotoGrid ref="gridRef" :fetch-fn="wrapFetch" :album-titles="albumTitles" :range-fn="rangeFn" @upload="uploadOpen = true" />
     <UploadDialog :open="uploadOpen" @close="uploadOpen = false" @done="gridRef?.reload()" />
   </div>
 </template>
@@ -16,7 +11,6 @@ import PhotoGrid from '@/components/PhotoGrid.vue'
 import UploadDialog from '@/components/UploadDialog.vue'
 import { fetchPhotos, fetchPhotoRange } from '@/api/photos'
 import { fetchAlbums } from '@/api/albums'
-import { isAdmin } from '@/stores/auth'
 
 const albumTitles = ref<Record<number, string>>({})
 const uploadOpen = ref(false)
