@@ -78,3 +78,22 @@ export async function fetchPhotoRange(params: {
   })
   return data
 }
+
+export interface UploadResult {
+  id: number
+  file_path: string
+  taken_at: string
+  width: number
+  height: number
+  thumbnail_url: string
+  duplicate: boolean
+  existing_id?: number
+}
+
+export async function uploadPhoto(file: File, vector: number[]): Promise<UploadResult> {
+  const fd = new FormData()
+  fd.append('file', file)
+  fd.append('vector', JSON.stringify(vector))
+  const { data } = await api.post<UploadResult>('/photos/upload', fd, { timeout: 120000 })
+  return data
+}
