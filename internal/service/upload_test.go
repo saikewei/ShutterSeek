@@ -22,3 +22,12 @@ func TestResizeShort(t *testing.T) {
 		t.Fatalf("resized to %dx%d", b.Dx(), b.Dy())
 	}
 }
+
+func TestUploadAbsPath(t *testing.T) {
+	if got := uploadAbsPath("/photos_uploads", "uploads/2026/08/a.jpg"); got != "/photos_uploads/2026/08/a.jpg" {
+		t.Fatalf("got %q", got)
+	}
+	if got := uploadAbsPath("/photos_uploads", "2026/08/a.jpg"); got != "/photos_uploads/2026/08/a.jpg" {
+		t.Fatalf("no-prefix got %q", got)
+	}
+}
