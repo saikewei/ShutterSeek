@@ -41,6 +41,7 @@ type Handler struct {
 	AlbumSvc  *service.AlbumService
 	AuthSvc   *service.AuthService
 	SearchSvc *service.SearchService
+	UploadSvc *service.UploadService
 }
 
 // ── Health ──────────────────────────────────────────────

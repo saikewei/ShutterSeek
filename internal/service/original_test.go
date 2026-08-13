@@ -16,7 +16,7 @@ import (
 func setupSvc(t *testing.T) *OriginalService {
 	t.Helper()
 	dir := t.TempDir()
-	return NewOriginalService("/photos", dir)
+	return NewOriginalService("/photos", "", dir)
 }
 
 func TestServeDirect_JPG(t *testing.T) {
@@ -127,7 +127,7 @@ func TestCacheReuse(t *testing.T) {
 }
 
 func TestDirCreation(t *testing.T) {
-	svc := NewOriginalService("/photos", "/tmp/nonexistent_test_dir")
+	svc := NewOriginalService("/photos", "", "/tmp/nonexistent_test_dir")
 	if !strings.Contains(svc.PreviewDir, "nonexistent_test_dir") {
 		t.Fatal("wrong preview dir")
 	}
@@ -144,7 +144,7 @@ func TestDirCreation(t *testing.T) {
 
 func TestCacheWriteAndPrune(t *testing.T) {
 	dir := t.TempDir()
-	svc := NewOriginalService("/photos", dir)
+	svc := NewOriginalService("/photos", "", dir)
 
 	// Write more than maxCacheFiles (2000) dummy files
 	for i := 0; i < 10; i++ {
@@ -164,7 +164,7 @@ func TestCacheWriteAndPrune(t *testing.T) {
 
 func TestCacheWrite_PeriodicPrune(t *testing.T) {
 	dir := t.TempDir()
-	svc := NewOriginalService("/photos", dir)
+	svc := NewOriginalService("/photos", "", dir)
 
 	// Write 100 files (triggers prune check)
 	for i := 0; i < 100; i++ {
@@ -189,7 +189,7 @@ func TestCacheWrite_PeriodicPrune(t *testing.T) {
 
 func TestCachePrune_KeepsNewest(t *testing.T) {
 	dir := t.TempDir()
-	svc := NewOriginalService("/photos", dir)
+	svc := NewOriginalService("/photos", "", dir)
 
 	// Write files with delays to create age differences
 	for i := 0; i < 5; i++ {
@@ -251,7 +251,7 @@ func TestServeRAW_A6000Preview(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	svc := NewOriginalService("/photos", dir)
+	svc := NewOriginalService("/photos", "", dir)
 
 	var buf bytes.Buffer
 	err := svc.ServeOriginal(&buf, "FromDesktop/a6000/跳绳/_DSC0757.ARW")
@@ -297,7 +297,7 @@ func TestServeRAW_NEFFullSize(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	svc := NewOriginalService("/photos", dir)
+	svc := NewOriginalService("/photos", "", dir)
 	var buf bytes.Buffer
 	if err := svc.ServeOriginal(&buf, "photo/Z6/UBI_2484.NEF"); err != nil {
 		t.Fatalf("serve NEF: %v", err)
