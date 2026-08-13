@@ -64,6 +64,7 @@ jobs:
           host: ${{ secrets.NAS_HOST }}
           username: ${{ secrets.NAS_USER }}
           key: ${{ secrets.NAS_SSH_KEY }}
+          command_timeout: 30m
           script: |
             cd /volume1/docker/ShutterSeek
             docker compose pull
