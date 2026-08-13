@@ -86,6 +86,12 @@ func Setup(h *handler.Handler, thumbDir, modelsDir string) *gin.Engine {
 		r.StaticFile("/", frontendDir+"/index.html")
 		r.Static("/assets", frontendDir+"/assets")
 		r.Static("/favicon.ico", frontendDir+"/favicon.ico")
+		// onnxruntime-web 的 wasm/mjs（构建时从 public/ort 拷贝进 dist/ort）
+		ortDir := filepath.Join(frontendDir, "ort")
+		if _, err := os.Stat(ortDir); err == nil {
+			r.Static("/ort", ortDir)
+			log.Printf("✓ ORT wasm: %s", ortDir)
+		}
 		r.NoRoute(func(c *gin.Context) {
 			c.File(frontendDir + "/index.html")
 		})
