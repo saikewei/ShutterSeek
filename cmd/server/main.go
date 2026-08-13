@@ -81,8 +81,9 @@ func main() {
 	}
 	log.Println("✓ Admin user seeded")
 
-	origSvc := service.NewOriginalService(cfg.Thumbnail.PhotosDir, "/tmp/shutterseek_previews")
+	origSvc := service.NewOriginalService(cfg.Thumbnail.PhotosDir, cfg.Upload.UploadDir, "/tmp/shutterseek_previews")
 	albumSvc := service.NewAlbumService(gormDB)
+	uploadSvc := service.NewUploadService(gormDB, rdb, cfg.Upload.UploadDir, cfg.Thumbnail.OutputDir)
 	embedder := service.NewCachedEmbedder(
 		service.NewHTTPEmbedder(cfg.Embed.URL, cfg.Embed.Timeout(), cfg.Embed.Token),
 		rdb,
@@ -91,9 +92,9 @@ func main() {
 	h := &handler.Handler{
 		Pool: pool, Redis: rdb, DB: gormDB,
 		OrigSvc: origSvc, AlbumSvc: albumSvc, AuthSvc: authSvc,
-		SearchSvc: searchSvc,
+		SearchSvc: searchSvc, UploadSvc: uploadSvc,
 	}
-	r := router.Setup(h, cfg.Thumbnail.OutputDir)
+	r := router.Setup(h, cfg.Thumbnail.OutputDir, cfg.Model.Dir)
 
 	// ── Server (HTTP or HTTPS via Let's Encrypt DNS-01) ──
 	tlsEnabled := os.Getenv("SHUTTERSEEK_TLS_ENABLED") == "true"

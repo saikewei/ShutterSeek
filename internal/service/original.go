@@ -19,17 +19,26 @@ import (
 
 // OriginalService serves original photo files, handling RAW/TIFF extraction.
 type OriginalService struct {
-	PhotosDir   string
-	PreviewDir  string // cached extracted previews
-	mu          sync.Mutex
-	pruneCount  int // track writes between prunes
+	PhotosDir  string
+	UploadDir  string
+	PreviewDir string // cached extracted previews
+	mu         sync.Mutex
+	pruneCount int // track writes between prunes
 }
 
 const maxCacheFiles = 2000
 
-func NewOriginalService(photosDir, previewDir string) *OriginalService {
+func NewOriginalService(photosDir, uploadDir, previewDir string) *OriginalService {
 	os.MkdirAll(previewDir, 0755)
-	return &OriginalService{PhotosDir: photosDir, PreviewDir: previewDir}
+	return &OriginalService{PhotosDir: photosDir, UploadDir: uploadDir, PreviewDir: previewDir}
+}
+
+// resolvePath 上传路径（uploads/ 前缀）解析到 UploadDir，其余到 PhotosDir。
+func (s *OriginalService) resolvePath(filePath string) string {
+	if strings.HasPrefix(filePath, "uploads/") {
+		return filepath.Join(s.UploadDir, filePath)
+	}
+	return filepath.Join(s.PhotosDir, filePath)
 }
 
 // cacheWrite writes data to the cache and periodically prunes old files.
@@ -87,7 +96,7 @@ func (s *OriginalService) pruneCache() {
 // For RAW: extracts the embedded JPEG preview.
 // For TIFF: decodes via Go and re-encodes as JPEG.
 func (s *OriginalService) ServeOriginal(w io.Writer, filePath string) error {
-	fullPath := filepath.Join(s.PhotosDir, filePath)
+	fullPath := s.resolvePath(filePath)
 	ext := strings.ToLower(filepath.Ext(filePath))
 
 	switch ext {

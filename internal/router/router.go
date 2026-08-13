@@ -2,7 +2,9 @@ package router
 
 import (
 	"log"
+	"net/http"
 	"os"
+	"path/filepath"
 
 	"github.com/gin-gonic/gin"
 
@@ -11,7 +13,7 @@ import (
 )
 
 // Setup registers all routes and returns the Gin engine.
-func Setup(h *handler.Handler, thumbDir string) *gin.Engine {
+func Setup(h *handler.Handler, thumbDir, modelsDir string) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
 
@@ -53,9 +55,21 @@ func Setup(h *handler.Handler, thumbDir string) *gin.Engine {
 			admin.DELETE("/invites/:id", h.DeleteInvite)
 			admin.GET("/auth/logs", h.ListLogs)
 			admin.GET("/photos/range", h.PhotoRange)
+			admin.POST("/photos/upload", h.Upload)
 		}
 	}
 	r.GET("/api/health", h.Health)
+
+	// 客户端推理模型（fp16 ONNX，1.2GB，长缓存）
+	r.GET("/models/vision_encoder/model.onnx", func(c *gin.Context) {
+		p := filepath.Join(modelsDir, "vision_encoder", "model.onnx")
+		if _, err := os.Stat(p); err != nil {
+			c.Status(http.StatusNotFound)
+			return
+		}
+		c.Header("Cache-Control", "public, max-age=31536000, immutable")
+		c.File(p)
+	})
 
 	// Thumbnails — served under /api/thumbnails/ to avoid Vite proxy issues
 	if _, err := os.Stat(thumbDir); err == nil {
