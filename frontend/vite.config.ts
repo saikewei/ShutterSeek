@@ -55,6 +55,7 @@ export default defineConfig({
         },
       },
       '/thumbnails': 'http://localhost:8080',
+      '/models': 'http://localhost:8080',
     },
   },
   build: {
