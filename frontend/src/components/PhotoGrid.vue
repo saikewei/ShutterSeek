@@ -849,7 +849,7 @@ function removePhotoById(id: number) {
   if (idx !== -1) { photos.value.splice(idx, 1); total.value = Math.max(0, total.value - 1) }
 }
 
-defineExpose({ removePhotoById })
+defineExpose({ removePhotoById, reload })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeyDown)
