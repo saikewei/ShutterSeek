@@ -17,6 +17,8 @@ type Config struct {
 	Redis     RedisConfig     `yaml:"redis"`
 	Thumbnail ThumbnailConfig `yaml:"thumbnail"`
 	Embed     EmbedConfig     `yaml:"embed"`
+	Upload    UploadConfig    `yaml:"upload"`
+	Model     ModelConfig     `yaml:"model"`
 }
 
 type EmbedConfig struct {
@@ -56,6 +58,14 @@ type ThumbnailConfig struct {
 	PhotosDir string `yaml:"photos_dir"`
 }
 
+type UploadConfig struct {
+	UploadDir string `yaml:"upload_dir"`
+}
+
+type ModelConfig struct {
+	Dir string `yaml:"dir"`
+}
+
 func Load(path string) (*Config, error) {
 	// Try .env.local next to config file first, then in cwd
 	configDir := filepath.Dir(path)
@@ -80,6 +90,8 @@ func Load(path string) (*Config, error) {
 			PhotosDir: "/photos",
 		},
 		Embed: EmbedConfig{URL: "http://127.0.0.1:8000", TimeoutMS: 10000, MaxText: 200},
+		Upload: UploadConfig{UploadDir: "/photos_uploads"},
+		Model:  ModelConfig{Dir: "/models_vision"},
 	}
 
 	if err := yaml.Unmarshal(data, cfg); err != nil {
@@ -153,6 +165,12 @@ func applyEnv(cfg *Config) {
 	}
 	if v := os.Getenv("SHUTTERSEEK_EMBED_TOKEN"); v != "" {
 		cfg.Embed.Token = v
+	}
+	if v := os.Getenv("SHUTTERSEEK_UPLOAD_DIR"); v != "" {
+		cfg.Upload.UploadDir = v
+	}
+	if v := os.Getenv("SHUTTERSEEK_MODELS_DIR"); v != "" {
+		cfg.Model.Dir = v
 	}
 }
 

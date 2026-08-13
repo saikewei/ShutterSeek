@@ -18,3 +18,9 @@ redis:
 
 thumbnail:
   output_dir: /thumbnails/.thumbnails_1080
+
+upload:
+  upload_dir: /photos_uploads
+
+model:
+  dir: /models_vision

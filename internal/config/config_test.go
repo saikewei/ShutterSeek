@@ -54,3 +54,18 @@ func TestEmbedConfigFromEnv(t *testing.T) {
 		t.Fatalf("unexpected embed config: %+v", cfg.Embed)
 	}
 }
+
+func TestUploadAndModelDirsFromEnv(t *testing.T) {
+	t.Setenv("SHUTTERSEEK_UPLOAD_DIR", "/tmp/ss_uploads")
+	t.Setenv("SHUTTERSEEK_MODELS_DIR", "/tmp/ss_models")
+	cfg, err := Load(writeMinimalConfig(t))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.Upload.UploadDir != "/tmp/ss_uploads" {
+		t.Fatalf("upload dir = %q", cfg.Upload.UploadDir)
+	}
+	if cfg.Model.Dir != "/tmp/ss_models" {
+		t.Fatalf("model dir = %q", cfg.Model.Dir)
+	}
+}
