@@ -54,6 +54,12 @@
       <!-- Day navigation (sticky filter bar, always visible; compact on mobile) -->
       <div v-if="!selectMode && !singlePage" class="flex items-center gap-1 text-xs">
         <button
+          v-if="isAdmin"
+          @click="$emit('upload')"
+          class="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors whitespace-nowrap"
+          title="上传照片"
+        >上传</button>
+        <button
           @click="prevDay"
           class="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors whitespace-nowrap"
           title="前一天"
@@ -285,6 +291,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   photoContextmenu: [photo: Photo, event: MouseEvent]
   removedFromAlbum: []
+  upload: []
 }>()
 
 const jumpMonth = ref('')

@@ -10,11 +10,6 @@
         @click="$router.push('/search?album_id=' + albumId)"
         class="shrink-0 text-xs text-neutral-300 hover:text-white border border-neutral-700 rounded-lg px-3 py-1.5 transition-colors"
       >搜索相册</button>
-      <button
-        v-if="isAdmin"
-        @click="uploadOpen = true"
-        class="shrink-0 text-xs text-neutral-300 hover:text-white border border-neutral-700 rounded-lg px-3 py-1.5 transition-colors"
-      >上传</button>
     </header>
 
     <PhotoGrid
@@ -28,6 +23,7 @@
       :remove-from-album-id="albumId"
       @photo-contextmenu="(photo, event) => isAdmin && onContextMenu(photo, event)"
       @removed-from-album="refreshAlbum"
+      @upload="uploadOpen = true"
     />
     <UploadDialog :open="uploadOpen" @close="uploadOpen = false" @done="onUploadDone" />
 
