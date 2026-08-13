@@ -36,7 +36,7 @@ func NewOriginalService(photosDir, uploadDir, previewDir string) *OriginalServic
 // resolvePath 上传路径（uploads/ 前缀）解析到 UploadDir，其余到 PhotosDir。
 func (s *OriginalService) resolvePath(filePath string) string {
 	if strings.HasPrefix(filePath, "uploads/") {
-		return filepath.Join(s.UploadDir, filePath)
+		return filepath.Join(s.UploadDir, strings.TrimPrefix(filePath, "uploads/"))
 	}
 	return filepath.Join(s.PhotosDir, filePath)
 }

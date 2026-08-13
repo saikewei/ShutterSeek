@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	goredis "github.com/redis/go-redis/v9"
@@ -89,9 +90,10 @@ func (s *UploadService) Upload(ctx context.Context, src io.Reader, origName, vec
 		takenAt = *ex.TakenAt
 	}
 
-	// 4. 目标路径（临时文件先 rename 再入库，失败即删）
+	// 4. 目标路径（临时文件先 rename 再入库，失败即删）。
+	// DB 里 uploads/ 只是命名空间前缀，落盘时剥掉，UploadDir 即年/月的根。
 	rel := buildUploadRelPath(takenAt, origName, hashHex[:8])
-	abs := filepath.Join(s.UploadDir, rel)
+	abs := uploadAbsPath(s.UploadDir, rel)
 	if err := os.MkdirAll(filepath.Dir(abs), 0755); err != nil {
 		return nil, err
 	}
@@ -150,6 +152,11 @@ func (s *UploadService) Upload(ctx context.Context, src io.Reader, origName, vec
 	s.invalidateCaches(ctx)
 
 	return p, nil
+}
+
+// uploadAbsPath 把 DB 相对路径（uploads/...）映射到上传根目录的绝对路径。
+func uploadAbsPath(uploadDir, rel string) string {
+	return filepath.Join(uploadDir, strings.TrimPrefix(rel, "uploads/"))
 }
 
 // resizeShort 按短边缩放到 size（保持宽高比，ApproxBiLinear）。
