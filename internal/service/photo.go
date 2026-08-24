@@ -116,7 +116,7 @@ func parseCursor(s string) (time.Time, int64, bool) {
 	return t, id, true
 }
 
-func buildNextCursor(t time.Time, id int64) string {
+func BuildNextCursor(t time.Time, id int64) string {
 	if t.IsZero() {
 		t = time.Date(1, 1, 1, 0, 0, 0, 0, time.UTC)
 	}
@@ -312,7 +312,7 @@ func (s *PhotoService) ListPhotos(ctx context.Context, p PhotoListParams) (*Phot
 	}
 	if hasMore && len(photos) > 0 {
 		last := photos[len(photos)-1]
-		res.NextCursor = buildNextCursor(last.TakenAt, last.ID)
+		res.NextCursor = BuildNextCursor(last.TakenAt, last.ID)
 	}
 
 	if cacheKey != "" && s.Cache != nil {

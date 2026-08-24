@@ -60,6 +60,9 @@ func TestServeOriginal_RawPreview(t *testing.T) {
 }
 
 func TestServeOriginal_PNG(t *testing.T) {
+	if _, err := os.Stat("/photos/FromDesktop/film/ektar100/校色.png"); os.IsNotExist(err) {
+		t.Skip("PNG test file not found")
+	}
 	svc := setupSvc(t)
 	var buf bytes.Buffer
 	err := svc.ServeOriginal(&buf, "FromDesktop/film/ektar100/校色.png")
@@ -317,4 +320,3 @@ func TestServeRAW_NEFFullSize(t *testing.T) {
 }
 
 // need fmt for TestCacheWriteAndPrune
-

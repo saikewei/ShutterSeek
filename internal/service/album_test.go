@@ -120,7 +120,7 @@ func TestGetAlbum_NotFound(t *testing.T) {
 
 func TestListAlbums_ReturnsAll(t *testing.T) {
 	svc := setupAlbumSvc(t)
-	items, err := svc.ListAlbums()
+	items, err := svc.ListAlbums(context.Background(), "admin")
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestListAlbums_ReturnsAll(t *testing.T) {
 
 func TestListAlbums_IncludesPhotoCount(t *testing.T) {
 	svc := setupAlbumSvc(t)
-	items, _ := svc.ListAlbums()
+	items, _ := svc.ListAlbums(context.Background(), "admin")
 	for _, it := range items {
 		if it.PhotoCount < 0 {
 			t.Fatalf("negative photo count for %s", it.Title)
