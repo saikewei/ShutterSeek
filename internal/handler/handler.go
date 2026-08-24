@@ -111,226 +111,39 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 			limit = n
 		}
 	}
-
-	var (
-		afterTime time.Time
-		afterID   int64
-		hasCursor bool
-	)
-	if cur := c.Query("cursor"); cur != "" {
-		hasCursor = true
-		parts := split2(cur, ",")
-		if len(parts) == 2 {
-			ts := strings.Replace(parts[0], " ", "T", 1)
-			if t, err := time.ParseInLocation("2006-01-02T15:04:05", ts, cstZone); err == nil && !t.IsZero() {
-				afterTime = t
-			}
-			if n, err := strconv.ParseInt(parts[1], 10, 64); err == nil {
-				afterID = n
-			}
-		}
+	params := service.PhotoListParams{
+		Limit:      limit,
+		Role:       c.GetString("role"),
+		Cursor:     c.Query("cursor"),
+		AlbumID:    c.Query("album_id"),
+		Month:      c.Query("month"),
+		Date:       c.Query("date"),
+		NewerT:     c.Query("newer_t"),
+		NewerID:    mustParseInt64(c.Query("newer_id")),
+		WithAlbums: c.Query("with_albums") == "true",
 	}
-
-	// Redis cache for first page only (skip when filtering)
-	roleScope := ""
-	if c.GetString("role") == "guest" {
-		roleScope = "guest:"
-	}
-	cacheKey := ""
-	uncategorized := c.Query("album_id") == "none"
-	month := c.Query("month")
-	date := c.Query("date")
-	albumIDCache := c.Query("album_id")
-	if albumIDCache == "none" {
-		albumIDCache = ""
-	}
-	if !hasCursor && !uncategorized && month == "" && date == "" && c.Query("newer_t") == "" {
-		if albumIDCache != "" {
-			cacheKey = keyFirstPage + roleScope + "album:" + albumIDCache + ":" + strconv.Itoa(limit)
-		} else {
-			cacheKey = keyFirstPage + roleScope + strconv.Itoa(limit)
-		}
-		if cached, ok := h.redisGet(cacheKey); ok {
-			c.JSON(http.StatusOK, cached)
-			return
-		}
-	}
-
-	var photos []model.Photo
-	q := h.DB.Where("taken_at IS NOT NULL")
-	q = h.guestPhotoFilter(c, q)
-
-	// Filter: specific album
-	albumIDStr := c.Query("album_id")
-	if albumIDStr != "" {
-		if albumID, err := strconv.ParseInt(albumIDStr, 10, 64); err == nil && albumID > 0 {
-			q = q.Where("id IN (SELECT photo_id FROM album_photos WHERE album_id = ?)", albumID)
-		}
-	}
-
-	// Reverse pagination: load newer photos
-	newerT := c.Query("newer_t")
-	if newerT != "" {
-		if t, err := time.ParseInLocation("2006-01-02T15:04:05", newerT, cstZone); err == nil && !t.IsZero() {
-			if newerID, err2 := strconv.ParseInt(c.Query("newer_id"), 10, 64); err2 == nil {
-				q = q.Where("(taken_at, id) > (?, ?)", t, newerID)
-			}
-		}
-		q = q.Order("taken_at ASC, id ASC").Limit(limit + 1)
-	} else {
-		q = q.Order("taken_at DESC, id DESC").Limit(limit + 1)
-	}
-
-	// Filter: jump to day/month — with head preload (newer photos just past the
-	// boundary, so the view reads "target + a preview of what comes next").
-	var headPhotos []model.Photo
-	if date != "" {
-		if t, err := time.ParseInLocation("2006-01-02", date, cstZone); err == nil {
-			nextDay := t.AddDate(0, 0, 1)
-			headQ := h.DB.Where("taken_at >= ?", nextDay)
-			headQ = h.guestPhotoFilter(c, headQ)
-			if albumIDStr != "" {
-				if aid, err2 := strconv.ParseInt(albumIDStr, 10, 64); err2 == nil && aid > 0 {
-					headQ = headQ.Where("id IN (SELECT photo_id FROM album_photos WHERE album_id = ?)", aid)
-				}
-			}
-			headQ.Order("taken_at ASC, id ASC").Limit(15).Find(&headPhotos)
-			// Main query: target day and earlier
-			q = q.Where("taken_at < ?", nextDay)
-		}
-	} else if month != "" {
-		if t, err := time.ParseInLocation("2006-01", month, cstZone); err == nil {
-			nextMonth := t.AddDate(0, 1, 0)
-			// Preload a few photos from the next month (newer) as head
-			headQ := h.DB.Where("taken_at >= ?", nextMonth)
-			headQ = h.guestPhotoFilter(c, headQ)
-			if albumIDStr != "" {
-				if aid, err2 := strconv.ParseInt(albumIDStr, 10, 64); err2 == nil && aid > 0 {
-					headQ = headQ.Where("id IN (SELECT photo_id FROM album_photos WHERE album_id = ?)", aid)
-				}
-			}
-			headQ.Order("taken_at ASC, id ASC").Limit(15).Find(&headPhotos)
-			// Main query: target month and older
-			q = q.Where("taken_at < ?", nextMonth)
-		}
-	}
-
-	// Filter: uncategorized only
-	if uncategorized {
-		q = q.Where("id NOT IN (SELECT DISTINCT photo_id FROM album_photos)")
-	}
-
-	if !afterTime.IsZero() {
-		q = q.Where("(taken_at, id) < (?, ?)", afterTime, afterID)
-	} else if afterID > 0 {
-		q = q.Where("taken_at IS NULL AND id < ?", afterID)
-	}
-
-	if err := q.Find(&photos).Error; err != nil {
+	res, err := h.PhotoSvc.ListPhotos(c.Request.Context(), params)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
 		return
 	}
-
-	hasMore := len(photos) > limit
-	if hasMore {
-		photos = photos[:limit]
+	items := make([]PhotoItem, 0, len(res.HeadPhotos)+len(res.Photos))
+	for i := len(res.HeadPhotos) - 1; i >= 0; i-- {
+		items = append(items, toPhotoItem(&res.HeadPhotos[i]))
 	}
-
-	// Prepend head photos (reverse to DESC order)
-	allPhotos := make([]model.Photo, 0, len(headPhotos)+len(photos))
-	for i := len(headPhotos) - 1; i >= 0; i-- {
-		allPhotos = append(allPhotos, headPhotos[i])
+	for i := range res.Photos {
+		it := toPhotoItem(&res.Photos[i])
+		if res.AlbumIDs != nil {
+			it.AlbumIDs = res.AlbumIDs[res.Photos[i].ID]
+		}
+		items = append(items, it)
 	}
-	allPhotos = append(allPhotos, photos...)
-
-	// Load album IDs if requested
-	withAlbums := c.Query("with_albums") == "true"
-	var albumMap map[int64][]int64
-	if withAlbums && len(allPhotos) > 0 {
-		ids := make([]int64, len(allPhotos))
-		for i, p := range allPhotos {
-			ids[i] = p.ID
-		}
-		albumMap, _ = h.AlbumSvc.GetPhotoAlbumIDs(ids)
-	}
-
-	items := make([]PhotoItem, len(allPhotos))
-	for i, p := range allPhotos {
-		items[i] = toPhotoItem(&p)
-		if albumMap != nil {
-			items[i].AlbumIDs = albumMap[p.ID]
-		}
-	}
-
-	// Jump boundary: date (day) or month, mutually exclusive
-	var boundary *time.Time
-	if date != "" {
-		if t, err := time.ParseInLocation("2006-01-02", date, cstZone); err == nil {
-			b := t.AddDate(0, 0, 1)
-			boundary = &b
-		}
-	} else if month != "" {
-		if t, err := time.ParseInLocation("2006-01", month, cstZone); err == nil {
-			b := t.AddDate(0, 1, 0)
-			boundary = &b
-		}
-	}
-
-	var total int64
-	switch {
-	case roleScope != "": // guest — count only public-album photos
-		tq := h.DB.Model(&model.Photo{}).
-			Where("taken_at IS NOT NULL AND id IN (SELECT ap.photo_id FROM album_photos ap JOIN albums a ON a.id = ap.album_id WHERE a.is_public = true)")
-		if albumIDStr != "" {
-			if albumID, err := strconv.ParseInt(albumIDStr, 10, 64); err == nil && albumID > 0 {
-				tq = tq.Where("id IN (SELECT photo_id FROM album_photos WHERE album_id = ?)", albumID)
-			}
-		}
-		if boundary != nil {
-			tq = tq.Where("taken_at < ?", *boundary)
-		}
-		tq.Count(&total)
-	case uncategorized:
-		h.DB.Model(&model.Photo{}).Where("taken_at IS NOT NULL AND id NOT IN (SELECT DISTINCT photo_id FROM album_photos)").Count(&total)
-	case albumIDStr != "":
-		if albumID, err := strconv.ParseInt(albumIDStr, 10, 64); err == nil && albumID > 0 {
-			tq := h.DB.Model(&model.Photo{}).
-				Where("taken_at IS NOT NULL AND id IN (SELECT photo_id FROM album_photos WHERE album_id = ?)", albumID)
-			if boundary != nil {
-				tq = tq.Where("taken_at < ?", *boundary)
-			}
-			tq.Count(&total)
-		}
-	default:
-		if boundary != nil {
-			h.DB.Model(&model.Photo{}).Where("taken_at IS NOT NULL AND taken_at < ?", *boundary).Count(&total)
-		} else {
-			total = h.totalPhotoCountCached()
-		}
-	}
-
-	resp := PhotoListResponse{
+	c.JSON(http.StatusOK, PhotoListResponse{
 		Items:      items,
-		Total:      total,
-		NextCursor: "",
-		HeadCount:  len(headPhotos),
-	}
-
-	if hasMore && len(photos) > 0 {
-		lastItem := items[len(items)-1]
-		t := lastItem.TakenAt
-		if t == "" {
-			t = "0001-01-01T00:00:00"
-		}
-		resp.NextCursor = t + "," + strconv.FormatInt(lastItem.ID, 10)
-	}
-
-	if cacheKey != "" && h.Redis != nil {
-		data, _ := json.Marshal(resp)
-		h.Redis.Set(context.Background(), cacheKey, data, ttlFirstPage)
-	}
-
-	c.JSON(http.StatusOK, resp)
+		Total:      res.Total,
+		NextCursor: res.NextCursor,
+		HeadCount:  len(res.HeadPhotos),
+	})
 }
 
 // ── Original Photo ───────────────────────────────────────
@@ -503,6 +316,11 @@ func split2(s, sep string) []string {
 		return nil
 	}
 	return []string{s[:idx], s[idx+1:]}
+}
+
+func mustParseInt64(s string) int64 {
+	n, _ := strconv.ParseInt(s, 10, 64)
+	return n
 }
 
 func formatFocal(f float64) string {
