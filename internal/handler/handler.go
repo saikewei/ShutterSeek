@@ -152,27 +152,23 @@ func (h *Handler) ListPhotos(c *gin.Context) {
 // RAW files have their embedded preview extracted; TIFFs are decoded and re-encoded.
 // GET /api/v1/photos/:id/original
 func (h *Handler) GetOriginal(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
-
-	var photo model.Photo
-	if err := h.DB.Where("id = ?", id).First(&photo).Error; err != nil {
+	photo, err := h.PhotoSvc.GetPhoto(c.Request.Context(), id)
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "photo not found"})
 		return
 	}
-
-	// Guests may only fetch originals of photos in public albums
 	if c.GetString("role") == "guest" {
-		var count int64
-		h.DB.Raw(
-			"SELECT COUNT(*) FROM album_photos ap JOIN albums a ON a.id = ap.album_id WHERE ap.photo_id = ? AND a.is_public = true",
-			id,
-		).Scan(&count)
-		if count == 0 {
+		ok, err := h.PhotoSvc.PhotoInPublicAlbum(c.Request.Context(), id)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
+			return
+		}
+		if !ok {
 			c.JSON(http.StatusForbidden, gin.H{"error": "无权访问"})
 			return
 		}

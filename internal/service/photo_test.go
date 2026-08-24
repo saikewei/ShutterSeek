@@ -90,3 +90,32 @@ func TestListPhotosMonthJumpHead(t *testing.T) {
 		t.Fatalf("unexpected shape: total=%d page=%d", res.Total, len(res.Photos))
 	}
 }
+
+func TestGetPhotoAndPublicAlbumGuard(t *testing.T) {
+	s := setupPhotoSvc(t)
+	res, err := s.ListPhotos(context.Background(), PhotoListParams{Limit: 1, Role: "admin"})
+	if err != nil || len(res.Photos) == 0 {
+		t.Fatalf("seed photo: %v", err)
+	}
+	p, err := s.GetPhoto(context.Background(), res.Photos[0].ID)
+	if err != nil || p.ID == 0 {
+		t.Fatalf("GetPhoto: %v", err)
+	}
+	if _, err := s.GetPhoto(context.Background(), -1); err == nil {
+		t.Fatal("expected error for missing photo")
+	}
+	ok, err := s.PhotoInPublicAlbum(context.Background(), res.Photos[0].ID)
+	if err != nil {
+		t.Fatalf("PhotoInPublicAlbum: %v", err)
+	}
+	if !ok {
+		g, _ := s.ListPhotos(context.Background(), PhotoListParams{Limit: 1, Role: "guest"})
+		if len(g.Photos) == 0 {
+			t.Skip("no public-album photos in library")
+		}
+		ok, err = s.PhotoInPublicAlbum(context.Background(), g.Photos[0].ID)
+		if err != nil || !ok {
+			t.Fatalf("guest-visible photo must be in public album: %v", err)
+		}
+	}
+}
