@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strconv"
 	"time"
@@ -79,6 +80,81 @@ func (s *AlbumService) AlbumDates(ctx context.Context, role string, id int64) ([
 	return rows, nil
 }
 
+// ListAlbums 返回相册列表（guest 只见公开），含角色作用域缓存。
+func (s *AlbumService) ListAlbums(ctx context.Context, role string) ([]AlbumItem, error) {
+	roleScope := ""
+	if role == "guest" {
+		roleScope = "guest:"
+	}
+	cacheKey := "cache:albums:" + roleScope
+	var items []AlbumItem
+	if s.Cache != nil && s.Cache.GetJSON(cacheKey, &items) {
+		return items, nil
+	}
+	var (
+		svcItems []AlbumItem
+		err      error
+	)
+	if role == "guest" {
+		svcItems, err = s.listAlbums("is_public = true")
+	} else {
+		svcItems, err = s.listAlbums("")
+	}
+	if err != nil {
+		return nil, err
+	}
+	if s.Cache != nil {
+		s.Cache.SetJSON(cacheKey, svcItems, TTLAlbums)
+	}
+	return svcItems, nil
+}
+
+// ListAlbumPhotosPage 带缓存与 guest 守卫的相册照片分页。
+func (s *AlbumService) ListAlbumPhotosPage(ctx context.Context, role string, albumID int64, limit int, cursor, month string) (*AlbumPhotoPage, error) {
+	if role == "guest" {
+		exists, public, err := s.GetAlbumVisibility(albumID)
+		if err != nil {
+			return nil, err
+		}
+		if !exists || !public {
+			return nil, ErrAlbumNotFound
+		}
+	}
+	var afterTime time.Time
+	var afterID int64
+	hasCursor := false
+	if cursor != "" {
+		hasCursor = true
+		afterTime, afterID, _ = parseCursor(cursor)
+	}
+	cacheKey := ""
+	if !hasCursor {
+		roleScope := ""
+		if role == "guest" {
+			roleScope = "guest:"
+		}
+		cacheKey = "cache:album_photos:" + roleScope + strconv.FormatInt(albumID, 10) + ":" + strconv.Itoa(limit)
+		if s.Cache != nil {
+			if data, ok := s.Cache.GetBytes(cacheKey); ok {
+				var page AlbumPhotoPage
+				if json.Unmarshal(data, &page) == nil {
+					return &page, nil
+				}
+			}
+		}
+	}
+	page, err := s.ListAlbumPhotos(albumID, limit, afterTime, afterID, month)
+	if err != nil {
+		return nil, err
+	}
+	if cacheKey != "" && s.Cache != nil {
+		if data, err := json.Marshal(page); err == nil {
+			s.Cache.Redis.Set(ctx, cacheKey, data, TTLFirstPage)
+		}
+	}
+	return page, nil
+}
+
 // AlbumItem is the API-facing representation of an album.
 type AlbumItem struct {
 	ID          int64     `json:"id"`
@@ -98,15 +174,6 @@ type AlbumPhotoPage struct {
 	HeadPhotos []model.Photo
 	Total      int64
 	HasMore    bool
-}
-
-func (s *AlbumService) ListAlbums() ([]AlbumItem, error) {
-	return s.listAlbums("")
-}
-
-// ListPublicAlbums returns only albums that guests can see (is_public = true).
-func (s *AlbumService) ListPublicAlbums() ([]AlbumItem, error) {
-	return s.listAlbums("is_public = true")
 }
 
 func (s *AlbumService) listAlbums(where string) ([]AlbumItem, error) {

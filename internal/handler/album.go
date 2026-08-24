@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"path/filepath"
@@ -59,42 +57,18 @@ type AlbumItem struct {
 // ListAlbums returns all albums (guests see only public ones).
 // GET /api/v1/albums
 func (h *Handler) ListAlbums(c *gin.Context) {
-	// Role-scoped cache (guest list only contains public albums)
-	roleScope := ""
-	if c.GetString("role") == "guest" {
-		roleScope = "guest:"
-	}
-	cacheKey := "cache:albums:" + roleScope
-
-	var items []AlbumItem
-	if h.redisGetJSON(cacheKey, &items) {
-		c.JSON(http.StatusOK, gin.H{"items": items, "total": len(items)})
-		return
-	}
-
-	var (
-		svcItems []service.AlbumItem
-		err      error
-	)
-	if c.GetString("role") == "guest" {
-		svcItems, err = h.AlbumSvc.ListPublicAlbums()
-	} else {
-		svcItems, err = h.AlbumSvc.ListAlbums()
-	}
+	items, err := h.AlbumSvc.ListAlbums(c.Request.Context(), c.GetString("role"))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "list albums failed"})
 		return
 	}
-
-	items = make([]AlbumItem, len(svcItems))
-	for i, it := range svcItems {
-		items[i] = AlbumItem(it)
+	resp := make([]AlbumItem, len(items))
+	for i, it := range items {
+		resp[i] = AlbumItem(it)
 	}
-
-	h.redisSetJSON(cacheKey, items, ttlAlbums)
 	c.JSON(http.StatusOK, gin.H{
-		"items": items,
-		"total": len(items),
+		"items": resp,
+		"total": len(resp),
 	})
 }
 
@@ -140,68 +114,24 @@ func (h *Handler) ListAlbumPhotos(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
-
-	// Guest visibility guard
-	if c.GetString("role") == "guest" {
-		exists, public, err := h.AlbumSvc.GetAlbumVisibility(albumID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
-			return
-		}
-		if !exists || !public {
-			c.JSON(http.StatusNotFound, gin.H{"error": "album not found"})
-			return
-		}
-	}
-
 	limit := 50
 	if l := c.Query("limit"); l != "" {
 		if n, err := strconv.Atoi(l); err == nil && n > 0 && n <= 200 {
 			limit = n
 		}
 	}
-
-	var (
-		afterTime time.Time
-		afterID   int64
-		hasCursor bool
+	page, err := h.AlbumSvc.ListAlbumPhotosPage(
+		c.Request.Context(), c.GetString("role"), albumID, limit,
+		c.Query("cursor"), c.Query("month"),
 	)
-	if cur := c.Query("cursor"); cur != "" {
-		hasCursor = true
-		parts := split2(cur, ",")
-		if len(parts) == 2 {
-			ts := parts[0]
-			if t, err := time.ParseInLocation("2006-01-02T15:04:05", ts, cstZone); err == nil && !t.IsZero() {
-				afterTime = t
-			}
-			if n, err := strconv.ParseInt(parts[1], 10, 64); err == nil {
-				afterID = n
-			}
-		}
+	if errors.Is(err, service.ErrAlbumNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "album not found"})
+		return
 	}
-
-	// Redis cache for first page — guests get role-scoped keys
-	cacheKey := ""
-	if !hasCursor {
-		roleScope := ""
-		if c.GetString("role") == "guest" {
-			roleScope = "guest:"
-		}
-		cacheKey = "cache:album_photos:" + roleScope + strconv.FormatInt(albumID, 10) + ":" + strconv.Itoa(limit)
-		if cached, ok := h.redisGet(cacheKey); ok {
-			c.JSON(http.StatusOK, cached)
-			return
-		}
-	}
-
-	month := c.Query("month")
-	page, err := h.AlbumSvc.ListAlbumPhotos(albumID, limit, afterTime, afterID, month)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
 		return
 	}
-
-	// Prepend head photos (reversed to DESC)
 	all := make([]PhotoItem, 0, len(page.HeadPhotos)+len(page.Photos))
 	for i := len(page.HeadPhotos) - 1; i >= 0; i-- {
 		all = append(all, toPhotoItem(&page.HeadPhotos[i]))
@@ -216,21 +146,10 @@ func (h *Handler) ListAlbumPhotos(c *gin.Context) {
 		NextCursor: "",
 		HeadCount:  len(page.HeadPhotos),
 	}
-
 	if page.HasMore && len(page.Photos) > 0 {
-		last := all[len(all)-1]
-		t := last.TakenAt
-		if t == "" {
-			t = "0001-01-01T00:00:00"
-		}
-		resp.NextCursor = t + "," + strconv.FormatInt(last.ID, 10)
+		last := page.Photos[len(page.Photos)-1]
+		resp.NextCursor = service.BuildNextCursor(last.TakenAt, last.ID)
 	}
-
-	if cacheKey != "" && h.Redis != nil {
-		data, _ := json.Marshal(resp)
-		h.Redis.Set(context.Background(), cacheKey, data, ttlFirstPage)
-	}
-
 	c.JSON(http.StatusOK, resp)
 }
 
