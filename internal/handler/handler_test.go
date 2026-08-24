@@ -25,7 +25,11 @@ func setupHandler(t *testing.T) *Handler {
 	if err != nil {
 		t.Fatalf("connect db: %v", err)
 	}
-	return &Handler{DB: db, AlbumSvc: service.NewAlbumService(db)}
+	return &Handler{
+		DB:       db,
+		AlbumSvc: service.NewAlbumService(db),
+		PhotoSvc: service.NewPhotoService(db, nil, service.NewAlbumService(db)),
+	}
 }
 
 func TestPhotoDates_ReturnsData(t *testing.T) {
