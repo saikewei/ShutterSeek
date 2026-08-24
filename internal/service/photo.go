@@ -338,3 +338,20 @@ func (s *PhotoService) TotalPhotoCountCached(ctx context.Context) int64 {
 	}
 	return count
 }
+
+func (s *PhotoService) GetPhoto(ctx context.Context, id int64) (*model.Photo, error) {
+	var p model.Photo
+	if err := s.DB.WithContext(ctx).Where("id = ?", id).First(&p).Error; err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+func (s *PhotoService) PhotoInPublicAlbum(ctx context.Context, id int64) (bool, error) {
+	var count int64
+	err := s.DB.WithContext(ctx).Raw(
+		"SELECT COUNT(*) FROM album_photos ap JOIN albums a ON a.id = ap.album_id WHERE ap.photo_id = ? AND a.is_public = true",
+		id,
+	).Scan(&count).Error
+	return count > 0, err
+}
