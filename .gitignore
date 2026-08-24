@@ -12,6 +12,9 @@ frontend/public/ort/
 # 缩略图 (不提交)
 thumbnails/
 
+# 开发环境上传目录（运行时数据）
+uploads/
+
 # 本地模型文件（INT8 ONNX + 分词器，~570MB，不提交）
 models/
 
