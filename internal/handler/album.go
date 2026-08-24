@@ -30,61 +30,30 @@ func (h *Handler) AlbumDates(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
-
-	// Guest visibility guard
-	if c.GetString("role") == "guest" {
-		exists, public, err := h.AlbumSvc.GetAlbumVisibility(id)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
-			return
-		}
-		if !exists || !public {
-			c.JSON(http.StatusNotFound, gin.H{"error": "album not found"})
-			return
-		}
-	}
-
-	roleScope := ""
-	if c.GetString("role") == "guest" {
-		roleScope = "guest:"
-	}
-	cacheKey := "cache:album_dates:" + roleScope + strconv.FormatInt(id, 10)
-
-	var rows []albumDateCount
-	if h.redisGetJSON(cacheKey, &rows) {
-		c.JSON(http.StatusOK, rows)
+	rows, err := h.AlbumSvc.AlbumDates(c.Request.Context(), c.GetString("role"), id)
+	if errors.Is(err, service.ErrAlbumNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "album not found"})
 		return
 	}
-
-	if err := h.DB.Raw(
-		`SELECT to_char(p.taken_at, 'YYYY-MM-DD') AS date, COUNT(*) AS count
-		 FROM photos p
-		 JOIN album_photos ap ON ap.photo_id = p.id
-		 WHERE ap.album_id = ? AND p.taken_at IS NOT NULL
-		 GROUP BY date ORDER BY date DESC`, id,
-	).Scan(&rows).Error; err != nil {
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
 		return
 	}
-	if rows == nil {
-		rows = []albumDateCount{}
-	}
-	h.redisSetJSON(cacheKey, rows, ttlDates)
 	c.JSON(http.StatusOK, rows)
 }
 
 // ── Album List ──────────────────────────────────────────
 
 type AlbumItem struct {
-	ID           int64     `json:"id"`
-	Title        string    `json:"title"`
-	Description  string    `json:"description"`
-	CoverURL     string    `json:"cover_url"`
-	PhotoCount   int64     `json:"photo_count"`
-	SortOrder    int32     `json:"sort_order"`
-	IsPublic     bool      `json:"is_public"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID          int64     `json:"id"`
+	Title       string    `json:"title"`
+	Description string    `json:"description"`
+	CoverURL    string    `json:"cover_url"`
+	PhotoCount  int64     `json:"photo_count"`
+	SortOrder   int32     `json:"sort_order"`
+	IsPublic    bool      `json:"is_public"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // ListAlbums returns all albums (guests see only public ones).
@@ -248,8 +217,8 @@ func (h *Handler) ListAlbumPhotos(c *gin.Context) {
 		HeadCount:  len(page.HeadPhotos),
 	}
 
-		if page.HasMore && len(page.Photos) > 0 {
-			last := all[len(all)-1]
+	if page.HasMore && len(page.Photos) > 0 {
+		last := all[len(all)-1]
 		t := last.TakenAt
 		if t == "" {
 			t = "0001-01-01T00:00:00"

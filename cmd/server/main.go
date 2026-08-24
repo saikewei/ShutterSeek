@@ -82,8 +82,10 @@ func main() {
 	log.Println("✓ Admin user seeded")
 
 	origSvc := service.NewOriginalService(cfg.Thumbnail.PhotosDir, cfg.Upload.UploadDir, "/tmp/shutterseek_previews")
-	albumSvc := service.NewAlbumService(gormDB)
+	cache := &service.Cache{Redis: rdb}
+	albumSvc := service.NewAlbumService(gormDB, cache)
 	uploadSvc := service.NewUploadService(gormDB, rdb, cfg.Upload.UploadDir, cfg.Thumbnail.OutputDir)
+	photoSvc := service.NewPhotoService(gormDB, cache, albumSvc)
 	embedder := service.NewCachedEmbedder(
 		service.NewHTTPEmbedder(cfg.Embed.URL, cfg.Embed.Timeout(), cfg.Embed.Token),
 		rdb,
@@ -92,7 +94,7 @@ func main() {
 	h := &handler.Handler{
 		Pool: pool, Redis: rdb, DB: gormDB,
 		OrigSvc: origSvc, AlbumSvc: albumSvc, AuthSvc: authSvc,
-		SearchSvc: searchSvc, UploadSvc: uploadSvc,
+		SearchSvc: searchSvc, UploadSvc: uploadSvc, PhotoSvc: photoSvc,
 	}
 	r := router.Setup(h, cfg.Thumbnail.OutputDir, cfg.Model.Dir)
 
