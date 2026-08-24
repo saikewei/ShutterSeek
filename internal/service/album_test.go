@@ -3,6 +3,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"sort"
 	"testing"
@@ -22,7 +23,25 @@ func setupAlbumSvc(t *testing.T) *AlbumService {
 	// Clean up any leftover test albums
 	db.Exec("DELETE FROM album_photos WHERE album_id IN (SELECT id FROM albums WHERE title LIKE 'TEST_%')")
 	db.Exec("DELETE FROM albums WHERE title LIKE 'TEST_%'")
-	return NewAlbumService(db)
+	return NewAlbumService(db, nil)
+}
+
+func TestAlbumDatesAdminAndGuestGuard(t *testing.T) {
+	s := setupAlbumSvc(t)
+	var id int64
+	if err := s.DB.Raw("SELECT id FROM albums ORDER BY id LIMIT 1").Scan(&id).Error; err != nil || id == 0 {
+		t.Skip("no albums in library")
+	}
+	rows, err := s.AlbumDates(context.Background(), "admin", id)
+	if err != nil || rows == nil {
+		t.Fatalf("admin: %v", err)
+	}
+	var privateID int64
+	if err := s.DB.Raw("SELECT id FROM albums WHERE is_public = false ORDER BY id LIMIT 1").Scan(&privateID).Error; err == nil && privateID > 0 {
+		if _, err := s.AlbumDates(context.Background(), "guest", privateID); err != ErrAlbumNotFound {
+			t.Fatalf("private album guest: expected ErrAlbumNotFound, got %v", err)
+		}
+	}
 }
 
 // ═══════════════════════════════════════════════════════

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"strconv"
 	"time"
@@ -16,31 +17,79 @@ var cstZone = time.FixedZone("CST", 8*3600)
 
 // Sentinel errors for album service.
 var (
-	ErrAlbumNotFound  = errors.New("album not found")
+	ErrAlbumNotFound   = errors.New("album not found")
 	ErrPhotoNotInAlbum = errors.New("photo not in album")
 )
 
 // AlbumService handles album business logic.
 type AlbumService struct {
-	DB *gorm.DB
+	DB    *gorm.DB
+	Cache *Cache
 }
 
 // NewAlbumService creates a new AlbumService.
-func NewAlbumService(db *gorm.DB) *AlbumService {
-	return &AlbumService{DB: db}
+func NewAlbumService(db *gorm.DB, cache *Cache) *AlbumService {
+	return &AlbumService{DB: db, Cache: cache}
+}
+
+// InvalidateCaches 清空相册相关缓存（列表/日期/首页/相册照片，所有角色作用域）。
+func (s *AlbumService) InvalidateCaches() {
+	if s.Cache == nil {
+		return
+	}
+	s.Cache.DelPatterns("cache:albums*", "cache:photo_dates*", "cache:album_dates*",
+		"cache:first_page*", "cache:album_photos*")
+}
+
+// AlbumDates 返回相册内日期分布（含缓存与 guest 可见性守卫）。
+func (s *AlbumService) AlbumDates(ctx context.Context, role string, id int64) ([]DateCount, error) {
+	if role == "guest" {
+		exists, public, err := s.GetAlbumVisibility(id)
+		if err != nil {
+			return nil, err
+		}
+		if !exists || !public {
+			return nil, ErrAlbumNotFound
+		}
+	}
+	roleScope := ""
+	if role == "guest" {
+		roleScope = "guest:"
+	}
+	cacheKey := "cache:album_dates:" + roleScope + strconv.FormatInt(id, 10)
+	var rows []DateCount
+	if s.Cache != nil && s.Cache.GetJSON(cacheKey, &rows) {
+		return rows, nil
+	}
+	if err := s.DB.WithContext(ctx).Raw(
+		`SELECT to_char(p.taken_at, 'YYYY-MM-DD') AS date, COUNT(*) AS count
+		 FROM photos p
+		 JOIN album_photos ap ON ap.photo_id = p.id
+		 WHERE ap.album_id = ? AND p.taken_at IS NOT NULL
+		 GROUP BY date ORDER BY date DESC`, id,
+	).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	if rows == nil {
+		rows = []DateCount{}
+	}
+	if s.Cache != nil {
+		s.Cache.SetJSON(cacheKey, rows, TTLDates)
+	}
+	return rows, nil
 }
 
 // AlbumItem is the API-facing representation of an album.
 type AlbumItem struct {
-	ID           int64     `json:"id"`
-	Title        string    `json:"title"`
-	Description  string    `json:"description"`
-	CoverURL     string    `json:"cover_url"`
-	PhotoCount   int64     `json:"photo_count"`
-	SortOrder    int32     `json:"sort_order"`
-	IsPublic     bool      `json:"is_public"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID          int64     `json:"id"`
+	Title       string    `json:"title"`
+	Description string    `json:"description"`
+	CoverURL    string    `json:"cover_url"`
+	PhotoCount  int64     `json:"photo_count"`
+	SortOrder   int32     `json:"sort_order"`
+	IsPublic    bool      `json:"is_public"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // AlbumPhotoPage holds a page of photos within an album.
@@ -50,6 +99,7 @@ type AlbumPhotoPage struct {
 	Total      int64
 	HasMore    bool
 }
+
 func (s *AlbumService) ListAlbums() ([]AlbumItem, error) {
 	return s.listAlbums("")
 }

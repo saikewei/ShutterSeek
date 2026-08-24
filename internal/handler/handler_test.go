@@ -27,8 +27,8 @@ func setupHandler(t *testing.T) *Handler {
 	}
 	return &Handler{
 		DB:       db,
-		AlbumSvc: service.NewAlbumService(db),
-		PhotoSvc: service.NewPhotoService(db, nil, service.NewAlbumService(db)),
+		AlbumSvc: service.NewAlbumService(db, nil),
+		PhotoSvc: service.NewPhotoService(db, nil, service.NewAlbumService(db, nil)),
 	}
 }
 
