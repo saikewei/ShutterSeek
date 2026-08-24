@@ -42,6 +42,7 @@ type Handler struct {
 	AuthSvc   *service.AuthService
 	SearchSvc *service.SearchService
 	UploadSvc *service.UploadService
+	PhotoSvc  *service.PhotoService
 }
 
 // ── Health ──────────────────────────────────────────────
@@ -60,54 +61,18 @@ type DateCount struct {
 // PhotoDates returns date distribution for all photos.
 // GET /api/v1/photos/dates
 func (h *Handler) PhotoDates(c *gin.Context) {
-	// Role-scoped cache key (guest sees only public-album photos)
-	roleScope := ""
-	if c.GetString("role") == "guest" {
-		roleScope = "guest:"
-	}
-	cacheKey := "cache:photo_dates:" + roleScope
-	if albumIDStr := c.Query("album_id"); albumIDStr != "" {
-		if albumID, err := strconv.ParseInt(albumIDStr, 10, 64); err == nil && albumID > 0 {
-			cacheKey = "cache:photo_dates:" + roleScope + "album:" + strconv.FormatInt(albumID, 10)
+	role := c.GetString("role")
+	var albumID int64
+	if s := c.Query("album_id"); s != "" {
+		if id, err := strconv.ParseInt(s, 10, 64); err == nil && id > 0 {
+			albumID = id
 		}
 	}
-
-	var rows []DateCount
-	if h.redisGetJSON(cacheKey, &rows) {
-		c.JSON(http.StatusOK, rows)
-		return
-	}
-
-	query := "SELECT to_char(p.taken_at, 'YYYY-MM-DD') AS date, COUNT(*) AS count FROM photos p"
-	args := []interface{}{}
-
-	isGuest := c.GetString("role") == "guest"
-
-	if albumIDStr := c.Query("album_id"); albumIDStr != "" {
-		if albumID, err := strconv.ParseInt(albumIDStr, 10, 64); err == nil && albumID > 0 {
-			query += " JOIN album_photos ap ON ap.photo_id = p.id WHERE ap.album_id = ? AND p.taken_at IS NOT NULL"
-			args = append(args, albumID)
-		} else {
-			query += " WHERE p.taken_at IS NOT NULL"
-		}
-	} else {
-		query += " WHERE p.taken_at IS NOT NULL"
-	}
-
-	// Guests only see dates for photos in public albums
-	if isGuest {
-		query += " AND p.id IN (SELECT ap.photo_id FROM album_photos ap JOIN albums a ON a.id = ap.album_id WHERE a.is_public = true)"
-	}
-	query += " GROUP BY date ORDER BY date DESC"
-
-	if err := h.DB.Raw(query, args...).Scan(&rows).Error; err != nil {
+	rows, err := h.PhotoSvc.PhotoDates(c.Request.Context(), role, albumID)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
 		return
 	}
-	if rows == nil {
-		rows = []DateCount{}
-	}
-	h.redisSetJSON(cacheKey, rows, ttlDates)
 	c.JSON(http.StatusOK, rows)
 }
 
