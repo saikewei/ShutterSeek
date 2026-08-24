@@ -13,13 +13,6 @@ import (
 	"shutterseek/internal/service"
 )
 
-// ── Album Dates ─────────────────────────────────────────
-
-type albumDateCount struct {
-	Date  string `json:"date"`
-	Count int64  `json:"count"`
-}
-
 // AlbumDates returns date distribution for photos within an album.
 // GET /api/v1/albums/:id/dates
 func (h *Handler) AlbumDates(c *gin.Context) {
@@ -188,7 +181,6 @@ func (h *Handler) CreateAlbum(c *gin.Context) {
 		}
 	}
 	// Album list changed
-	h.clearAllAlbumCaches()
 	c.JSON(http.StatusCreated, AlbumItem(*item))
 }
 
@@ -228,7 +220,6 @@ func (h *Handler) UpdateAlbum(c *gin.Context) {
 		return
 	}
 	// is_public changes visibility → clear all scoped photo caches
-	h.clearAllAlbumCaches()
 	c.JSON(http.StatusOK, AlbumItem(*item))
 }
 
@@ -246,7 +237,6 @@ func (h *Handler) DeleteAlbum(c *gin.Context) {
 		return
 	}
 	// Album list changed
-	h.clearAllAlbumCaches()
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -276,7 +266,6 @@ func (h *Handler) BatchRemovePhotos(c *gin.Context) {
 	}
 
 	// Album membership changed → clear scoped caches
-	h.clearAllAlbumCaches()
 	c.JSON(http.StatusOK, gin.H{"removed": removed})
 }
 
@@ -304,7 +293,6 @@ func (h *Handler) RemoveAlbumPhoto(c *gin.Context) {
 	}
 
 	// Invalidate album-photos Redis cache
-	h.clearAllAlbumCaches()
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -339,7 +327,6 @@ func (h *Handler) BatchAddPhotos(c *gin.Context) {
 		return
 	}
 
-	h.clearAllAlbumCaches()
 	c.JSON(http.StatusOK, gin.H{
 		"added":   result.Added,
 		"skipped": result.Skipped,

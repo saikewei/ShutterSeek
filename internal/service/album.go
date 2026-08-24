@@ -302,7 +302,12 @@ func (s *AlbumService) CreateAlbum(title, description string) (*AlbumItem, error
 	if err := s.DB.Create(&a).Error; err != nil {
 		return nil, err
 	}
-	return s.GetAlbum(a.ID)
+	item, err := s.GetAlbum(a.ID)
+	if err != nil {
+		return nil, err
+	}
+	s.InvalidateCaches()
+	return item, nil
 }
 
 // UpdateAlbum updates an album's title, description, cover photo, and/or
@@ -358,7 +363,12 @@ func (s *AlbumService) UpdateAlbum(id int64, title, description *string, coverPh
 	if err := tx.Commit().Error; err != nil {
 		return nil, err
 	}
-	return s.GetAlbum(id)
+	item, err := s.GetAlbum(id)
+	if err != nil {
+		return nil, err
+	}
+	s.InvalidateCaches()
+	return item, nil
 }
 
 // DeleteAlbum deletes an album and all its photo associations.
@@ -379,7 +389,11 @@ func (s *AlbumService) DeleteAlbum(id int64) error {
 		tx.Rollback()
 		return err
 	}
-	return tx.Commit().Error
+	if err := tx.Commit().Error; err != nil {
+		return err
+	}
+	s.InvalidateCaches()
+	return nil
 }
 
 // BatchRemovePhotos removes multiple photos from an album in one transaction.
@@ -424,6 +438,7 @@ func (s *AlbumService) BatchRemovePhotos(albumID int64, photoIDs []int64) (int64
 	if err := tx.Commit().Error; err != nil {
 		return 0, err
 	}
+	s.InvalidateCaches()
 	return removed, nil
 }
 
@@ -456,7 +471,11 @@ func (s *AlbumService) RemoveAlbumPhoto(albumID, photoID int64) error {
 		}
 	}
 
-	return tx.Commit().Error
+	if err := tx.Commit().Error; err != nil {
+		return err
+	}
+	s.InvalidateCaches()
+	return nil
 }
 
 // BatchAddResult reports how many photos were added vs skipped.
@@ -502,6 +521,7 @@ func (s *AlbumService) BatchAddPhotos(albumID int64, photoIDs []int64) (*BatchAd
 	if err := tx.Commit().Error; err != nil {
 		return nil, err
 	}
+	s.InvalidateCaches()
 	return &BatchAddResult{Added: added, Skipped: skipped}, nil
 }
 
