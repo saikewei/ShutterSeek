@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"shutterseek/internal/model"
+	"shutterseek/internal/service"
 )
 
 // insertRangePhotos creates n photos with taken_at spaced 1h apart starting
@@ -205,9 +206,9 @@ func TestPhotoRange_InvalidIDs(t *testing.T) {
 
 func TestPhotoRange_OverLimit(t *testing.T) {
 	h := setupHandler(t)
-	photos := insertRangePhotos(t, h, rangeSelectLimit+1) // 5001
+	photos := insertRangePhotos(t, h, service.RangeSelectLimit+1) // 5001
 
-	code, _ := doRange(t, h, fmt.Sprintf("?from_id=%d&to_id=%d", photos[0].ID, photos[rangeSelectLimit].ID))
+	code, _ := doRange(t, h, fmt.Sprintf("?from_id=%d&to_id=%d", photos[0].ID, photos[service.RangeSelectLimit].ID))
 	if code != http.StatusBadRequest {
 		t.Fatalf("expected 400 over limit, got %d", code)
 	}

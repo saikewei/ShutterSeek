@@ -17,7 +17,7 @@ func setupPhotoSvc(t *testing.T) *PhotoService {
 	if err != nil {
 		t.Fatalf("connect db: %v", err)
 	}
-	return NewPhotoService(db, nil, NewAlbumService(db))
+	return NewPhotoService(db, nil, NewAlbumService(db, nil))
 }
 
 func TestPhotoDatesAdminAndGuest(t *testing.T) {
@@ -117,5 +117,25 @@ func TestGetPhotoAndPublicAlbumGuard(t *testing.T) {
 		if err != nil || !ok {
 			t.Fatalf("guest-visible photo must be in public album: %v", err)
 		}
+	}
+}
+
+func TestPhotoRangeServiceBasics(t *testing.T) {
+	s := setupPhotoSvc(t)
+	res, err := s.ListPhotos(context.Background(), PhotoListParams{Limit: 2, Role: "admin"})
+	if err != nil || len(res.Photos) < 2 {
+		t.Fatalf("seed anchors: %v len=%d", err, len(res.Photos))
+	}
+	ids, err := s.PhotoRange(context.Background(), RangeParams{
+		FromID: res.Photos[0].ID, ToID: res.Photos[1].ID, Role: "admin",
+	})
+	if err != nil {
+		t.Fatalf("PhotoRange: %v", err)
+	}
+	if len(ids) < 2 {
+		t.Fatalf("expected at least both anchors, got %d", len(ids))
+	}
+	if _, err := s.PhotoRange(context.Background(), RangeParams{FromID: 1, ToID: 1, Role: "admin"}); err != ErrAnchorNotFound {
+		t.Fatalf("expected ErrAnchorNotFound, got %v", err)
 	}
 }
