@@ -2,11 +2,8 @@
 package handler
 
 import (
-	"context"
-	"encoding/json"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -14,17 +11,7 @@ import (
 	goredis "github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 
-	"shutterseek/internal/model"
 	"shutterseek/internal/service"
-)
-
-const (
-	keyTotalPhotos = "cache:total_photos"
-	keyFirstPage   = "cache:first_page:"
-	ttlTotal       = 5 * time.Minute
-	ttlFirstPage   = 60 * time.Second
-	ttlAlbums      = 60 * time.Second
-	ttlDates       = 5 * time.Minute
 )
 
 // cstZone is Asia/Shanghai (UTC+8, no DST). Photo dates are stored as UTC in
@@ -49,13 +36,6 @@ type Handler struct {
 
 func (h *Handler) Health(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
-}
-
-// ── Photo Dates ──────────────────────────────────────────
-
-type DateCount struct {
-	Date  string `json:"date"`
-	Count int64  `json:"count"`
 }
 
 // PhotoDates returns date distribution for all photos.
@@ -181,138 +161,7 @@ func (h *Handler) GetOriginal(c *gin.Context) {
 	}
 }
 
-// ── Redis ───────────────────────────────────────────────
-
-// clearFirstPageCache removes all cached first-page photo responses.
-// Call after mutations that change photo visibility (e.g. is_public toggle).
-func (h *Handler) clearFirstPageCache() {
-	if h.Redis == nil {
-		return
-	}
-	ctx := context.Background()
-	var cursor uint64
-	for {
-		keys, next, err := h.Redis.Scan(ctx, cursor, "cache:first_page:*", 100).Result()
-		if err != nil {
-			return
-		}
-		if len(keys) > 0 {
-			h.Redis.Del(ctx, keys...)
-		}
-		cursor = next
-		if cursor == 0 {
-			break
-		}
-	}
-}
-
-// clearAllAlbumCaches removes every cache key that could be affected by an
-// album write (list, dates, first page, album photos — all role scopes).
-// Album writes are infrequent, so clearing broadly is cheap and safe.
-func (h *Handler) clearAllAlbumCaches() {
-	if h.Redis == nil {
-		return
-	}
-	ctx := context.Background()
-	patterns := []string{
-		"cache:albums*",
-		"cache:photo_dates*",
-		"cache:album_dates*",
-		"cache:first_page*",
-		"cache:album_photos*",
-	}
-	for _, pat := range patterns {
-		var cursor uint64
-		for {
-			keys, next, err := h.Redis.Scan(ctx, cursor, pat, 100).Result()
-			if err != nil {
-				break
-			}
-			if len(keys) > 0 {
-				h.Redis.Del(ctx, keys...)
-			}
-			cursor = next
-			if cursor == 0 {
-				break
-			}
-		}
-	}
-}
-
-// redisSetJSON stores a value as JSON in Redis (no-op when Redis is nil).
-func (h *Handler) redisSetJSON(key string, v interface{}, ttl time.Duration) {
-	if h.Redis == nil {
-		return
-	}
-	data, err := json.Marshal(v)
-	if err != nil {
-		return
-	}
-	h.Redis.Set(context.Background(), key, data, ttl)
-}
-
-// redisGetJSON reads a JSON value from Redis into dst. Returns false on
-// miss or error (also when Redis is nil).
-func (h *Handler) redisGetJSON(key string, dst interface{}) bool {
-	if h.Redis == nil {
-		return false
-	}
-	data, err := h.Redis.Get(context.Background(), key).Bytes()
-	if err != nil {
-		return false
-	}
-	return json.Unmarshal(data, dst) == nil
-}
-
-func (h *Handler) redisGet(key string) (PhotoListResponse, bool) {
-	if h.Redis == nil {
-		return PhotoListResponse{}, false
-	}
-	data, err := h.Redis.Get(context.Background(), key).Bytes()
-	if err != nil {
-		return PhotoListResponse{}, false
-	}
-	var resp PhotoListResponse
-	if err := json.Unmarshal(data, &resp); err != nil {
-		return PhotoListResponse{}, false
-	}
-	return resp, true
-}
-
-func (h *Handler) totalPhotoCountCached() int64 {
-	if h.Redis != nil {
-		if val, err := h.Redis.Get(context.Background(), keyTotalPhotos).Int64(); err == nil {
-			return val
-		}
-	}
-	var count int64
-	h.DB.Model(&model.Photo{}).Count(&count)
-	if h.Redis != nil {
-		h.Redis.Set(context.Background(), keyTotalPhotos, count, ttlTotal)
-	}
-	return count
-}
-
-// ── Guest visibility helpers ────────────────────────────
-
-// guestPhotoFilter restricts a photo query to photos that belong to at
-// least one public album. Guests see only those photos; admins see all.
-func (h *Handler) guestPhotoFilter(c *gin.Context, q *gorm.DB) *gorm.DB {
-	if c.GetString("role") == "guest" {
-		q = q.Where("id IN (SELECT ap.photo_id FROM album_photos ap JOIN albums a ON a.id = ap.album_id WHERE a.is_public = true)")
-	}
-	return q
-}
-
 // ── helpers ─────────────────────────────────────────────
-
-func split2(s, sep string) []string {
-	idx := strings.LastIndex(s, sep)
-	if idx < 0 {
-		return nil
-	}
-	return []string{s[:idx], s[idx+1:]}
-}
 
 func mustParseInt64(s string) int64 {
 	n, _ := strconv.ParseInt(s, 10, 64)

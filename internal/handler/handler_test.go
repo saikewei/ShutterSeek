@@ -45,7 +45,7 @@ func TestPhotoDates_ReturnsData(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var rows []DateCount
+	var rows []service.DateCount
 	if err := json.Unmarshal(w.Body.Bytes(), &rows); err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestPhotoDates_SumMatchesPhotos(t *testing.T) {
 
 	h.PhotoDates(c)
 
-	var rows []DateCount
+	var rows []service.DateCount
 	json.Unmarshal(w.Body.Bytes(), &rows)
 
 	sum := sumCounts(rows)
@@ -107,7 +107,7 @@ func TestPhotoDates_SumMatchesPhotos(t *testing.T) {
 	}
 }
 
-func sumCounts(rows []DateCount) int64 {
+func sumCounts(rows []service.DateCount) int64 {
 	var s int64
 	for _, r := range rows {
 		s += r.Count
@@ -304,7 +304,7 @@ func TestPhotoDates_AlbumFilter(t *testing.T) {
 	c2, w2 := ginCtx("GET", "/api/v1/photos/dates?album_id=10")
 	h.PhotoDates(c2)
 
-	var rows1, rows2 []DateCount
+	var rows1, rows2 []service.DateCount
 	json.Unmarshal(w1.Body.Bytes(), &rows1)
 	json.Unmarshal(w2.Body.Bytes(), &rows2)
 
