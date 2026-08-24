@@ -235,21 +235,7 @@ func (s *UploadService) invalidateCaches(ctx context.Context) {
 	if s.Redis == nil {
 		return
 	}
-	s.Redis.Del(ctx, "cache:total_photos")
-	for _, pat := range []string{"cache:first_page:*", "cache:photo_dates*"} {
-		var cursor uint64
-		for {
-			keys, next, err := s.Redis.Scan(ctx, cursor, pat, 100).Result()
-			if err != nil {
-				break
-			}
-			if len(keys) > 0 {
-				s.Redis.Del(ctx, keys...)
-			}
-			cursor = next
-			if cursor == 0 {
-				break
-			}
-		}
-	}
+	c := &Cache{Redis: s.Redis}
+	c.Del(KeyTotalPhotos)
+	c.DelPatterns(KeyFirstPage+"*", "cache:photo_dates*")
 }
