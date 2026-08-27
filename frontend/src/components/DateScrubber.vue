@@ -3,7 +3,7 @@
   <div v-if="!embedded && yearGroups.length" class="fixed right-3 top-1/2 -translate-y-1/2 z-40 flex">
     <button
       @click="open = !open"
-      class="self-center w-5 h-20 rounded-l-lg bg-raised hover:bg-surface text-ink-3 hover:text-ink text-[10px] flex items-center justify-center shrink-0"
+      class="self-center w-5 h-20 rounded-l-lg bg-raised hover:bg-surface text-ink-2 hover:text-ink text-[10px] flex items-center justify-center shrink-0"
     >{{ open ? '◀' : '▶' }}</button>
 
     <div v-if="open" class="bg-raised/95 backdrop-blur rounded-r-xl border border-line overflow-hidden w-52 max-h-[60vh] flex flex-col">
@@ -22,7 +22,7 @@
             :class="m.key === activeMonth ? 'text-accent-strong bg-accent-soft font-medium' : 'text-ink-2'"
           >
             <span class="text-base">{{ m.label }}</span>
-            <span class="text-xs text-ink-3">{{ m.count }}</span>
+            <span class="text-xs text-ink-2">{{ m.count }}</span>
           </button>
         </template>
       </div>
