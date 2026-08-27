@@ -57,7 +57,7 @@
       <div v-if="dialog.open" class="fixed inset-0 z-50 flex items-center justify-center">
         <div class="modal-overlay" @click="closeDialog" />
         <div class="modal-panel w-80">
-          <h2 class="text-sm font-medium text-ink mb-3">{{ dialog.mode === 'create' ? '新建相册' : '重命名' }}</h2>
+          <h2 class="font-display text-sm font-medium text-ink mb-3">{{ dialog.mode === 'create' ? '新建相册' : '重命名' }}</h2>
           <input
             ref="titleInput"
             v-model="dialog.title"
@@ -88,7 +88,7 @@
       <div v-if="deleteTarget" class="fixed inset-0 z-50 flex items-center justify-center">
         <div class="modal-overlay" @click="deleteTarget = null" />
         <div class="modal-panel w-80">
-          <h2 class="text-sm font-medium text-ink mb-1">删除相册</h2>
+          <h2 class="font-display text-sm font-medium text-ink mb-1">删除相册</h2>
           <p class="text-xs text-ink-2 mb-4">确定要删除「{{ deleteTarget.title }}」吗？此操作不可撤销。</p>
           <div class="flex justify-end gap-2">
             <button @click="deleteTarget = null" class="px-3 py-1.5 text-xs rounded-full text-ink-3 hover:text-ink">取消</button>
