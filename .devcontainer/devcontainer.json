@@ -5,7 +5,7 @@
   },
   // 容器首次启动后自动在容器内部初始化并拉取依赖
   "postStartCommand": "sudo chown -R $(id -u):$(id -g) ~/.codex && go mod tidy",
-  "postCreateCommand": "sudo npm install -g @anthropic-ai/claude-code --foreground-scripts || true",
+  "postCreateCommand": "sudo env NPM_CONFIG_CACHE=/home/vscode/.npm npm install -g @anthropic-ai/claude-code --foreground-scripts && claude --version || echo 'WARN: claude code install incomplete — rerun: sudo env NPM_CONFIG_CACHE=/home/vscode/.npm npm install -g @anthropic-ai/claude-code --foreground-scripts'",
   // 网络 & 挂载
   "runArgs": [
     "--network=postgres-main_default"
