@@ -1,44 +1,44 @@
 <template>
-  <div class="h-full flex flex-col bg-neutral-950 text-white">
+  <div class="h-full flex flex-col bg-base text-ink">
     <!-- 搜索条 -->
-    <div class="sticky top-0 z-30 px-4 py-3 border-b border-neutral-800 bg-neutral-900/95 backdrop-blur">
+    <div class="sticky top-0 z-30 px-4 py-3 border-b border-line bg-raised/95 backdrop-blur">
       <div class="flex items-center gap-2">
         <input
           v-model="query"
-          class="flex-1 min-w-0 rounded-lg bg-neutral-800 border border-neutral-700 px-3 py-2 text-sm outline-none focus:border-neutral-500 disabled:opacity-50"
+          class="input flex-1 min-w-0"
           placeholder="输入描述，搜索你的照片"
           :disabled="status === 'loading'"
           @keydown.enter="doSearch"
         />
         <button
-          class="shrink-0 rounded-lg bg-neutral-200 text-neutral-900 px-4 py-2 text-sm font-medium disabled:opacity-50"
+          class="shrink-0 rounded-lg bg-accent text-[#1C1208] px-4 py-2 text-sm font-semibold hover:bg-accent-strong transition-colors disabled:opacity-50"
           :disabled="status === 'loading' || !query.trim()"
           @click="doSearch"
         >{{ status === 'loading' ? '搜索中…' : '搜索' }}</button>
       </div>
-      <div v-if="albumID" class="mt-2 flex items-center gap-2 text-xs text-neutral-300">
-        <span class="rounded-full bg-neutral-800 px-2 py-1">当前范围：{{ albumTitle(albumID) }}</span>
-        <button class="text-neutral-500 hover:text-white transition-colors" @click="clearAlbum">× 清除</button>
+      <div v-if="albumID" class="mt-2 flex items-center gap-2 text-xs text-ink-2">
+        <span class="chip-ghost px-2 py-1">当前范围：{{ albumTitle(albumID) }}</span>
+        <button class="text-ink-3 hover:text-ink transition-colors" @click="clearAlbum">× 清除</button>
       </div>
     </div>
 
     <!-- 内容区 -->
     <div class="flex-1 overflow-auto">
-      <div v-if="status === 'idle'" class="h-full flex flex-col items-center justify-center text-neutral-500">
-        <p class="text-base">输入描述，搜索你的照片</p>
-        <p class="mt-1 text-sm">如：海边、猫、雪景</p>
+      <div v-if="status === 'idle'" class="h-full flex flex-col items-center justify-center">
+        <p class="text-base text-ink-2">输入描述，搜索你的照片</p>
+        <p class="mt-1 text-sm text-ink-3">如：海边、猫、雪景</p>
       </div>
 
       <div v-else-if="status === 'loading'" class="flex items-center justify-center py-16">
-        <div class="animate-spin h-6 w-6 border-2 border-neutral-500 border-t-white rounded-full"></div>
+        <div class="animate-spin h-6 w-6 border-2 border-line-strong border-t-accent rounded-full"></div>
       </div>
 
       <div v-else-if="status === 'error'" class="p-4">
-        <div class="rounded-lg bg-red-900/40 border border-red-800 px-4 py-3 text-sm">{{ errorMsg }}</div>
-        <button v-if="canRetry" class="mt-3 text-sm text-neutral-300 underline" @click="doSearch">重试</button>
+        <div class="rounded-lg bg-danger-soft border border-danger/30 text-danger-ink px-4 py-3 text-sm">{{ errorMsg }}</div>
+        <button v-if="canRetry" class="mt-3 text-sm text-ink-2 underline" @click="doSearch">重试</button>
       </div>
 
-      <div v-else-if="items.length === 0" class="h-full flex items-center justify-center text-sm text-neutral-500">
+      <div v-else-if="items.length === 0" class="h-full flex items-center justify-center text-sm text-ink-3">
         未找到匹配的照片，换个词试试
       </div>
 
