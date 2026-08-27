@@ -1,21 +1,24 @@
 <template>
-  <div v-if="open" class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" @click.self="$emit('close')">
-    <div class="w-full max-w-lg rounded-lg bg-neutral-900 border border-neutral-800 p-4 text-white">
+  <div v-if="open" class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 fade-in" @click.self="$emit('close')">
+    <div class="w-full max-w-lg rounded-xl bg-raised border border-line p-4 text-ink">
       <div class="flex items-center justify-between mb-3">
-        <h2 class="text-sm font-semibold">上传照片</h2>
-        <button class="text-neutral-400 text-xs hover:text-white transition-colors" @click="$emit('close')">关闭</button>
+        <h2 class="font-display text-sm font-semibold">上传照片</h2>
+        <button class="text-ink-3 text-xs hover:text-ink transition-colors" @click="$emit('close')">关闭</button>
       </div>
-      <p v-if="capability === 'wasm'" class="text-amber-400 text-xs mb-2">
+      <p v-if="capability === 'wasm'" class="bg-accent-soft border border-accent/30 text-accent-strong text-xs mb-2 rounded-lg px-3 py-2">
         本设备未启用 GPU 加速（WebGPU），将使用 WASM 推理，上传会较慢。
       </p>
-      <input ref="fileInput" type="file" accept="image/*,.nef,.cr2,.cr3,.arw,.rw2,.dng,.orf,.raf,.pef,.sr2,.srf,.tif,.tiff,.heic,.heif" multiple class="mb-3 text-xs" @change="onPick" />
+      <input ref="fileInput" type="file" accept="image/*,.nef,.cr2,.cr3,.arw,.rw2,.dng,.orf,.raf,.pef,.sr2,.srf,.tif,.tiff,.heic,.heif" multiple class="mb-3 text-xs text-ink-3" @change="onPick" />
       <ul class="space-y-2 max-h-72 overflow-auto">
         <li v-for="item in items" :key="item.file.name + item.file.size" class="flex items-center gap-2 text-xs">
           <img v-if="item.preview" :src="item.preview" class="w-10 h-10 object-cover rounded shrink-0" alt="" />
           <div class="flex-1 min-w-0">
             <div class="truncate">{{ item.file.name }}</div>
-            <div class="text-neutral-500">{{ stateLabel(item) }}</div>
-            <div v-if="item.state === 'error' && item.error" class="text-red-400 truncate">{{ item.error }}</div>
+            <div class="flex items-center gap-1.5">
+              <span class="w-1.5 h-1.5 rounded-full shrink-0" :class="dotClass(item.state)"></span>
+              <div class="text-ink-3">{{ stateLabel(item) }}</div>
+            </div>
+            <div v-if="item.state === 'error' && item.error" class="text-danger-ink truncate">{{ item.error }}</div>
           </div>
         </li>
       </ul>
@@ -60,6 +63,18 @@ function stateLabel(item: QueueItem): string {
     case 'duplicate': return '重复，未入库'
     case 'error': return '失败'
     default: return '等待'
+  }
+}
+
+function dotClass(state: QueueItem['state']): string {
+  switch (state) {
+    case 'done': return 'bg-success'
+    case 'duplicate': return 'bg-ink-3'
+    case 'error': return 'bg-danger'
+    case 'embedding':
+    case 'uploading': return 'bg-accent-strong'
+    case 'decoding': return 'bg-ink-2'
+    default: return 'bg-ink-3' // waiting
   }
 }
 
