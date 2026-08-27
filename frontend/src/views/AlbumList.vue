@@ -32,7 +32,7 @@
         >⋯</button>
 
         <!-- Inline context menu -->
-        <div v-if="menuAlbum === album" class="absolute inset-0 z-10 bg-base/95 backdrop-blur rounded-lg flex flex-col items-center justify-center gap-1" @click.stop>
+        <div v-if="menuAlbum === album" class="absolute inset-0 z-10 bg-canvas/95 backdrop-blur rounded-lg flex flex-col items-center justify-center gap-1" @click.stop>
           <button @click.stop="openRename(album)" class="px-4 py-1.5 text-sm text-ink-2 hover:text-ink transition-colors">重命名</button>
           <button @click.stop="togglePublic(album)" class="px-4 py-1.5 text-sm text-ink-2 hover:text-ink transition-colors">
             {{ album.is_public ? '设为私有' : '设为公开' }}

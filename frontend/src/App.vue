@@ -1,6 +1,6 @@
 <template>
   <!-- Mobile guest shell: top bar + bottom tabs, no sidebar -->
-  <div v-if="isGuestMobile" class="flex flex-col h-screen supports-[height:100dvh]:h-dvh bg-base text-ink">
+  <div v-if="isGuestMobile" class="flex flex-col h-screen supports-[height:100dvh]:h-dvh bg-canvas text-ink">
     <header class="shrink-0 px-4 py-3 border-b border-line bg-raised flex items-center justify-between">
       <h1 class="font-display text-sm font-semibold tracking-wide text-ink">ShutterSeek</h1>
       <button @click="doLogout" class="text-xs text-ink-3 hover:text-ink-2 transition-colors duration-150">退出</button>
@@ -30,7 +30,7 @@
   </div>
 
   <!-- Desktop shell -->
-  <div v-else class="flex h-screen supports-[height:100dvh]:h-dvh bg-base text-ink">
+  <div v-else class="flex h-screen supports-[height:100dvh]:h-dvh bg-canvas text-ink">
     <!-- Sidebar -->
     <nav v-if="!hideSidebar" class="w-48 shrink-0 bg-raised border-r border-line flex flex-col">
       <div class="px-4 pt-5 pb-4">

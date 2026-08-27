@@ -76,7 +76,7 @@
       <Transition name="exif">
         <div
           v-if="photo && (!isMobile || exifOpen)"
-          class="absolute right-0 top-0 bottom-0 w-72 bg-base/85 backdrop-blur border-l border-line overflow-y-auto pointer-events-auto"
+          class="absolute right-0 top-0 bottom-0 w-72 bg-canvas/85 backdrop-blur border-l border-line overflow-y-auto pointer-events-auto"
         >
           <div class="p-4 space-y-3 text-sm">
             <div class="flex items-center justify-between border-b border-line pb-2">

@@ -1,7 +1,7 @@
 <template>
-  <div class="min-h-screen flex items-center justify-center relative overflow-hidden bg-base">
+  <div class="min-h-screen flex items-center justify-center relative overflow-hidden bg-canvas">
     <!-- 背景氛围 -->
-    <div class="absolute inset-0 bg-gradient-to-br from-base via-raised to-black" />
+    <div class="absolute inset-0 bg-gradient-to-br from-canvas via-raised to-black" />
     <div class="absolute -top-40 -left-40 w-[28rem] h-[28rem] rounded-full bg-accent/10 blur-3xl" />
     <div class="absolute -bottom-40 -right-40 w-[28rem] h-[28rem] rounded-full bg-accent/5 blur-3xl" />
 

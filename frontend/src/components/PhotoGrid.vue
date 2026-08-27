@@ -3,7 +3,7 @@
     <!-- Filter bar（单页模式无筛选语义，整栏隐藏） -->
     <div
       v-if="!singlePage"
-      class="sticky z-20 flex items-center justify-between px-2 py-1.5 bg-base/90 backdrop-blur border-b border-line"
+      class="sticky z-20 flex items-center justify-between px-2 py-1.5 bg-canvas/90 backdrop-blur border-b border-line"
       :style="{ top: (stickyOffset || 0) + 'px' }"
     >
       <div class="flex items-center gap-1.5">
@@ -76,7 +76,7 @@
     <div v-for="group in groupCells" :key="group.label || 'all'">
       <div
         v-if="group.label"
-        class="sticky z-10 bg-base/95 backdrop-blur px-2 h-[46px] flex items-center gap-2.5 border-b border-line"
+        class="sticky z-10 bg-canvas/95 backdrop-blur px-2 h-[46px] flex items-center gap-2.5 border-b border-line"
         :style="{ top: (stickyOffset || 0) + 37 + 'px' }"
         :data-date="group.label"
         :data-date-iso="group.cells[0]?.photo?.taken_at?.slice(0, 10) || ''"

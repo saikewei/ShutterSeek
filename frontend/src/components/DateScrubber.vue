@@ -46,7 +46,7 @@
           :class="m.key === activeMonth ? 'text-accent-strong bg-accent-soft font-medium' : 'text-ink-2'"
         >
           <span class="text-base">{{ m.label }}</span>
-          <span class="text-xs text-ink-3">{{ m.count }}</span>
+          <span class="text-xs text-ink-2">{{ m.count }}</span>
         </button>
       </template>
     </div>
