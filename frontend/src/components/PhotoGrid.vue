@@ -171,7 +171,7 @@
       <div v-if="filterOpen" class="fixed inset-0 z-50 flex items-center justify-center">
         <div class="modal-overlay" @click="filterOpen = false" />
         <div class="modal-panel w-72">
-          <h2 class="text-sm font-medium text-ink mb-4">筛选设置</h2>
+          <h2 class="font-display text-sm font-medium text-ink mb-4">筛选设置</h2>
 
           <div class="space-y-4">
             <div>
@@ -208,7 +208,7 @@
       <div v-if="albumPickerOpen" class="fixed inset-0 z-50 flex items-center justify-center">
         <div class="modal-overlay" @click="albumPickerOpen = false" />
         <div class="modal-panel w-80 max-h-[70vh] flex flex-col">
-          <h2 class="text-sm font-medium text-ink mb-3">添加到相册</h2>
+          <h2 class="font-display text-sm font-medium text-ink mb-3">添加到相册</h2>
 
           <div class="flex-1 overflow-y-auto space-y-1 mb-3">
             <button
@@ -236,7 +236,7 @@
       <div v-if="confirmRemoveOpen" class="fixed inset-0 z-50 flex items-center justify-center">
         <div class="modal-overlay" @click="confirmRemoveOpen = false" />
         <div class="modal-panel w-80">
-          <h2 class="text-sm font-medium text-ink mb-1">从相册移除</h2>
+          <h2 class="font-display text-sm font-medium text-ink mb-1">从相册移除</h2>
           <p class="text-xs text-ink-2 mb-4">确定从相册移除选中的 {{ selected.size }} 张照片吗？</p>
           <div class="flex justify-end gap-2">
             <button @click="confirmRemoveOpen = false" class="px-3 py-1.5 text-xs rounded-full text-ink-3 hover:text-ink">取消</button>
@@ -254,7 +254,7 @@
         <div class="modal-overlay" @click="monthPickerOpen = false" />
         <div class="relative w-full max-h-[70vh] flex flex-col px-3 pb-3">
           <div class="mb-2 flex items-center justify-between">
-            <h2 class="text-sm font-medium text-ink">跳转到月份</h2>
+            <h2 class="font-display text-sm font-medium text-ink">跳转到月份</h2>
             <button @click="monthPickerOpen = false" class="text-xs text-ink-3 hover:text-ink">关闭</button>
           </div>
           <DateScrubber embedded :dates="datePoints" :active-month="activeMonth" @jump="onMonthJump" />
