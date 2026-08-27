@@ -169,13 +169,13 @@
     <!-- Filter dialog -->
     <Teleport to="body">
       <div v-if="filterOpen" class="fixed inset-0 z-50 flex items-center justify-center">
-        <div class="absolute inset-0 bg-black/60" @click="filterOpen = false" />
-        <div class="relative bg-raised rounded-xl p-5 w-72 shadow-xl border border-line">
+        <div class="modal-overlay" @click="filterOpen = false" />
+        <div class="modal-panel w-72">
           <h2 class="text-sm font-medium text-ink mb-4">筛选设置</h2>
 
           <div class="space-y-4">
             <div>
-              <label class="text-xs text-ink-3 block mb-2">日期分组</label>
+              <label class="text-xs text-ink-2 block mb-2">日期分组</label>
               <div class="flex gap-1">
                 <button
                   v-for="opt in [{k:'day',l:'按日'},{k:'month',l:'按月'}]"
@@ -188,7 +188,7 @@
             </div>
 
             <label v-if="isAdmin" class="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" v-model="uncategorizedOnly" class="rounded accent-white" />
+              <input type="checkbox" v-model="uncategorizedOnly" class="rounded accent-accent" />
               <span class="text-xs text-ink-2">仅显示未归类照片</span>
             </label>
           </div>
@@ -206,8 +206,8 @@
     <!-- Album picker dialog -->
     <Teleport to="body">
       <div v-if="albumPickerOpen" class="fixed inset-0 z-50 flex items-center justify-center">
-        <div class="absolute inset-0 bg-black/60" @click="albumPickerOpen = false" />
-        <div class="relative bg-raised rounded-xl p-5 w-80 shadow-xl border border-line max-h-[70vh] flex flex-col">
+        <div class="modal-overlay" @click="albumPickerOpen = false" />
+        <div class="modal-panel w-80 max-h-[70vh] flex flex-col">
           <h2 class="text-sm font-medium text-ink mb-3">添加到相册</h2>
 
           <div class="flex-1 overflow-y-auto space-y-1 mb-3">
@@ -215,7 +215,7 @@
               v-for="album in albumList"
               :key="album.id"
               @click="doBatchAdd(album.id)"
-              class="w-full text-left px-3 py-2 rounded-lg text-sm text-ink-2 hover:bg-line-strong hover:text-ink transition-colors flex justify-between"
+              class="w-full text-left px-3 py-2 rounded-lg text-sm text-ink-2 hover:bg-surface hover:text-ink transition-colors flex justify-between"
             >
               <span>{{ album.title }}</span>
               <span class="text-xs text-ink-3">{{ album.photo_count }}</span>
@@ -234,8 +234,8 @@
     <!-- Remove from album confirmation -->
     <Teleport to="body">
       <div v-if="confirmRemoveOpen" class="fixed inset-0 z-50 flex items-center justify-center">
-        <div class="absolute inset-0 bg-black/60" @click="confirmRemoveOpen = false" />
-        <div class="relative bg-raised rounded-xl p-5 w-80 shadow-xl border border-line">
+        <div class="modal-overlay" @click="confirmRemoveOpen = false" />
+        <div class="modal-panel w-80">
           <h2 class="text-sm font-medium text-ink mb-1">从相册移除</h2>
           <p class="text-xs text-ink-2 mb-4">确定从相册移除选中的 {{ selected.size }} 张照片吗？</p>
           <div class="flex justify-end gap-2">
@@ -251,7 +251,7 @@
     <!-- Mobile month picker modal -->
     <Teleport to="body">
       <div v-if="monthPickerOpen && !singlePage" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
-        <div class="absolute inset-0 bg-black/60" @click="monthPickerOpen = false" />
+        <div class="modal-overlay" @click="monthPickerOpen = false" />
         <div class="relative w-full max-h-[70vh] flex flex-col px-3 pb-3">
           <div class="mb-2 flex items-center justify-between">
             <h2 class="text-sm font-medium text-ink">跳转到月份</h2>
