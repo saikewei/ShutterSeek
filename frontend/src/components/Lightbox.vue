@@ -1,23 +1,23 @@
 <template>
   <Dialog :open="open" @close="$emit('close')" class="relative z-50">
-    <div class="fixed inset-0 bg-black/95" aria-hidden="true" />
+    <div class="fixed inset-0 bg-black/95 fade-in" aria-hidden="true" />
 
-    <div class="fixed inset-0 flex items-center justify-center overflow-hidden"
+    <div class="fixed inset-0 flex items-center justify-center overflow-hidden fade-in"
          @click.self="$emit('close')">
 
       <!-- Close (hidden on mobile while the EXIF panel covers it) -->
       <button v-if="!(isMobile && exifOpen)" @click="$emit('close')"
-        class="absolute top-4 z-10 text-white/70 hover:text-white text-2xl w-10 h-10"
+        class="absolute top-4 z-10 text-ink/70 hover:text-ink text-2xl w-10 h-10"
         :style="{ right: photo && !isMobile ? '308px' : '16px' }">✕</button>
 
       <!-- Info (mobile only — EXIF is popover-style; hidden while panel is open) -->
       <button v-if="photo && isMobile && !exifOpen" @click="exifOpen = true"
-        class="absolute top-4 right-16 z-10 h-10 flex items-center px-3 rounded-lg bg-white/10 hover:bg-white/20 text-white/70 hover:text-white text-xs transition-colors"
+        class="absolute top-4 right-16 z-10 h-10 flex items-center px-3 rounded-lg bg-white/10 hover:bg-white/20 text-ink/70 hover:text-ink text-xs transition-colors"
         title="图片信息">信息</button>
 
       <!-- Rotate -->
       <button @click="rot = (rot + 90) % 360"
-        class="absolute top-4 left-4 z-10 h-10 flex items-center gap-1.5 px-3 rounded-lg bg-white/10 hover:bg-white/20 text-white/80 hover:text-white transition-colors"
+        class="absolute top-4 left-4 z-10 h-10 flex items-center gap-1.5 px-3 rounded-lg bg-white/10 hover:bg-white/20 text-ink/70 hover:text-ink transition-colors"
         title="旋转">
         <span class="text-lg leading-none">↻</span>
         <span class="text-xs">旋转</span>
@@ -25,13 +25,13 @@
 
       <!-- Reset zoom -->
       <button v-if="scale !== 1" @click="resetZoom"
-        class="absolute top-4 left-28 z-10 h-10 flex items-center text-white/50 hover:text-white text-sm px-2">Reset</button>
+        class="absolute top-4 left-28 z-10 h-10 flex items-center text-ink/50 hover:text-ink text-sm px-2">Reset</button>
 
       <!-- Prev / Next -->
       <button v-if="hasPrev" @click.stop="$emit('prev')"
-        class="absolute left-2 top-1/2 -translate-y-1/2 z-10 text-white/50 hover:text-white text-4xl w-12 h-12 flex items-center justify-center">‹</button>
+        class="absolute left-2 top-1/2 -translate-y-1/2 z-10 text-ink/50 hover:text-ink text-4xl w-12 h-12 flex items-center justify-center">‹</button>
       <button v-if="hasNext" @click.stop="$emit('next')"
-        class="absolute right-2 top-1/2 -translate-y-1/2 z-10 text-white/50 hover:text-white text-4xl w-12 h-12 flex items-center justify-center">›</button>
+        class="absolute right-2 top-1/2 -translate-y-1/2 z-10 text-ink/50 hover:text-ink text-4xl w-12 h-12 flex items-center justify-center">›</button>
 
       <!-- Photo container -->
       <div
@@ -66,7 +66,7 @@
           @load="loading = false"
           draggable="false"
         />
-        <div v-if="loading" class="text-white/50 text-sm absolute">Loading...</div>
+        <div v-if="loading" class="text-ink/50 text-sm absolute">Loading...</div>
       </div>
 
       <!-- EXIF sidebar — always-on desktop; popover on mobile -->
@@ -76,51 +76,51 @@
       <Transition name="exif">
         <div
           v-if="photo && (!isMobile || exifOpen)"
-          class="absolute right-0 top-0 bottom-0 w-72 bg-neutral-900/80 backdrop-blur border-l border-white/10 overflow-y-auto pointer-events-auto"
+          class="absolute right-0 top-0 bottom-0 w-72 bg-base/85 backdrop-blur border-l border-line overflow-y-auto pointer-events-auto"
         >
           <div class="p-4 space-y-3 text-sm">
-            <div class="flex items-center justify-between border-b border-white/10 pb-2">
-              <h3 class="text-white/80 font-medium text-base">{{ photo.file_name }}</h3>
-              <button v-if="isMobile" @click="exifOpen = false" class="text-white/50 hover:text-white text-lg leading-none">✕</button>
+            <div class="flex items-center justify-between border-b border-line pb-2">
+              <h3 class="font-display text-ink font-medium text-base">{{ photo.file_name }}</h3>
+              <button v-if="isMobile" @click="exifOpen = false" class="text-ink/50 hover:text-ink text-lg leading-none">✕</button>
             </div>
 
             <div v-if="photo.taken_at" class="flex justify-between">
-              <span class="text-white/40">Date</span>
-              <span class="text-white/80">{{ photo.taken_at }}</span>
+              <span class="text-ink-3">Date</span>
+              <span class="text-ink-2">{{ photo.taken_at }}</span>
             </div>
 
             <div v-if="photo.camera_make" class="flex justify-between">
-              <span class="text-white/40">Camera</span>
-              <span class="text-white/80">{{ photo.camera_make }} {{ photo.camera_model }}</span>
+              <span class="text-ink-3">Camera</span>
+              <span class="text-ink-2">{{ photo.camera_make }} {{ photo.camera_model }}</span>
             </div>
 
             <div v-if="photo.lens_model" class="flex justify-between">
-              <span class="text-white/40">Lens</span>
-              <span class="text-white/80">{{ photo.lens_model }}</span>
+              <span class="text-ink-3">Lens</span>
+              <span class="text-ink-2">{{ photo.lens_model }}</span>
             </div>
 
             <div class="flex justify-between">
-              <span class="text-white/40">Resolution</span>
-              <span class="text-white/80">{{ photo.width }} × {{ photo.height }}</span>
+              <span class="text-ink-3">Resolution</span>
+              <span class="text-ink-2">{{ photo.width }} × {{ photo.height }}</span>
             </div>
 
             <div v-if="photo.focal_length" class="flex justify-between">
-              <span class="text-white/40">Focal</span>
-              <span class="text-white/80">{{ photo.focal_length }}</span>
+              <span class="text-ink-3">Focal</span>
+              <span class="text-ink-2">{{ photo.focal_length }}</span>
             </div>
 
             <div v-if="photo.aperture" class="flex justify-between">
-              <span class="text-white/40">Aperture</span>
-              <span class="text-white/80">{{ photo.aperture }}</span>
+              <span class="text-ink-3">Aperture</span>
+              <span class="text-ink-2">{{ photo.aperture }}</span>
             </div>
 
             <div v-if="photo.iso" class="flex justify-between">
-              <span class="text-white/40">ISO</span>
-              <span class="text-white/80">{{ photo.iso }}</span>
+              <span class="text-ink-3">ISO</span>
+              <span class="text-ink-2">{{ photo.iso }}</span>
             </div>
 
-            <div class="border-t border-white/10 pt-2 mt-2">
-              <p class="text-white/30 text-xs truncate">{{ photo.file_path }}</p>
+            <div class="border-t border-line pt-2 mt-2">
+              <p class="text-ink-3 text-xs truncate">{{ photo.file_path }}</p>
             </div>
 
             <slot name="exif-extra" :photo="photo" />
