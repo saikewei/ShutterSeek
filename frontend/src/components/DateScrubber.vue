@@ -3,26 +3,26 @@
   <div v-if="!embedded && yearGroups.length" class="fixed right-3 top-1/2 -translate-y-1/2 z-40 flex">
     <button
       @click="open = !open"
-      class="self-center w-5 h-20 rounded-l-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white text-[10px] flex items-center justify-center shrink-0"
+      class="self-center w-5 h-20 rounded-l-lg bg-raised hover:bg-surface text-ink-3 hover:text-ink text-[10px] flex items-center justify-center shrink-0"
     >{{ open ? '◀' : '▶' }}</button>
 
-    <div v-if="open" class="bg-neutral-800/95 backdrop-blur rounded-r-xl border border-neutral-700 overflow-hidden w-52 max-h-[60vh] flex flex-col">
+    <div v-if="open" class="bg-raised/95 backdrop-blur rounded-r-xl border border-line overflow-hidden w-52 max-h-[60vh] flex flex-col">
       <div class="flex-1 overflow-y-auto">
         <template v-for="g in yearGroups" :key="g.year">
           <!-- Year header — sticky within panel -->
-          <div class="sticky top-0 z-10 px-4 py-1.5 bg-neutral-800/95 backdrop-blur border-b border-neutral-700/30">
-            <span class="text-base font-semibold text-neutral-200">{{ g.year }}年</span>
+          <div class="sticky top-0 z-10 px-4 py-1.5 bg-raised/95 backdrop-blur border-b border-line/60">
+            <span class="text-base font-semibold font-display text-ink">{{ g.year }}年</span>
           </div>
           <!-- Months -->
           <button
             v-for="m in g.months"
             :key="m.key"
             @click="$emit('jump', m.key)"
-            class="w-full text-left pl-7 pr-4 py-2 transition-colors flex justify-between items-center hover:bg-neutral-700/50"
-            :class="m.key === activeMonth ? 'text-white bg-neutral-700' : 'text-neutral-400'"
+            class="w-full text-left pl-7 pr-4 py-2 transition-colors flex justify-between items-center hover:bg-white/5"
+            :class="m.key === activeMonth ? 'text-accent-strong bg-accent-soft font-medium' : 'text-ink-2'"
           >
             <span class="text-base">{{ m.label }}</span>
-            <span class="text-xs text-neutral-600">{{ m.count }}</span>
+            <span class="text-xs text-ink-3">{{ m.count }}</span>
           </button>
         </template>
       </div>
@@ -30,23 +30,23 @@
   </div>
 
   <!-- Embedded (mobile): always-visible content, no collapse toggle — for use inside a modal -->
-  <div v-else-if="yearGroups.length" class="bg-neutral-800/95 backdrop-blur border border-neutral-700 rounded-xl overflow-hidden w-full max-h-[60vh] flex flex-col">
+  <div v-else-if="yearGroups.length" class="bg-raised/95 backdrop-blur border border-line rounded-xl overflow-hidden w-full max-h-[60vh] flex flex-col">
     <div class="flex-1 overflow-y-auto">
       <template v-for="g in yearGroups" :key="g.year">
         <!-- Year header — sticky within panel -->
-        <div class="sticky top-0 z-10 px-4 py-1.5 bg-neutral-800/95 backdrop-blur border-b border-neutral-700/30">
-          <span class="text-base font-semibold text-neutral-200">{{ g.year }}年</span>
+        <div class="sticky top-0 z-10 px-4 py-1.5 bg-raised/95 backdrop-blur border-b border-line/60">
+          <span class="text-base font-semibold font-display text-ink">{{ g.year }}年</span>
         </div>
         <!-- Months -->
         <button
           v-for="m in g.months"
           :key="m.key"
           @click="$emit('jump', m.key)"
-          class="w-full text-left pl-7 pr-4 py-2 transition-colors flex justify-between items-center hover:bg-neutral-700/50"
-          :class="m.key === activeMonth ? 'text-white bg-neutral-700' : 'text-neutral-400'"
+          class="w-full text-left pl-7 pr-4 py-2 transition-colors flex justify-between items-center hover:bg-white/5"
+          :class="m.key === activeMonth ? 'text-accent-strong bg-accent-soft font-medium' : 'text-ink-2'"
         >
           <span class="text-base">{{ m.label }}</span>
-          <span class="text-xs text-neutral-600">{{ m.count }}</span>
+          <span class="text-xs text-ink-3">{{ m.count }}</span>
         </button>
       </template>
     </div>
