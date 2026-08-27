@@ -1,35 +1,35 @@
 <template>
   <div class="p-4">
     <div class="flex items-center justify-between mb-4">
-      <h1 class="text-base font-medium text-white">邀请码管理</h1>
+      <h1 class="text-base font-medium text-ink">邀请码管理</h1>
       <button
         @click="doCreate"
         :disabled="creating"
-        class="px-3 py-1.5 text-xs rounded-full bg-white text-black font-medium hover:bg-neutral-200 transition-colors disabled:opacity-50"
+        class="btn-primary px-3 py-1.5 text-xs"
       >{{ creating ? '生成中...' : '+ 生成邀请码' }}</button>
     </div>
 
-    <div v-if="newCode" class="mb-4 p-3 bg-amber-500/10 border border-amber-500/40 rounded-lg">
-      <p class="text-xs text-amber-300 mb-1">新邀请码已生成（复制以下链接发送给访客）：</p>
-      <p class="text-sm text-amber-100 font-mono break-all">{{ inviteLink }}</p>
-      <button @click="copyLink" class="mt-2 text-xs text-amber-300 hover:text-amber-200">📋 {{ copied ? '已复制' : '复制链接' }}</button>
+    <div v-if="newCode" class="mb-4 p-3 bg-accent-soft border border-accent/40 rounded-lg">
+      <p class="text-xs text-accent-strong mb-1">新邀请码已生成（复制以下链接发送给访客）：</p>
+      <p class="text-sm text-ink font-mono break-all">{{ inviteLink }}</p>
+      <button @click="copyLink" class="mt-2 text-xs text-accent-strong hover:text-ink">📋 {{ copied ? '已复制' : '复制链接' }}</button>
     </div>
 
-    <div v-if="loading" class="text-center text-neutral-500 py-12 text-sm">Loading...</div>
+    <div v-if="loading" class="text-center text-ink-3 py-12 text-sm">Loading...</div>
     <div v-else class="space-y-2">
-      <div v-for="inv in invites" :key="inv.id" class="flex items-center justify-between px-3 py-2 bg-neutral-800 rounded-lg border border-neutral-700">
+      <div v-for="inv in invites" :key="inv.id" class="flex items-center justify-between px-3 py-2 bg-surface rounded-lg border border-line">
         <div class="flex-1 min-w-0">
-          <p class="text-sm text-white font-mono truncate">{{ inv.code }}</p>
-          <p class="text-xs text-neutral-500">
+          <p class="text-sm text-ink font-mono truncate">{{ inv.code }}</p>
+          <p class="text-xs text-ink-3">
             创建于 {{ formatDate(inv.created_at) }}
             <template v-if="inv.used_by"> · 已使用</template>
             <template v-else-if="isExpired(inv)"> · 已过期</template>
             <template v-else> · 有效期至 {{ formatDate(inv.expires_at) }}</template>
           </p>
         </div>
-        <button v-if="!inv.used_by" @click="doDelete(inv.id)" class="px-2 py-1 text-xs text-red-400 hover:text-red-300">注销</button>
+        <button v-if="!inv.used_by" @click="doDelete(inv.id)" class="px-2 py-1 text-xs text-danger-ink hover:text-danger">注销</button>
       </div>
-      <p v-if="invites.length === 0" class="text-sm text-neutral-500 text-center py-8">暂无邀请码</p>
+      <p v-if="invites.length === 0" class="text-sm text-ink-3 text-center py-8">暂无邀请码</p>
     </div>
   </div>
 </template>
