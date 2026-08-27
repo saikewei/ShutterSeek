@@ -14,7 +14,8 @@
     "source=/volume1/Main/Photos,target=/photos,type=bind,readonly",
     "source=/volume1/Main/Photos/uploads,target=/photos_uploads,type=bind",
     "source=shutterseek-codex-data,target=/home/vscode/.codex,type=volume",
-    "source=shutterseek-claude-data,target=/home/vscode/.claude,type=volume"
+    "source=shutterseek-claude-data,target=/home/vscode/.claude,type=volume",
+    "source=shutterseek-npm-data,target=/home/vscode/.npm,type=volume"
   ],
   "customizations": {
     "vscode": {
