@@ -3,14 +3,14 @@
     <!-- Filter bar（单页模式无筛选语义，整栏隐藏） -->
     <div
       v-if="!singlePage"
-      class="sticky z-20 flex items-center justify-between px-2 py-1.5 bg-neutral-950/90 backdrop-blur border-b border-neutral-800"
+      class="sticky z-20 flex items-center justify-between px-2 py-1.5 bg-base/90 backdrop-blur border-b border-line"
       :style="{ top: (stickyOffset || 0) + 'px' }"
     >
       <div class="flex items-center gap-1.5">
         <button
           @click="filterOpen = true"
           class="relative px-3 py-1 text-xs rounded-full transition-colors"
-          :class="hasActiveFilter ? 'bg-neutral-200 text-black' : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'"
+          :class="hasActiveFilter ? 'bg-ink text-[#1C1208]' : 'bg-surface text-ink-2 hover:bg-line-strong hover:text-ink'"
         >
           筛选
           <span v-if="hasActiveFilter" class="ml-1 text-[10px]">●</span>
@@ -19,36 +19,36 @@
         <button
           v-if="isGuestMobile && !selectMode && !singlePage"
           @click="monthPickerOpen = true"
-          class="px-3 py-1 text-xs rounded-full bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors"
+          class="px-3 py-1 text-xs rounded-full bg-surface text-ink-2 hover:bg-line-strong hover:text-ink transition-colors"
         >月份</button>
 
         <button
           v-if="isAdmin && !selectMode"
           @click="enterSelectMode"
-          class="px-3 py-1 text-xs rounded-full bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors"
+          class="px-3 py-1 text-xs rounded-full bg-surface text-ink-2 hover:bg-line-strong hover:text-ink transition-colors"
         >选择</button>
 
         <button
           v-if="!selectMode && (!atTop || hasNewer)"
           @click="scrollToTop"
-          class="px-3 py-1 text-xs rounded-full bg-neutral-700 text-neutral-300 hover:bg-neutral-600 hover:text-white transition-colors"
+          class="px-3 py-1 text-xs rounded-full bg-line-strong text-ink-2 hover:text-ink transition-colors"
         >{{ hasNewer ? '返回最新' : '↑ 顶部' }}</button>
 
-        <span v-if="selectMode" class="text-xs text-neutral-400">
+        <span v-if="selectMode" class="text-xs text-ink-2">
           已选 {{ selected.size }} 张
           <span v-if="rangeLoading"> · 选择中...</span>
-          <span v-if="rangeError" class="text-xs text-red-400 ml-2">{{ rangeError }}</span>
+          <span v-if="rangeError" class="text-xs text-danger-ink ml-2">{{ rangeError }}</span>
         </span>
       </div>
 
       <div v-if="selectMode" class="flex items-center gap-1.5">
-        <button v-if="isAdmin && removeFromAlbumId !== undefined" @click="confirmRemoveOpen = true" class="px-3 py-1 text-xs rounded-full bg-red-600/80 text-white hover:bg-red-600 transition-colors">
+        <button v-if="isAdmin && removeFromAlbumId !== undefined" @click="confirmRemoveOpen = true" class="btn-danger-soft px-3 py-1 text-xs">
           从相册删除
         </button>
-        <button v-if="isAdmin" @click="openAlbumPicker" class="px-3 py-1 text-xs rounded-full bg-white text-black font-medium hover:bg-neutral-200 transition-colors">
+        <button v-if="isAdmin" @click="openAlbumPicker" class="px-3 py-1 text-xs rounded-full bg-accent text-[#1C1208] font-semibold hover:bg-accent-strong transition-colors">
           添加到相册
         </button>
-        <button @click="exitSelectMode" class="px-3 py-1 text-xs rounded-full text-neutral-400 hover:text-white transition-colors">取消</button>
+        <button @click="exitSelectMode" class="px-3 py-1 text-xs rounded-full text-ink-3 hover:text-ink transition-colors">取消</button>
       </div>
 
       <!-- Day navigation (sticky filter bar, always visible; compact on mobile) -->
@@ -56,17 +56,17 @@
         <button
           v-if="isAdmin"
           @click="$emit('upload')"
-          class="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors whitespace-nowrap"
+          class="px-2 py-1 rounded bg-surface hover:bg-line-strong text-ink-2 hover:text-ink transition-colors whitespace-nowrap"
           title="上传照片"
         >上传</button>
         <button
           @click="prevDay"
-          class="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors whitespace-nowrap"
+          class="px-2 py-1 rounded bg-surface hover:bg-line-strong text-ink-2 hover:text-ink transition-colors whitespace-nowrap"
           title="前一天"
         >{{ isGuestMobile ? '◀' : '◀ 前一天' }}</button>
         <button
           @click="nextDay"
-          class="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors whitespace-nowrap"
+          class="px-2 py-1 rounded bg-surface hover:bg-line-strong text-ink-2 hover:text-ink transition-colors whitespace-nowrap"
           title="后一天"
         >{{ isGuestMobile ? '▶' : '后一天 ▶' }}</button>
       </div>
@@ -76,19 +76,20 @@
     <div v-for="group in groupCells" :key="group.label || 'all'">
       <div
         v-if="group.label"
-        class="sticky z-10 bg-neutral-950/95 backdrop-blur px-2 py-2 text-sm font-semibold tracking-wide border-b border-neutral-800"
+        class="sticky z-10 bg-base/95 backdrop-blur px-2 h-[46px] flex items-center gap-2.5 border-b border-line"
         :style="{ top: (stickyOffset || 0) + 37 + 'px' }"
         :data-date="group.label"
         :data-date-iso="group.cells[0]?.photo?.taken_at?.slice(0, 10) || ''"
       >
-        <span class="border-l-2 border-neutral-500 pl-2.5 text-neutral-200">{{ group.label }}</span>
+        <span class="date-header border-l-2 border-accent pl-2.5">{{ group.label }}</span>
+        <span v-if="groupCount(group.label)" class="text-xs text-ink-3">{{ groupCount(group.label) }} 张</span>
       </div>
       <div class="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-1 p-1">
         <div
           v-for="cell in group.cells"
           :key="cell.photo.id"
-          class="group cursor-pointer relative rounded-lg overflow-hidden bg-neutral-800"
-          :class="{ 'ring-2 ring-white': selectMode && selected.has(cell.photo.id) }"
+          class="group cursor-pointer relative rounded-[7px] overflow-hidden bg-surface"
+          :class="{ 'ring-2 ring-accent shadow-[0_0_14px_rgba(201,136,98,0.35)]': selectMode && selected.has(cell.photo.id) }"
           @click="onCellClick(cell, $event)"
           @contextmenu.prevent="$emit('photoContextmenu', cell.photo, $event)"
         >
@@ -103,9 +104,9 @@
           <!-- Selection checkbox -->
           <div v-if="selectMode" class="absolute top-1.5 left-1.5">
             <div class="w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors"
-              :class="selected.has(cell.photo.id) ? 'bg-white border-white' : 'border-white/60 bg-black/30'"
+              :class="selected.has(cell.photo.id) ? 'bg-accent border-accent' : 'border-white/60 bg-black/30'"
             >
-              <span v-if="selected.has(cell.photo.id)" class="text-black text-xs">✓</span>
+              <span v-if="selected.has(cell.photo.id)" class="text-[#1C1208] text-xs">✓</span>
             </div>
           </div>
 
@@ -114,39 +115,39 @@
             <span
               v-for="tag in albumTags(cell.photo).slice(0, 2)"
               :key="tag"
-              class="px-1.5 py-0.5 text-[10px] rounded bg-black/60 text-neutral-300 truncate max-w-[80px]"
+              class="px-1.5 py-0.5 text-[10px] rounded bg-black/60 text-ink-2 backdrop-blur-[2px] truncate max-w-[80px]"
             >{{ tag }}</span>
-            <span v-if="albumTags(cell.photo).length > 2" class="text-[10px] text-neutral-500">+{{ albumTags(cell.photo).length - 2 }}</span>
+            <span v-if="albumTags(cell.photo).length > 2" class="text-[10px] text-ink-3">+{{ albumTags(cell.photo).length - 2 }}</span>
           </div>
 
           <!-- 连拍折叠角标 / 展开收起按钮 -->
           <div v-if="cell.collapsed" class="absolute top-1 right-1">
-            <span class="px-1.5 py-0.5 text-[10px] rounded bg-black/60 text-neutral-200">×{{ cell.burstCount }}</span>
+            <span class="px-1.5 py-0.5 text-[10px] rounded bg-black/60 text-ink-2 backdrop-blur-[2px]">×{{ cell.burstCount }}</span>
           </div>
           <button
             v-else-if="cell.collapseFirst"
-            class="absolute top-1 right-1 px-1.5 py-0.5 text-[10px] rounded bg-black/60 text-neutral-200 hover:bg-neutral-600 transition-colors"
+            class="absolute top-1 right-1 px-1.5 py-0.5 text-[10px] rounded bg-black/60 text-ink-2 backdrop-blur-[2px] hover:bg-black/80 hover:text-ink transition-colors"
             title="收起连拍"
             @click.stop="toggleBurst(cell.burstId!)"
           >▴ 收起</button>
 
-          <div class="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
-            <p class="text-xs truncate text-neutral-400">{{ cell.photo.file_name }}</p>
+          <div class="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-[#0c0a09]/90 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+            <p class="text-xs truncate text-ink">{{ cell.photo.file_name }}</p>
             <p class="text-xs truncate">{{ cell.photo.camera_make }} {{ cell.photo.camera_model }}</p>
-            <p class="text-xs text-neutral-300">{{ cell.photo.focal_length }} {{ cell.photo.aperture }} ISO{{ cell.photo.iso }}</p>
-            <p class="text-xs text-neutral-400">{{ cell.photo.width }}×{{ cell.photo.height }}</p>
-            <p v-if="cell.burstCount" class="text-xs text-neutral-300">连拍 ×{{ cell.burstCount }}</p>
+            <p class="text-xs text-ink-2">{{ cell.photo.focal_length }} {{ cell.photo.aperture }} ISO{{ cell.photo.iso }}</p>
+            <p class="text-xs text-ink-2">{{ cell.photo.width }}×{{ cell.photo.height }}</p>
+            <p v-if="cell.burstCount" class="text-xs text-ink-2">连拍 ×{{ cell.burstCount }}</p>
           </div>
           <slot name="photo-action" :photo="cell.photo" />
         </div>
       </div>
     </div>
 
-    <div ref="sentinelTop" class="py-6 text-center text-neutral-500 text-sm">
+    <div ref="sentinelTop" class="py-6 text-center text-ink-3 text-sm">
       <span v-if="loadingNewer" class="text-xs">加载中...</span>
     </div>
 
-    <div ref="sentinel" class="py-12 text-center text-neutral-500 text-sm">
+    <div ref="sentinel" class="py-12 text-center text-ink-3 text-sm">
       <span v-if="loading && photos.length === 0">Loading...</span>
       <span v-else-if="!hasMore">— End of {{ total.toLocaleString() }} photos —</span>
     </div>
@@ -169,18 +170,18 @@
     <Teleport to="body">
       <div v-if="filterOpen" class="fixed inset-0 z-50 flex items-center justify-center">
         <div class="absolute inset-0 bg-black/60" @click="filterOpen = false" />
-        <div class="relative bg-neutral-800 rounded-xl p-5 w-72 shadow-xl border border-neutral-700">
-          <h2 class="text-sm font-medium text-white mb-4">筛选设置</h2>
+        <div class="relative bg-raised rounded-xl p-5 w-72 shadow-xl border border-line">
+          <h2 class="text-sm font-medium text-ink mb-4">筛选设置</h2>
 
           <div class="space-y-4">
             <div>
-              <label class="text-xs text-neutral-400 block mb-2">日期分组</label>
+              <label class="text-xs text-ink-3 block mb-2">日期分组</label>
               <div class="flex gap-1">
                 <button
                   v-for="opt in [{k:'day',l:'按日'},{k:'month',l:'按月'}]"
                   :key="opt.k"
                   @click="groupBy = opt.k as 'day'|'month'"
-                  :class="groupBy === opt.k ? 'bg-neutral-600 text-white' : 'bg-neutral-700 text-neutral-400 hover:text-white'"
+                  :class="groupBy === opt.k ? 'bg-line-strong text-ink' : 'bg-surface text-ink-3 hover:text-ink'"
                   class="flex-1 py-1.5 text-xs rounded-lg transition-colors"
                 >{{ opt.l }}</button>
               </div>
@@ -188,12 +189,12 @@
 
             <label v-if="isAdmin" class="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" v-model="uncategorizedOnly" class="rounded accent-white" />
-              <span class="text-xs text-neutral-300">仅显示未归类照片</span>
+              <span class="text-xs text-ink-2">仅显示未归类照片</span>
             </label>
           </div>
 
           <div class="flex justify-end mt-4">
-            <button @click="filterOpen = false" class="px-4 py-1.5 text-xs rounded-full bg-white text-black font-medium hover:bg-neutral-200">关闭</button>
+            <button @click="filterOpen = false" class="px-4 py-1.5 text-xs rounded-full bg-accent text-[#1C1208] font-semibold hover:bg-accent-strong">关闭</button>
           </div>
         </div>
       </div>
@@ -206,26 +207,26 @@
     <Teleport to="body">
       <div v-if="albumPickerOpen" class="fixed inset-0 z-50 flex items-center justify-center">
         <div class="absolute inset-0 bg-black/60" @click="albumPickerOpen = false" />
-        <div class="relative bg-neutral-800 rounded-xl p-5 w-80 shadow-xl border border-neutral-700 max-h-[70vh] flex flex-col">
-          <h2 class="text-sm font-medium text-white mb-3">添加到相册</h2>
+        <div class="relative bg-raised rounded-xl p-5 w-80 shadow-xl border border-line max-h-[70vh] flex flex-col">
+          <h2 class="text-sm font-medium text-ink mb-3">添加到相册</h2>
 
           <div class="flex-1 overflow-y-auto space-y-1 mb-3">
             <button
               v-for="album in albumList"
               :key="album.id"
               @click="doBatchAdd(album.id)"
-              class="w-full text-left px-3 py-2 rounded-lg text-sm text-neutral-300 hover:bg-neutral-700 hover:text-white transition-colors flex justify-between"
+              class="w-full text-left px-3 py-2 rounded-lg text-sm text-ink-2 hover:bg-line-strong hover:text-ink transition-colors flex justify-between"
             >
               <span>{{ album.title }}</span>
-              <span class="text-xs text-neutral-500">{{ album.photo_count }}</span>
+              <span class="text-xs text-ink-3">{{ album.photo_count }}</span>
             </button>
           </div>
 
-          <div v-if="addingResult" class="text-xs text-neutral-400 mb-2">
+          <div v-if="addingResult" class="text-xs text-ink-2 mb-2">
             {{ addingResult }}
           </div>
 
-          <button @click="albumPickerOpen = false" class="text-xs text-neutral-500 hover:text-white self-end">关闭</button>
+          <button @click="albumPickerOpen = false" class="text-xs text-ink-3 hover:text-ink self-end">关闭</button>
         </div>
       </div>
     </Teleport>
@@ -234,12 +235,12 @@
     <Teleport to="body">
       <div v-if="confirmRemoveOpen" class="fixed inset-0 z-50 flex items-center justify-center">
         <div class="absolute inset-0 bg-black/60" @click="confirmRemoveOpen = false" />
-        <div class="relative bg-neutral-800 rounded-xl p-5 w-80 shadow-xl border border-neutral-700">
-          <h2 class="text-sm font-medium text-white mb-1">从相册移除</h2>
-          <p class="text-xs text-neutral-400 mb-4">确定从相册移除选中的 {{ selected.size }} 张照片吗？</p>
+        <div class="relative bg-raised rounded-xl p-5 w-80 shadow-xl border border-line">
+          <h2 class="text-sm font-medium text-ink mb-1">从相册移除</h2>
+          <p class="text-xs text-ink-2 mb-4">确定从相册移除选中的 {{ selected.size }} 张照片吗？</p>
           <div class="flex justify-end gap-2">
-            <button @click="confirmRemoveOpen = false" class="px-3 py-1.5 text-xs rounded-full text-neutral-400 hover:text-white">取消</button>
-            <button @click="doRemoveFromAlbum" :disabled="removingFromAlbum" class="px-4 py-1.5 text-xs rounded-full bg-red-600 text-white font-medium hover:bg-red-500 disabled:opacity-50">
+            <button @click="confirmRemoveOpen = false" class="px-3 py-1.5 text-xs rounded-full text-ink-3 hover:text-ink">取消</button>
+            <button @click="doRemoveFromAlbum" :disabled="removingFromAlbum" class="btn-danger px-4 py-1.5 text-xs">
               {{ removingFromAlbum ? '移除中...' : '移除' }}
             </button>
           </div>
@@ -253,8 +254,8 @@
         <div class="absolute inset-0 bg-black/60" @click="monthPickerOpen = false" />
         <div class="relative w-full max-h-[70vh] flex flex-col px-3 pb-3">
           <div class="mb-2 flex items-center justify-between">
-            <h2 class="text-sm font-medium text-white">跳转到月份</h2>
-            <button @click="monthPickerOpen = false" class="text-xs text-neutral-400 hover:text-white">关闭</button>
+            <h2 class="text-sm font-medium text-ink">跳转到月份</h2>
+            <button @click="monthPickerOpen = false" class="text-xs text-ink-3 hover:text-ink">关闭</button>
           </div>
           <DateScrubber embedded :dates="datePoints" :active-month="activeMonth" @jump="onMonthJump" />
         </div>
@@ -426,6 +427,21 @@ function dateLabel(iso: string): string {
   const m = d.getMonth() + 1
   if (groupBy.value === 'month') return `${y}年${m}月`
   return `${y}年${m}月${d.getDate()}日`
+}
+
+// 日期头「N 张」：从已加载的日期分布取数（day→当日计数；month→当月合计），纯展示
+function groupCount(label: string): number {
+  if (!label) return 0
+  if (groupBy.value === 'month') {
+    const m = label.match(/^(\d+)年(\d+)月$/)
+    if (!m) return 0
+    const key = `${m[1]}-${m[2].padStart(2, '0')}`
+    return allDates.value.filter(d => d.date.startsWith(key)).reduce((s, d) => s + d.count, 0)
+  }
+  const m = label.match(/^(\d+)年(\d+)月(\d+)日$/)
+  if (!m) return 0
+  const key = `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`
+  return allDates.value.find(d => d.date === key)?.count || 0
 }
 
 function albumTags(photo: Photo): string[] {
@@ -742,7 +758,7 @@ async function loadPage() {
       jumpMonth.value = ''
       jumpDate.value = ''
       if (headCount.value > 0) {
-        const headerOffset = (props.stickyOffset || 0) + 37 + 38
+        const headerOffset = (props.stickyOffset || 0) + 37 + 46
         const hc = headCount.value
 
         const scrollParent = document.querySelector('.overflow-auto') as HTMLElement
