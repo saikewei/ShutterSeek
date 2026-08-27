@@ -5,6 +5,7 @@
   },
   // 容器首次启动后自动在容器内部初始化并拉取依赖
   "postStartCommand": "sudo chown -R $(id -u):$(id -g) ~/.codex && go mod tidy",
+  "postCreateCommand": "sudo npm install -g @anthropic-ai/claude-code --foreground-scripts || true",
   // 网络 & 挂载
   "runArgs": [
     "--network=postgres-main_default"
@@ -12,7 +13,8 @@
   "mounts": [
     "source=/volume1/Main/Photos,target=/photos,type=bind,readonly",
     "source=/volume1/Main/Photos/uploads,target=/photos_uploads,type=bind",
-    "source=shutterseek-codex-data,target=/home/vscode/.codex,type=volume"
+    "source=shutterseek-codex-data,target=/home/vscode/.codex,type=volume",
+    "source=shutterseek-claude-data,target=/home/vscode/.claude,type=volume"
   ],
   "customizations": {
     "vscode": {
