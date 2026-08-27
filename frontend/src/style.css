@@ -7,7 +7,7 @@
    ──────────────────────────────────────────────── */
 @theme {
   /* 色板：三层暖灰底 + 细线 + 暖白文字 + 暖赭强调 */
-  --color-base: #111010;         /* 页面底 */
+  --color-canvas: #111010;         /* 页面底 */
   --color-raised: #161514;       /* 侧栏/面板/吸顶栏 */
   --color-surface: #1D1B19;      /* 输入框/卡片/弹窗内层 */
   --color-line: #2B2724;         /* 常规分隔线 */
@@ -33,7 +33,7 @@
     font-family: var(--font-body);
   }
   body {
-    background: var(--color-base);
+    background: var(--color-canvas);
     color: var(--color-ink);
   }
 

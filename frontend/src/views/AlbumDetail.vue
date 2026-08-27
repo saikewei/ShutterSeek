@@ -1,6 +1,6 @@
 <template>
   <div>
-    <header class="sticky top-0 z-30 bg-base/80 backdrop-blur border-b border-line px-4 py-2 flex items-center gap-3">
+    <header class="sticky top-0 z-30 bg-canvas/80 backdrop-blur border-b border-line px-4 py-2 flex items-center gap-3">
       <button @click="$router.push('/albums')" class="text-ink-3 hover:text-ink text-lg transition-colors">←</button>
       <div class="flex-1">
         <h1 class="text-sm font-medium font-display text-ink">{{ album?.title || 'Album' }}</h1>

@@ -1,5 +1,5 @@
 <template>
-  <div class="h-full flex flex-col bg-base text-ink">
+  <div class="h-full flex flex-col bg-canvas text-ink">
     <!-- 搜索条 -->
     <div class="sticky top-0 z-30 px-4 py-3 border-b border-line bg-raised/95 backdrop-blur">
       <div class="flex items-center gap-2">
