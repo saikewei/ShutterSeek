@@ -13,7 +13,6 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     env:
-      DOCKER_BUILDKIT: 0
       # 阿里云 ACR（可选）：配了这 4 个 Secret 才会额外推一份到国内仓库，
       # NAS 侧再从 ACR 拉（GHCR 从国内实测只有 ~0.04MB/s）。
       ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
@@ -39,24 +38,35 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 两个镜像各自用独立的 gha 缓存 scope；mode=max 连中间层（前端构建、go 依赖）一起缓存。
+      # load: true 让镜像同时落到本地 daemon，后面推 ACR 那步沿用 docker tag/push 的既有路径。
       - name: Build and push
-        run: |
-          docker build \
-            -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
-            -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
-            .
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          load: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          cache-from: type=gha,scope=app
+          cache-to: type=gha,mode=max,scope=app
 
       - name: Build and push embedding image
-        run: |
-          docker build \
-            -t ${{ env.REGISTRY }}/${{ env.EMBEDDING_IMAGE }}:latest \
-            -t ${{ env.REGISTRY }}/${{ env.EMBEDDING_IMAGE }}:${{ github.sha }} \
-            -f embed/Dockerfile \
-            embed
-          docker push ${{ env.REGISTRY }}/${{ env.EMBEDDING_IMAGE }}:latest
-          docker push ${{ env.REGISTRY }}/${{ env.EMBEDDING_IMAGE }}:${{ github.sha }}
+        uses: docker/build-push-action@v6
+        with:
+          context: embed
+          file: embed/Dockerfile
+          push: true
+          load: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.EMBEDDING_IMAGE }}:latest
+            ${{ env.REGISTRY }}/${{ env.EMBEDDING_IMAGE }}:${{ github.sha }}
+          cache-from: type=gha,scope=embed
+          cache-to: type=gha,mode=max,scope=embed
 
       # ── 可选：同步到阿里云 ACR（国内拉取快）──────────────────────────
       # 未配置 ACR_* Secret 时这几步自动跳过，行为与之前完全一致。
