@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -18,9 +19,28 @@ import (
 	"shutterseek/internal/service"
 )
 
+// testDSN 从 SHUTTERSEEK_* 环境变量拼 DSN；缺少凭据时返回空串（调用方 skip）。
+// 与 internal/service/auth_test.go 的同名辅助保持一致，凭据绝不写进代码。
+func testDSN() string {
+	user := os.Getenv("SHUTTERSEEK_DB_USER")
+	pass := os.Getenv("SHUTTERSEEK_DB_PASSWORD")
+	name := os.Getenv("SHUTTERSEEK_DB_NAME")
+	host := os.Getenv("SHUTTERSEEK_DB_HOST")
+	if host == "" {
+		host = "postgres-main"
+	}
+	if user == "" || pass == "" || name == "" {
+		return ""
+	}
+	return fmt.Sprintf("postgres://%s:%s@%s:5432/%s?sslmode=disable", user, pass, host, name)
+}
+
 func setupHandler(t *testing.T) *Handler {
 	t.Helper()
-	dsn := "postgres://photo_user:PhotoHyc65319436@postgres-main:5432/photo_search?sslmode=disable"
+	dsn := testDSN()
+	if dsn == "" {
+		t.Skip("database env vars not set (SHUTTERSEEK_DB_USER etc.)")
+	}
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("connect db: %v", err)

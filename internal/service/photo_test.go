@@ -13,7 +13,11 @@ import (
 
 func setupPhotoSvc(t *testing.T) *PhotoService {
 	t.Helper()
-	db, err := gorm.Open(postgres.Open("postgres://photo_user:PhotoHyc65319436@postgres-main:5432/photo_search?sslmode=disable"), &gorm.Config{})
+	dsn := testDSN()
+	if dsn == "" {
+		t.Skip("database env vars not set (SHUTTERSEEK_DB_USER etc.)")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("connect db: %v", err)
 	}
