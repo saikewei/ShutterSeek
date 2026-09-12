@@ -43,8 +43,9 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:8080',
         changeOrigin: true,
-        timeout: 60000,
-        proxyTimeout: 60000,
+        // 批量上传：一次请求可能带几百 MB，dev 代理别提前掐断
+        timeout: 300000,
+        proxyTimeout: 300000,
         configure: (proxy) => {
           proxy.on('proxyReq', (proxyReq, req) => {
             req.headers['connection'] = 'keep-alive'

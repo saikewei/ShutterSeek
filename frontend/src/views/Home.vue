@@ -1,19 +1,16 @@
 <template>
   <div>
-    <PhotoGrid ref="gridRef" :fetch-fn="wrapFetch" :album-titles="albumTitles" :range-fn="rangeFn" @upload="uploadOpen = true" />
-    <UploadDialog :open="uploadOpen" @close="uploadOpen = false" @done="gridRef?.reload()" />
+    <PhotoGrid ref="gridRef" :fetch-fn="wrapFetch" :album-titles="albumTitles" :range-fn="rangeFn" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import PhotoGrid from '@/components/PhotoGrid.vue'
-import UploadDialog from '@/components/UploadDialog.vue'
 import { fetchPhotos, fetchPhotoRange } from '@/api/photos'
 import { fetchAlbums } from '@/api/albums'
 
 const albumTitles = ref<Record<number, string>>({})
-const uploadOpen = ref(false)
 const gridRef = ref<InstanceType<typeof PhotoGrid> | null>(null)
 
 onMounted(async () => {

@@ -31,8 +31,12 @@ export async function detectCapability(): Promise<'webgpu-fp16' | 'webgpu' | 'wa
   }
 }
 
-/** 预处理：短边 224（高质缩放）→ CenterCrop → CLIP 归一化 → fp16 [1,3,224,224]。 */
-export function preprocess(bitmap: ImageBitmap): any {
+/** 预处理：短边 224（高质缩放）→ CenterCrop → CLIP 归一化 → fp16 [3,224,224]。
+ *
+ * 注意：这一段必须与建库时的 Python 管线逐位一致，任何改动都会让新照片的
+ * 向量与库里 6.7 万条既有向量不在同一分布上——不要动数值。
+ */
+export function preprocessToTensor(bitmap: ImageBitmap): any {
   const w = bitmap.width
   const h = bitmap.height
   let nw: number
@@ -67,14 +71,27 @@ export function preprocess(bitmap: ImageBitmap): any {
   return out
 }
 
-/** 推理并返回 1024 维 float32 向量（模型已 L2 归一化）。 */
-export async function embed(bitmap: ImageBitmap): Promise<Float32Array> {
+/** 兼容包装：从位图直接得到预处理张量。 */
+export function preprocess(bitmap: ImageBitmap): any {
+  return preprocessToTensor(bitmap)
+}
+
+/** 推理并返回 1024 维 float32 向量（模型已 L2 归一化）。
+ *
+ * 只接受预处理好的张量：这样解码阶段一结束就能 bitmap.close()，
+ * 全尺寸位图不必跨越流水线存活（32MP 位图 ≈ 130MB）。
+ */
+export async function embedTensor(input: any): Promise<Float32Array> {
   const session = await getSession()
-  const input = preprocess(bitmap)
   const feeds: Record<string, ort.Tensor> = {
     pixel_values: new ort.Tensor('float16', input, [1, 3, SIZE, SIZE]),
   }
   const results = await session.run(feeds)
   const out = results.embedding as ort.Tensor
   return new Float32Array(out.data as any)
+}
+
+/** 兼容包装：解码 + 推理一步到位。 */
+export async function embed(bitmap: ImageBitmap): Promise<Float32Array> {
+  return embedTensor(preprocessToTensor(bitmap))
 }

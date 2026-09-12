@@ -55,12 +55,16 @@ const loading = ref(true)
 const loadingMore = ref(false)
 
 function label(t: string): string {
-  return t === 'login' ? '登录' : t === 'session' ? 'JWT会话' : '注销'
+  if (t === 'login') return '登录'
+  if (t === 'session') return 'JWT会话'
+  if (t === 'upload') return '上传'
+  return '注销'
 }
 
 function badgeClass(t: string): string {
   if (t === 'login') return 'bg-success/15 text-success'
   if (t === 'session') return 'bg-accent-soft text-accent-strong'
+  if (t === 'upload') return 'bg-white/5 text-ink-2'
   return 'bg-line-strong/40 text-ink-2'
 }
 

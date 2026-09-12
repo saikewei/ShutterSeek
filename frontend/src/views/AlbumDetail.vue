@@ -7,6 +7,11 @@
         <p class="text-xs text-ink-3">{{ album?.photo_count?.toLocaleString() || 0 }} photos</p>
       </div>
       <button
+        v-if="isAdmin"
+        @click="$router.push('/upload?album=' + albumId)"
+        class="shrink-0 btn-ghost px-3 py-1.5 text-xs"
+      >上传到此相册</button>
+      <button
         @click="$router.push('/search?album_id=' + albumId)"
         class="shrink-0 text-xs text-ink-2 hover:text-ink border border-line-strong rounded-lg px-3 py-1.5 transition-colors"
       >搜索相册</button>
@@ -23,9 +28,7 @@
       :remove-from-album-id="albumId"
       @photo-contextmenu="(photo, event) => isAdmin && onContextMenu(photo, event)"
       @removed-from-album="refreshAlbum"
-      @upload="uploadOpen = true"
     />
-    <UploadDialog :open="uploadOpen" @close="uploadOpen = false" @done="onUploadDone" />
 
     <!-- Right-click context menu -->
     <Teleport to="body">
@@ -56,7 +59,6 @@ import PhotoGrid from '@/components/PhotoGrid.vue'
 import { fetchAlbum, fetchAlbumDates, updateAlbum, removeAlbumPhoto } from '@/api/albums'
 import { fetchPhotos, fetchPhotoRange } from '@/api/photos'
 import type { Photo } from '@/api/photos'
-import UploadDialog from '@/components/UploadDialog.vue'
 import { isAdmin } from '@/stores/auth'
 
 const route = useRoute()
@@ -64,12 +66,6 @@ const albumId = Number(route.params.id)
 const album = ref<any>(null)
 const gridRef = ref<InstanceType<typeof PhotoGrid> | null>(null)
 const albumTitles: Record<number, string> = {}
-const uploadOpen = ref(false)
-
-function onUploadDone() {
-  gridRef.value?.reload()
-  refreshAlbum()
-}
 
 // Load album info
 function refreshAlbum() {

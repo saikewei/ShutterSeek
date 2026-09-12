@@ -37,6 +37,18 @@
         <h1 class="font-display text-base font-medium tracking-wide text-ink">ShutterSeek</h1>
         <p class="text-[9px] tracking-[0.2em] uppercase text-ink-3 mt-1">Private Archive</p>
       </div>
+      <div v-if="isAdmin" class="px-3 pb-2">
+        <router-link
+          to="/upload"
+          class="btn-primary w-full px-3 py-2 text-sm gap-1.5"
+          :class="$route.path === '/upload' ? 'ring-2 ring-accent/60' : ''"
+        >
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5V4.5m0 0L7.5 9M12 4.5 16.5 9M4.5 19.5h15" />
+          </svg>
+          上传照片
+        </router-link>
+      </div>
       <div class="flex-1 py-2">
         <router-link
           to="/"
