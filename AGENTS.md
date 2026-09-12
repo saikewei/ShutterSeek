@@ -22,23 +22,30 @@ PostgreSQL + pgvector（1024 维）存元数据与向量；FastAPI + ONNX Runtim
 - **integration 测试直连生产库**：跑之前 `set -a; source .env.local; set +a`，且测试**必须自清理**数据。
 - **密钥**只通过 `SHUTTERSEEK_*` 环境变量 / `.env.local`（已 gitignore）注入：绝不写进代码、`config.yaml`、日志或提交。
 - **Git 红线**：**提交只落在 `dev`**；`main` 只接受合并、**禁止直接提交**（由 `scripts/git-hooks/pre-commit` 强制）；
-  不推送、不合并 `main`（合并需用户确认）、不改写历史。
+  **合并/推送 `main` 必须用户确认**、不改写历史；**`dev` 自查无敏感信息后可直接推**（见 §3）。
 - 以下目录**不进 git**：`docs/`、`tmp/`、`models/`、`thumbnails/`、`uploads/`、`certs/`、`.claude/`、`.env*`。
-- 不要在 NAS 宿主机上执行 `docker compose` 等改变共享状态的命令——部署由 CI 完成。
+- 部署默认由 CI 完成，不要在 NAS 宿主机上手动 `docker compose` 改变线上状态；仅当 CI 不可用时作为例外，
+  且事后说明改了什么、怎么验证的。
 
 ## 3. 工作流与提交
 
-- **分支纪律：所有提交都只落在 `dev`；`main` 只接受合并，任何情况下都不要直接往 `main` 提交**
-  （合并进 `main` 前需用户确认）。
-- 该纪律由仓库内钩子**强制**：`scripts/git-hooks/pre-commit`（靠 `git config core.hooksPath scripts/git-hooks` 生效）
-  拒绝 `main` 上的直接 `commit` / `cherry-pick` / `revert` / `amend`，放行合并提交。
-  新克隆需执行一次 `git config core.hooksPath scripts/git-hooks`；`--no-verify` 可绕过，但规则不允许。
-  本仓库 `core.fileMode=false`：改动该脚本后若 git 把模式记回 `100644`，用
+- 分支纪律由仓库内钩子**强制**：`scripts/git-hooks/pre-commit`（`git config core.hooksPath scripts/git-hooks` 生效）
+  拒绝 `main` 上的直接 `commit`/`cherry-pick`/`revert`/`amend`，放行合并提交；新克隆需执行一次该 config，
+  `--no-verify` 可绕过但规则不允许。`core.fileMode=false`：改动该脚本后若模式被记回 `100644`，用
   `git update-index --chmod=+x scripts/git-hooks/pre-commit` 修正，否则克隆方的钩子不生效。
 - 一小步一提交，消息前缀：`feat | fix | perf | test | ci | style | docs | chore`。
-- 完成一个小功能/修复后即可提交，**但不要推送**（push `main` 会触发 CI 部署）。
-- CI（`.github/workflows/deploy.yml`）：push `main` → 跑单测 → 构建并推送主镜像与 sidecar 镜像到 GHCR
-  → Tailscale → NAS 上 `docker compose pull && docker compose up -d`。
+- **推送规则**：
+  - `dev`：**自查无敏感信息后直接推，不必询问用户**。自查 = `git diff origin/dev..dev` 过一遍，
+    且 `git diff origin/dev..dev | grep -iE 'password|secret|token|BEGIN .*PRIVATE|ghp_|github_pat_'` 无命中
+    （命中的若是变量名或占位符可放行）。
+  - `main`：**只合并、且必须用户确认**——推送 main 会触发 CI 部署。
+  - 容器内到 `github.com:443` 被阻断（`api.github.com`、`ssh.github.com:443` 通），推送经 Mac 中转：容器
+    `git bundle create tmp/ss.bundle <branch>` → Mac 上 `ssh nas 'cat …' > /tmp/ss.bundle`、`git clone -b <branch>`、
+    `remote set-url origin ssh://git@ssh.github.com:443/saikewei/ShutterSeek.git`、`git push origin <branch>`，收尾删临时文件。
+    容器内 `git fetch` 不可用，远端状态用 `gh api /repos/saikewei/ShutterSeek/git/ref/heads/<branch>` 核对，
+    必要时 `git update-ref` 同步本地跟踪引用。
+- CI（`.github/workflows/deploy.yml`）：push `main` → 单测 → 构建两镜像（GHA 层缓存）→ 推 GHCR + 阿里云 ACR →
+  Tailscale → NAS 上登录 ACR 并 `docker compose pull && up -d`，整条约 2–3 分钟。
 
 ## 4. 验收命令（改完必须跑）
 
