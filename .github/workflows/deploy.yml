@@ -59,7 +59,18 @@ jobs:
           docker push ${{ env.REGISTRY }}/${{ env.EMBEDDING_IMAGE }}:${{ github.sha }}
 
       # ── 可选：同步到阿里云 ACR（国内拉取快）──────────────────────────
-      # 未配置 ACR_* Secret 时这两步自动跳过，行为与之前完全一致。
+      # 未配置 ACR_* Secret 时这几步自动跳过，行为与之前完全一致。
+      # 诊断步骤只输出长度与 sha256 前缀（不可逆），用于定位是哪个字段配错。
+      - name: Diagnose ACR inputs
+        if: env.ACR_USERNAME != '' && env.ACR_REGISTRY != ''
+        run: |
+          fp() { printf '%s' "$1" | sha256sum | cut -c1-12; }
+          echo "ACR_REGISTRY  len=${#ACR_REGISTRY} sha256=$(fp "$ACR_REGISTRY")"
+          echo "ACR_NAMESPACE len=${#ACR_NAMESPACE} sha256=$(fp "$ACR_NAMESPACE")"
+          echo "ACR_USERNAME  len=${#ACR_USERNAME} sha256=$(fp "$ACR_USERNAME")"
+          echo "ACR_PASSWORD  len=${#ACR_PASSWORD} sha256=$(fp "$ACR_PASSWORD")"
+          echo "GET /v2/ -> $(curl -sS -o /dev/null -w '%{http_code}' "https://${ACR_REGISTRY}/v2/" 2>&1 || echo connect-failed)"
+
       - name: Log in to ACR
         if: env.ACR_USERNAME != '' && env.ACR_REGISTRY != ''
         uses: docker/login-action@v3
