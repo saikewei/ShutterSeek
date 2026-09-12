@@ -1,7 +1,10 @@
 services:
   shutterseek:
-    # 镜像仓库前缀可切换：默认 GHCR；NAS 在国内链路下 GHCR 只有 ~0.04MB/s，
-    # 配好阿里云 ACR 后在 .env 里设 IMAGE_REGISTRY=registry.cn-hangzhou.aliyuncs.com/<命名空间>
+    # 镜像仓库前缀可切换：默认 GHCR（国内实测只有 ~0.04MB/s）。
+    # 配好阿里云 ACR 后在 .env 里设 IMAGE_REGISTRY=<域名>/<命名空间>，
+    # 域名以 ACR 控制台「访问凭证」页给出的 docker login 命令为准：
+    #   新个人版实例（2024-09-09 起）形如 crpi-xxxx.cn-hangzhou.personal.cr.aliyuncs.com
+    #   旧个人版实例形如 registry.cn-hangzhou.aliyuncs.com
     image: ${IMAGE_REGISTRY:-ghcr.io/saikewei}/shutterseek:latest
     container_name: shutterseek
     restart: unless-stopped
