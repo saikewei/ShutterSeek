@@ -551,6 +551,49 @@ func TestListAlbumPhotos_CursorPagination(t *testing.T) {
 	}
 }
 
+// 回归：相册里 taken_at IS NULL 的照片排在最后（NULLS LAST），元组比较对 NULL
+// 永远不成立，必须显式放行——否则「film」这类相册的 198 张照片永远翻不出来。
+func TestListAlbumPhotos_NullTakenAtReachable(t *testing.T) {
+	svc := setupAlbumSvc(t)
+
+	var photoIDs []int64
+	svc.DB.Raw("SELECT id FROM photos WHERE taken_at IS NULL ORDER BY id DESC LIMIT 6").Scan(&photoIDs)
+	if len(photoIDs) < 6 {
+		t.Skipf("样本不足：需要 6 张 taken_at IS NULL 的照片，实际 %d 张", len(photoIDs))
+	}
+
+	created, err := svc.CreateAlbum("TEST_NullTakenAt", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.DeleteAlbum(created.ID)
+	if _, err := svc.BatchAddPhotos(created.ID, photoIDs); err != nil {
+		t.Fatal(err)
+	}
+
+	// limit=2 逐页翻，必须覆盖全部样本（NULL 的排在最后几页）
+	seen := map[int64]bool{}
+	var afterTime time.Time
+	var afterID int64
+	for page := 0; page < 10; page++ {
+		p, err := svc.ListAlbumPhotos(created.ID, 2, afterTime, afterID, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, ph := range p.Photos {
+			seen[ph.ID] = true
+		}
+		if !p.HasMore || len(p.Photos) == 0 {
+			break
+		}
+		last := p.Photos[len(p.Photos)-1]
+		afterTime, afterID, _ = parseCursor(BuildNextCursor(last.TakenAt, last.ID))
+	}
+	if len(seen) != len(photoIDs) {
+		t.Fatalf("应能翻到全部 %d 张，实际只有 %d 张", len(photoIDs), len(seen))
+	}
+}
+
 // ═══════════════════════════════════════════════════════
 // BatchRemovePhotos
 // ═══════════════════════════════════════════════════════

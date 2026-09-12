@@ -104,23 +104,34 @@ func parseCursor(s string) (time.Time, int64, bool) {
 	if len(parts) != 2 {
 		return time.Time{}, 0, false
 	}
-	ts := strings.Replace(parts[0], " ", "T", 1)
-	t, err := time.ParseInLocation("2006-01-02T15:04:05", ts, cstZone)
-	if err != nil || t.IsZero() {
-		return time.Time{}, 0, false
-	}
 	id, err := strconv.ParseInt(parts[1], 10, 64)
 	if err != nil {
+		return time.Time{}, 0, false
+	}
+	ts := strings.Replace(parts[0], " ", "T", 1)
+	// NULL 尾部队列的哨兵（见 BuildNextCursor）：还原成零值时间，
+	// 让调用方走 `taken_at IS NULL AND id < ?` 分支继续翻。
+	if ts == "0001-01-01T00:00:00" {
+		return time.Time{}, id, true
+	}
+	t, err := time.ParseInLocation("2006-01-02T15:04:05", ts, cstZone)
+	if err != nil || t.IsZero() {
 		return time.Time{}, 0, false
 	}
 	return t, id, true
 }
 
+// BuildNextCursor 编码游标：时间一律以 +08 墙钟写出，与 parseCursor 的
+// ParseInLocation(..., cstZone) 严格对称。
+//
+// 注意 taken_at 从 pgx 扫出来是 UTC，直接 Format 会写出 UTC 墙钟、却被按 +08
+// 解析，游标瞬间前移 8 小时，导致 `(taken_at, id) < ?` 跳过当天剩余的全部照片。
 func BuildNextCursor(t time.Time, id int64) string {
 	if t.IsZero() {
-		t = time.Date(1, 1, 1, 0, 0, 0, 0, time.UTC)
+		// taken_at 为 NULL 的尾部队列：固定哨兵值，由 parseCursor 还原成零值时间
+		return "0001-01-01T00:00:00," + strconv.FormatInt(id, 10)
 	}
-	return t.Format("2006-01-02T15:04:05") + "," + strconv.FormatInt(id, 10)
+	return t.In(cstZone).Format("2006-01-02T15:04:05") + "," + strconv.FormatInt(id, 10)
 }
 
 // guestFilter 给查询加上 guest 可见性条件。

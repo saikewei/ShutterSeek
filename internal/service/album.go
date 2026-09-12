@@ -276,7 +276,10 @@ func (s *AlbumService) ListAlbumPhotos(albumID int64, limit int, afterTime time.
 	}
 
 	if !afterTime.IsZero() {
-		q = q.Where("(taken_at, id) < (?, ?)", afterTime, afterID)
+		// taken_at 为 NULL 的照片排在最后（NULLS LAST），而元组比较对 NULL 永远
+		// 不成立，必须显式放行；否则这部分照片（如「film」198 张）永远翻不到。
+		// 因为它们排在最后，只有非 NULL 部分翻完之后才会真正出现。
+		q = q.Where("((taken_at, id) < (?, ?) OR taken_at IS NULL)", afterTime, afterID)
 	} else if afterID > 0 {
 		q = q.Where("taken_at IS NULL AND id < ?", afterID)
 	}
