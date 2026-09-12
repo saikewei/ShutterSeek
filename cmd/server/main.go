@@ -84,7 +84,12 @@ func main() {
 	origSvc := service.NewOriginalService(cfg.Thumbnail.PhotosDir, cfg.Upload.UploadDir, "/tmp/shutterseek_previews")
 	cache := &service.Cache{Redis: rdb}
 	albumSvc := service.NewAlbumService(gormDB, cache)
-	uploadSvc := service.NewUploadService(gormDB, rdb, cfg.Upload.UploadDir, cfg.Thumbnail.OutputDir)
+	uploadSvc := service.NewUploadServiceWithOptions(gormDB, rdb, cfg.Upload.UploadDir, cfg.Thumbnail.OutputDir, service.UploadOptions{
+		Workers:       cfg.Upload.Workers,
+		BatchMaxFiles: cfg.Upload.BatchMaxFiles,
+		MaxBatchBytes: cfg.Upload.MaxBatchBytes,
+	})
+	uploadSvc.Start()
 	photoSvc := service.NewPhotoService(gormDB, cache, albumSvc)
 	embedder := service.NewCachedEmbedder(
 		service.NewHTTPEmbedder(cfg.Embed.URL, cfg.Embed.Timeout(), cfg.Embed.Token),
@@ -133,6 +138,7 @@ func main() {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Fatalf("shutdown: %v", err)
 	}
+	uploadSvc.Stop() // 清掉未落地的缓存失效请求并停掉后台 ticker
 	log.Println("Server stopped")
 }
 

@@ -59,7 +59,10 @@ type ThumbnailConfig struct {
 }
 
 type UploadConfig struct {
-	UploadDir string `yaml:"upload_dir"`
+	UploadDir     string `yaml:"upload_dir"`
+	Workers       int    `yaml:"workers"`
+	BatchMaxFiles int    `yaml:"batch_max_files"`
+	MaxBatchBytes int64  `yaml:"max_batch_bytes"`
 }
 
 type ModelConfig struct {
@@ -90,8 +93,14 @@ func Load(path string) (*Config, error) {
 			PhotosDir: "/photos",
 		},
 		Embed: EmbedConfig{URL: "http://127.0.0.1:8000", TimeoutMS: 10000, MaxText: 200},
-		Upload: UploadConfig{UploadDir: "/photos_uploads"},
-		Model:  ModelConfig{Dir: "/models_vision"},
+		Upload: UploadConfig{
+			UploadDir: "/photos_uploads",
+			// 重活（exiftool/cwebp）进程级闸门：NAS 4 核且与其他服务共享
+			Workers:       2,
+			BatchMaxFiles: 8,
+			MaxBatchBytes: 512 << 20,
+		},
+		Model: ModelConfig{Dir: "/models_vision"},
 	}
 
 	if err := yaml.Unmarshal(data, cfg); err != nil {
@@ -168,6 +177,21 @@ func applyEnv(cfg *Config) {
 	}
 	if v := os.Getenv("SHUTTERSEEK_UPLOAD_DIR"); v != "" {
 		cfg.Upload.UploadDir = v
+	}
+	if v := os.Getenv("SHUTTERSEEK_UPLOAD_WORKERS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.Upload.Workers = n
+		}
+	}
+	if v := os.Getenv("SHUTTERSEEK_UPLOAD_BATCH_MAX"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.Upload.BatchMaxFiles = n
+		}
+	}
+	if v := os.Getenv("SHUTTERSEEK_UPLOAD_MAX_BATCH_BYTES"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+			cfg.Upload.MaxBatchBytes = n
+		}
 	}
 	if v := os.Getenv("SHUTTERSEEK_MODELS_DIR"); v != "" {
 		cfg.Model.Dir = v

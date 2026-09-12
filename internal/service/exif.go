@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -24,20 +25,69 @@ type PhotoEXIF struct {
 
 // extractEXIF 调用 exiftool -json 提取单张照片元数据。
 func extractEXIF(path string) (*PhotoEXIF, error) {
-	out, err := exec.Command("exiftool", "-json", path).Output()
+	m, err := extractEXIFMany([]string{path})
 	if err != nil {
-		return nil, fmt.Errorf("exiftool: %w", err)
+		return nil, err
 	}
+	ex := m[path]
+	if ex == nil {
+		if len(m) == 1 {
+			for _, only := range m {
+				return only, nil
+			}
+		}
+		return nil, fmt.Errorf("exiftool: no record for %s", path)
+	}
+	return ex, nil
+}
+
+// extractEXIFMany 一次 exiftool 调用提取多张照片元数据，按原路径索引。
+//
+// 批量上传时逐张 spawn exiftool 是纯浪费（实测单文件 176ms、四文件 246ms），
+// 因此整批一次调用。exiftool 的汇总行走 stderr，stdout 始终是纯 JSON 数组；
+// 这里不依赖退出码，只要 stdout 能解析出记录就算成功（个别文件告警不影响整批）。
+func extractEXIFMany(paths []string) (map[string]*PhotoEXIF, error) {
+	if len(paths) == 0 {
+		return map[string]*PhotoEXIF{}, nil
+	}
+	args := append([]string{"-json"}, paths...)
+	cmd := exec.Command("exiftool", args...)
+	var out, errb bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &errb
+	runErr := cmd.Run()
+
 	var records []map[string]any
-	if err := json.Unmarshal(out, &records); err != nil || len(records) == 0 {
+	if err := json.Unmarshal(out.Bytes(), &records); err != nil || len(records) == 0 {
+		if runErr != nil {
+			return nil, fmt.Errorf("exiftool: %w: %s", runErr, strings.TrimSpace(errb.String()))
+		}
 		return nil, fmt.Errorf("parse exiftool output")
 	}
-	fi, _ := os.Stat(path)
-	fallback := time.Now()
-	if fi != nil {
-		fallback = fi.ModTime()
+	return parseEXIFMany(records, func(src string) time.Time {
+		if fi, err := os.Stat(src); err == nil {
+			return fi.ModTime()
+		}
+		return time.Now()
+	}), nil
+}
+
+// parseEXIFMany 纯函数：exiftool 的 JSON 记录数组 → 按 SourceFile 索引的元数据。
+// fallbackOf 给出没有拍摄时间时使用的兜底时间（生产传文件的 ModTime）。
+func parseEXIFMany(records []map[string]any, fallbackOf func(path string) time.Time) map[string]*PhotoEXIF {
+	res := make(map[string]*PhotoEXIF, len(records))
+	for _, r := range records {
+		src, _ := r["SourceFile"].(string)
+		if src == "" {
+			continue
+		}
+		fallback := time.Now()
+		if fallbackOf != nil {
+			fallback = fallbackOf(src)
+		}
+		res[src] = parseEXIF(r, fallback)
 	}
-	return parseEXIF(records[0], fallback), nil
+	return res
 }
 
 // parseEXIF 纯函数：exiftool JSON → PhotoEXIF。测试用。

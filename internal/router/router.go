@@ -56,6 +56,7 @@ func Setup(h *handler.Handler, thumbDir, modelsDir string) *gin.Engine {
 			admin.GET("/auth/logs", h.ListLogs)
 			admin.GET("/photos/range", h.PhotoRange)
 			admin.POST("/photos/upload", h.Upload)
+			admin.POST("/photos/upload/batch", h.UploadBatch)
 		}
 	}
 	r.GET("/api/health", h.Health)

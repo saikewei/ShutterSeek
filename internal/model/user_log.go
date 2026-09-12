@@ -6,9 +6,10 @@ const TableNameUserLog = "user_logs"
 
 // Event types for user activity logs.
 const (
-	LogEventLogin    = "login"
-	LogEventSession  = "session"
-	LogEventLogout   = "logout"
+	LogEventLogin   = "login"
+	LogEventSession = "session"
+	LogEventLogout  = "logout"
+	LogEventUpload  = "upload"
 )
 
 // UserLog mapped from table <user_logs>
