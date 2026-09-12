@@ -14,6 +14,13 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DOCKER_BUILDKIT: 0
+      # 阿里云 ACR（可选）：配了这 4 个 Secret 才会额外推一份到国内仓库，
+      # NAS 侧再从 ACR 拉（GHCR 从国内实测只有 ~0.04MB/s）。
+      ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
+      ACR_NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
+      ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+      ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+      EMBEDDING_IMAGE: ${{ github.repository_owner }}/shutterseek-embedding
     permissions:
       contents: read
       packages: write
@@ -44,12 +51,34 @@ jobs:
       - name: Build and push embedding image
         run: |
           docker build \
-            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/shutterseek-embedding:latest \
-            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/shutterseek-embedding:${{ github.sha }} \
+            -t ${{ env.REGISTRY }}/${{ env.EMBEDDING_IMAGE }}:latest \
+            -t ${{ env.REGISTRY }}/${{ env.EMBEDDING_IMAGE }}:${{ github.sha }} \
             -f embed/Dockerfile \
             embed
-          docker push ${{ env.REGISTRY }}/${{ github.repository_owner }}/shutterseek-embedding:latest
-          docker push ${{ env.REGISTRY }}/${{ github.repository_owner }}/shutterseek-embedding:${{ github.sha }}
+          docker push ${{ env.REGISTRY }}/${{ env.EMBEDDING_IMAGE }}:latest
+          docker push ${{ env.REGISTRY }}/${{ env.EMBEDDING_IMAGE }}:${{ github.sha }}
+
+      # ── 可选：同步到阿里云 ACR（国内拉取快）──────────────────────────
+      # 未配置 ACR_* Secret 时这两步自动跳过，行为与之前完全一致。
+      - name: Log in to ACR
+        if: env.ACR_USERNAME != '' && env.ACR_REGISTRY != ''
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.ACR_REGISTRY }}
+          username: ${{ env.ACR_USERNAME }}
+          password: ${{ env.ACR_PASSWORD }}
+
+      - name: Push to ACR
+        if: env.ACR_USERNAME != '' && env.ACR_REGISTRY != ''
+        run: |
+          set -e
+          # 只推 latest：ACR 个人版不支持自动清理旧版本，推 sha tag 会每次多存一份
+          # （两个镜像约 670MB）。历史版本仍保留在 GHCR 里，需要回滚时从那边取。
+          ACR_PREFIX="${ACR_REGISTRY}/${ACR_NAMESPACE}"
+          for img in shutterseek shutterseek-embedding; do
+            docker tag "${REGISTRY}/${GITHUB_REPOSITORY_OWNER}/${img}:latest" "${ACR_PREFIX}/${img}:latest"
+            docker push "${ACR_PREFIX}/${img}:latest"
+          done
 
       - name: Connect Tailscale
         uses: tailscale/github-action@v2
@@ -64,11 +93,18 @@ jobs:
           host: ${{ secrets.NAS_HOST }}
           username: ${{ secrets.NAS_USER }}
           key: ${{ secrets.NAS_SSH_KEY }}
+          # ACR_* 透传到 NAS，脚本里按需登录私有仓库
+          envs: ACR_REGISTRY,ACR_USERNAME,ACR_PASSWORD
           # NAS→GHCR 实测只有 ~0.5MB/s，30m 曾在拉取 442MB 的 embedding 镜像时
           # 超时失败（run #43）。依赖已锁版本，正常情况下拉取会退化为 manifest 检查；
-          # 这里留 60m 作为安全网。
+          # 这里留 60m 作为安全网。切到国内 ACR 后这一步通常只要几秒。
           command_timeout: 60m
           script: |
+            set -e
             cd /volume1/docker/ShutterSeek
+            # NAS 的 .env 若把 IMAGE_REGISTRY 指向 ACR，需要先登录（私有仓库）
+            if [ -n "$ACR_REGISTRY" ] && [ -n "$ACR_USERNAME" ]; then
+              echo "$ACR_PASSWORD" | docker login "$ACR_REGISTRY" -u "$ACR_USERNAME" --password-stdin
+            fi
             docker compose pull
             docker compose up -d
