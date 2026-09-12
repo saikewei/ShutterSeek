@@ -17,7 +17,8 @@ import (
 func main() {
 	binPath := "/tmp/embeddings/embeddings.bin"
 	idsPath := "/tmp/embeddings/image_ids.txt"
-	dsn := "postgres://photo_user:PhotoHyc65319436@172.18.0.2:5432/photo_search?sslmode=disable"
+	// 凭据只从 SHUTTERSEEK_DB_* 环境变量读取（绝不写进代码；见 AGENTS.md §2）
+	dsn := buildDSN()
 
 	log.Println("Reading binary vectors...")
 	data, err := os.ReadFile(binPath)
@@ -145,4 +146,24 @@ func formatVector(v []float32) string {
 	}
 	b.WriteByte(']')
 	return b.String()
+}
+
+// buildDSN 从 SHUTTERSEEK_DB_* 环境变量拼装连接串；缺少必需项时直接失败，
+// 避免回退到任何硬编码凭据。
+func buildDSN() string {
+	user := os.Getenv("SHUTTERSEEK_DB_USER")
+	pass := os.Getenv("SHUTTERSEEK_DB_PASSWORD")
+	name := os.Getenv("SHUTTERSEEK_DB_NAME")
+	host := os.Getenv("SHUTTERSEEK_DB_HOST")
+	if host == "" {
+		host = "postgres-main"
+	}
+	port := os.Getenv("SHUTTERSEEK_DB_PORT")
+	if port == "" {
+		port = "5432"
+	}
+	if user == "" || pass == "" || name == "" {
+		log.Fatal("需要 SHUTTERSEEK_DB_USER / SHUTTERSEEK_DB_PASSWORD / SHUTTERSEEK_DB_NAME（可 source .env.local）")
+	}
+	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", user, pass, host, port, name)
 }
