@@ -73,6 +73,11 @@ PostgreSQL + pgvector（1024 维）存元数据与向量；FastAPI + ONNX Runtim
   **改查询参数或响应格式后必须清缓存**；切换相册 `is_public` 必须走 `AlbumService.InvalidateCaches()`。
 - 时区固定 **+08**（`cstZone = time.FixedZone("CST", 8*3600)`）：日期解析与格式化统一走它，不要用 `time.Local`。
 - 分页是游标式：`(taken_at, id) < (?, ?)` 配 `taken_at DESC, id DESC`；相册列表按 `sort_order, id`。
+- 上传：批量入口 `POST /photos/upload/batch`（multipart `file_N`/`vector_N`/`preview_N`，下标配对；`upload_handler.go`
+  用 `MultipartReader` 流式落盘，不走 `ParseMultipartForm`）。`POST /photos/upload` 只是单文件兼容壳。
+  缩略图**长边 1080**（与库内 6.8 万张一致，别再改回短边），由 `upload_thumb.go` 三级降级生成；
+  `preview_N`（客户端 1080 JPEG）能让服务端省掉整张原图解码，重活受**进程级**闸门 `SHUTTERSEEK_UPLOAD_WORKERS`(2) 限流。
+  查重靠 `photos.file_hash`：事务内 `pg_advisory_xact_lock` + 唯一索引（SQL 见 `docs/superpowers/specs/2026-09-12-upload-v2-schema.sql`）。
 
 ## 6. 开发环境（dev 容器内的事实）
 
@@ -88,8 +93,6 @@ PostgreSQL + pgvector（1024 维）存元数据与向量；FastAPI + ONNX Runtim
 
 ## 7. 已知问题（尚未修复；修好一条就删一条）
 
-- PNG 上传**必然生成不出缩略图**：`internal/service/upload.go` 只注册了 `image/jpeg`，`image.Decode` 对 PNG
-  返回 `unknown format`，exiftool 兜底又返回 0 字节。
 - 静态文件缺失会被 SPA fallback 成 **200 + index.html**（缺缩略图时不返回 404，掩盖问题）。
 - GORM debug 模式会把**整条 1024 维向量**打进慢 SQL 日志（>200ms 触发）。
 - `GET /api/v1/photos/:id/original` 对 PNG 返回 `Content-Type: image/jpeg`（`internal/handler/handler.go:157` 硬编码）。
@@ -99,4 +102,4 @@ PostgreSQL + pgvector（1024 维）存元数据与向量；FastAPI + ONNX Runtim
 
 - `docs/handoff-2026-08-27.md` — 交接文档与红线（最新）
 - `docs/project-notes-2026-08-01.md` — 核心架构约定与历史排查结论
-- `docs/superpowers/specs/`（16 篇设计文档）、`docs/superpowers/plans/`（8 篇实现计划）
+- `docs/superpowers/specs/`（17 篇设计文档，含 `2026-09-12-upload-v2-design.md`）、`docs/superpowers/plans/`（8 篇实现计划）
