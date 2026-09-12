@@ -21,13 +21,20 @@ PostgreSQL + pgvector（1024 维）存元数据与向量；FastAPI + ONNX Runtim
 - 需要写数据时**优先走 API**（有鉴权、业务校验、缓存失效）；直连 SQL 是最后手段。
 - **integration 测试直连生产库**：跑之前 `set -a; source .env.local; set +a`，且测试**必须自清理**数据。
 - **密钥**只通过 `SHUTTERSEEK_*` 环境变量 / `.env.local`（已 gitignore）注入：绝不写进代码、`config.yaml`、日志或提交。
-- **Git 红线**：不推送、不合并 `main`（合并需用户确认）、不改写历史。
+- **Git 红线**：**提交只落在 `dev`**；`main` 只接受合并、**禁止直接提交**（由 `scripts/git-hooks/pre-commit` 强制）；
+  不推送、不合并 `main`（合并需用户确认）、不改写历史。
 - 以下目录**不进 git**：`docs/`、`tmp/`、`models/`、`thumbnails/`、`uploads/`、`certs/`、`.claude/`、`.env*`。
 - 不要在 NAS 宿主机上执行 `docker compose` 等改变共享状态的命令——部署由 CI 完成。
 
 ## 3. 工作流与提交
 
-- 分支：`dev` 开发 → 验证 → 提交；`main` 只在用户确认后合并。
+- **分支纪律：所有提交都只落在 `dev`；`main` 只接受合并，任何情况下都不要直接往 `main` 提交**
+  （合并进 `main` 前需用户确认）。
+- 该纪律由仓库内钩子**强制**：`scripts/git-hooks/pre-commit`（靠 `git config core.hooksPath scripts/git-hooks` 生效）
+  拒绝 `main` 上的直接 `commit` / `cherry-pick` / `revert` / `amend`，放行合并提交。
+  新克隆需执行一次 `git config core.hooksPath scripts/git-hooks`；`--no-verify` 可绕过，但规则不允许。
+  本仓库 `core.fileMode=false`：改动该脚本后若 git 把模式记回 `100644`，用
+  `git update-index --chmod=+x scripts/git-hooks/pre-commit` 修正，否则克隆方的钩子不生效。
 - 一小步一提交，消息前缀：`feat | fix | perf | test | ci | style | docs | chore`。
 - 完成一个小功能/修复后即可提交，**但不要推送**（push `main` 会触发 CI 部署）。
 - CI（`.github/workflows/deploy.yml`）：push `main` → 跑单测 → 构建并推送主镜像与 sidecar 镜像到 GHCR

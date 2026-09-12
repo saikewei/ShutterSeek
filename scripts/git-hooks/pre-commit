@@ -1,0 +1,32 @@
+#!/bin/sh
+# ShutterSeek 分支纪律：main 只接受合并，禁止直接提交。
+# 规则见 AGENTS.md §2/§3。仅在仓库根生效（经 core.hooksPath 指向本目录）。
+#
+# 放行：dev / 其它功能分支上的任何提交；main 上的合并提交（含 ff-only，后者不产生提交）。
+# 拦截：main 上直接 git commit / cherry-pick / revert / amend。
+# 绕过：git commit --no-verify（不推荐；规则本身不允许）。
+
+branch=$(git symbolic-ref --short -q HEAD 2>/dev/null)
+case "$branch" in
+  main|master) ;;
+  *) exit 0 ;;
+esac
+
+# git 在缺少 pre-merge-commit 时会用 pre-commit 充当它，故此处必须放行合并提交。
+# 用文件存在性判断（而不是 rev-parse --verify）：合并进行中的 MERGE_HEAD 就是 git 自己的判据。
+git_dir=$(git rev-parse --git-dir 2>/dev/null) || exit 0
+if [ -f "$git_dir/MERGE_HEAD" ]; then
+  exit 0
+fi
+
+cat >&2 <<'EOF'
+✗ 拒绝提交：main 分支只接受合并，不允许直接提交。
+
+  正确做法：
+    git checkout dev            # 所有提交都落在 dev
+    git checkout main
+    git merge --ff-only dev     # 或 git merge dev（生成合并提交，会被放行）
+
+  规则见 AGENTS.md §3「工作流与提交」。
+EOF
+exit 1
