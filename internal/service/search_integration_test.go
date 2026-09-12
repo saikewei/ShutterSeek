@@ -22,6 +22,7 @@ func setupSearchDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("connect db: %v", err)
 	}
+	closeTestDB(t, db)
 	return db
 }
 

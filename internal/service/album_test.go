@@ -23,6 +23,7 @@ func setupAlbumSvc(t *testing.T) *AlbumService {
 	if err != nil {
 		t.Fatalf("connect db: %v", err)
 	}
+	closeTestDB(t, db)
 	// Clean up any leftover test albums
 	db.Exec("DELETE FROM album_photos WHERE album_id IN (SELECT id FROM albums WHERE title LIKE 'TEST_%')")
 	db.Exec("DELETE FROM albums WHERE title LIKE 'TEST_%'")

@@ -25,6 +25,7 @@ func setupAuthSvc(t *testing.T) *AuthService {
 	if err != nil {
 		t.Fatalf("connect db: %v", err)
 	}
+	closeTestDB(t, db)
 	// Clean up leftover test users and invite codes
 	db.Exec("DELETE FROM invite_codes WHERE created_by IN (SELECT id FROM users WHERE username LIKE 'TEST_%')")
 	db.Exec("DELETE FROM users WHERE username LIKE 'TEST_%'")
@@ -36,6 +37,19 @@ func setupAuthSvc(t *testing.T) *AuthService {
 func deleteUser(db *gorm.DB, id int64) {
 	db.Exec("DELETE FROM invite_codes WHERE used_by = ?", id)
 	db.Where("id = ?", id).Delete(&model.User{})
+}
+
+// closeTestDB 在测试结束时关掉这个测试自己的连接池。
+// 每个测试都会 gorm.Open 一个新的池，而 database/sql 默认永久保留最多 2 条
+// 空闲连接；几十个集成测试就能把 Postgres 的 max_connections（100）吃光，
+// 报 SQLSTATE 53300（remaining connection slots are reserved）。
+func closeTestDB(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	sqlDB, err := db.DB()
+	if err != nil {
+		return
+	}
+	t.Cleanup(func() { sqlDB.Close() })
 }
 
 // testDSN builds a Postgres DSN from SHUTTERSEEK_* env vars.

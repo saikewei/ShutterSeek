@@ -21,6 +21,7 @@ func setupPhotoSvc(t *testing.T) *PhotoService {
 	if err != nil {
 		t.Fatalf("connect db: %v", err)
 	}
+	closeTestDB(t, db)
 	return NewPhotoService(db, nil, NewAlbumService(db, nil))
 }
 
