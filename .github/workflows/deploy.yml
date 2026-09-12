@@ -64,7 +64,10 @@ jobs:
           host: ${{ secrets.NAS_HOST }}
           username: ${{ secrets.NAS_USER }}
           key: ${{ secrets.NAS_SSH_KEY }}
-          command_timeout: 30m
+          # NAS→GHCR 实测只有 ~0.5MB/s，30m 曾在拉取 442MB 的 embedding 镜像时
+          # 超时失败（run #43）。依赖已锁版本，正常情况下拉取会退化为 manifest 检查；
+          # 这里留 60m 作为安全网。
+          command_timeout: 60m
           script: |
             cd /volume1/docker/ShutterSeek
             docker compose pull

@@ -1,8 +1,12 @@
-fastapi>=0.111
-uvicorn>=0.30
-onnxruntime>=1.17
-tokenizers>=0.19
-numpy>=1.26
-transformers>=4.44
-pytest>=8.0
-httpx>=0.27
+# 锁定版本（取自生产 embedding 容器实际在跑的版本）。
+# 原因：用 `>=` 时每次 CI 构建都会装到当时最新版 → 镜像层必有差异 →
+# NAS 在 ~0.5MB/s 的链路上每次部署都要重下 442MB，曾导致部署步骤超时失败。
+# 锁版本后未改动 embed/ 时镜像内容一致，compose 拉取退化为一次 manifest 检查。
+fastapi==0.141.1
+uvicorn==0.52.4
+onnxruntime==1.29.0
+tokenizers==0.23.1
+numpy==2.5.2
+transformers==5.16.1
+pytest==9.1.1
+httpx==0.28.1
