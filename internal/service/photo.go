@@ -310,7 +310,7 @@ func (s *PhotoService) ListPhotos(ctx context.Context, p PhotoListParams) (*Phot
 		if boundary != nil {
 			s.DB.Model(&model.Photo{}).Where("taken_at IS NOT NULL AND taken_at < ?", *boundary).Count(&total)
 		} else {
-			total = s.TotalPhotoCountCached(ctx)
+			total = s.TotalPhotoCountCached(ctx, p.Role)
 		}
 	}
 
@@ -334,18 +334,28 @@ func (s *PhotoService) ListPhotos(ctx context.Context, p PhotoListParams) (*Phot
 	return res, nil
 }
 
-func (s *PhotoService) TotalPhotoCountCached(ctx context.Context) int64 {
+// TotalPhotoCountCached 返回时间轴「可见集合」的总数：只统计有拍摄时间的照片
+// （列表查询本身就带 taken_at IS NOT NULL），guest 再限定到公开相册。
+// 缓存键按角色隔离——guest 用独立键，绝不与 admin 共享（历史 bug：两者共用
+// cache:total_photos，guest 会拿到 admin 视角的数字）。
+func (s *PhotoService) TotalPhotoCountCached(ctx context.Context, role string) int64 {
+	key := KeyTotalPhotos
+	if role == "guest" {
+		key = KeyTotalPhotos + ":guest"
+	}
 	if s.Cache != nil {
-		if data, ok := s.Cache.GetBytes(KeyTotalPhotos); ok {
+		if data, ok := s.Cache.GetBytes(key); ok {
 			if n, err := strconv.ParseInt(string(data), 10, 64); err == nil {
 				return n
 			}
 		}
 	}
 	var count int64
-	s.DB.Model(&model.Photo{}).Count(&count)
+	q := s.DB.Model(&model.Photo{}).Where("taken_at IS NOT NULL")
+	q = s.guestFilter(q, role)
+	q.Count(&count)
 	if s.Cache != nil {
-		s.Cache.Redis.Set(ctx, KeyTotalPhotos, count, TTLTotal)
+		s.Cache.Redis.Set(ctx, key, count, TTLTotal)
 	}
 	return count
 }

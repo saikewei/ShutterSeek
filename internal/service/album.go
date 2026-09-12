@@ -39,7 +39,9 @@ func (s *AlbumService) InvalidateCaches() {
 		return
 	}
 	s.Cache.DelPatterns("cache:albums*", "cache:photo_dates*", "cache:album_dates*",
-		"cache:first_page*", "cache:album_photos*")
+		"cache:first_page*", "cache:album_photos*",
+		// 切换 is_public 会改变 guest 的可见总数，总数键必须一起清
+		KeyTotalPhotos+"*")
 }
 
 // AlbumDates 返回相册内日期分布（含缓存与 guest 可见性守卫）。

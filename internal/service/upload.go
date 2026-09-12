@@ -236,6 +236,6 @@ func (s *UploadService) invalidateCaches(ctx context.Context) {
 		return
 	}
 	c := &Cache{Redis: s.Redis}
-	c.Del(KeyTotalPhotos)
-	c.DelPatterns(KeyFirstPage+"*", "cache:photo_dates*")
+	// 总数键按角色分开（cache:total_photos 与 cache:total_photos:guest），用模式一次清掉
+	c.DelPatterns(KeyTotalPhotos+"*", KeyFirstPage+"*", "cache:photo_dates*")
 }

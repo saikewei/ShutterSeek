@@ -39,6 +39,37 @@ func TestPhotoDatesAdminAndGuest(t *testing.T) {
 	}
 }
 
+// 时间轴的 total 必须等于「列表真正会返回的集合」的大小：只算有拍摄时间的照片，
+// guest 再限定到公开相册。历史 bug：total 统计全部照片（含 taken_at IS NULL 的
+// 589 张）且 guest 复用 admin 的缓存键 → 数字虚高。
+func TestListPhotosTotalMatchesVisibleSet(t *testing.T) {
+	s := setupPhotoSvc(t)
+	ctx := context.Background()
+
+	var dated int64
+	s.DB.Raw("SELECT count(*) FROM photos WHERE taken_at IS NOT NULL").Scan(&dated)
+	admin, err := s.ListPhotos(ctx, PhotoListParams{Limit: 5, Role: "admin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if admin.Total != dated {
+		t.Fatalf("admin total=%d，应等于有拍摄时间的照片数 %d", admin.Total, dated)
+	}
+
+	var publicDated int64
+	s.DB.Raw(`SELECT count(*) FROM photos p
+		WHERE p.taken_at IS NOT NULL
+		  AND p.id IN (SELECT ap.photo_id FROM album_photos ap
+		               JOIN albums a ON a.id = ap.album_id WHERE a.is_public = true)`).Scan(&publicDated)
+	guest, err := s.ListPhotos(ctx, PhotoListParams{Limit: 5, Role: "guest"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if guest.Total != publicDated {
+		t.Fatalf("guest total=%d，应等于公开相册中有拍摄时间的照片数 %d", guest.Total, publicDated)
+	}
+}
+
 func TestListPhotosFirstPageAndCursor(t *testing.T) {
 	s := setupPhotoSvc(t)
 	first, err := s.ListPhotos(context.Background(), PhotoListParams{Limit: 45, Role: "admin"})
