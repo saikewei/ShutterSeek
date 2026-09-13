@@ -34,6 +34,13 @@ PostgreSQL + pgvector（1024 维）存元数据与向量；FastAPI + ONNX Runtim
   `--no-verify` 可绕过但规则不允许。`core.fileMode=false`：改动该脚本后若模式被记回 `100644`，用
   `git update-index --chmod=+x scripts/git-hooks/pre-commit` 修正，否则克隆方的钩子不生效。
 - 一小步一提交，消息前缀：`feat | fix | perf | test | ci | style | docs | chore`。
+- **注释性文字一律英文**（硬规则）：代码注释、提交信息（subject 与 body）都必须写英文。
+  `scripts/git-hooks/commit-msg` 强制——提交信息里出现非 ASCII 字符即拒绝（revert 消息放行，
+  git 生成的注释行会被忽略，`--no-verify` 可绕过但规则不允许）。UI 文案、`docs/`、本文件仍用中文。
+  历史提交是中文的**不追改**（改写历史违反 §2）。
+- 提交身份固定 `saikewei <saikewei27@gmail.com>`（仓库 local 与容器 global 都已配置），别再改回
+  `ShutterSeek Dev <3184054890@qq.com>`。GitHub 按**邮箱**归因：历史那 285 条提交要用旧邮箱
+  `3184054890@qq.com`，只有把它加进 GitHub 账号邮箱列表后，那些提交才会显示成本人的（不需要改历史）。
 - **推送规则**：
   - `dev`：**自查无敏感信息后直接推，不必询问用户**。自查 = `git diff origin/dev..dev` 过一遍，
     且 `git diff origin/dev..dev | grep -iE 'password|secret|token|BEGIN .*PRIVATE|ghp_|github_pat_'` 无命中

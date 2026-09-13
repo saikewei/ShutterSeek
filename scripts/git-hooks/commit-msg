@@ -1,0 +1,34 @@
+#!/bin/sh
+# ShutterSeek convention (AGENTS.md §3): commit messages must be written in English.
+# UI strings, docs/ and AGENTS.md itself stay Chinese - this only governs the
+# message git records, not what the app displays.
+#
+# Enforcement: reject any non-ASCII character in the message, because every
+# Chinese character is non-ASCII while a plain English sentence never is.
+# Two deliberate exceptions:
+#   * git-generated revert messages echo the original subject, which may be
+#     Chinese (all history before this rule is Chinese) -> let them through;
+#   * git's own "#" comment lines are stripped before the check.
+# Bypass: git commit --no-verify (the rule still applies).
+
+msg_file="$1"
+[ -n "$msg_file" ] && [ -f "$msg_file" ] || exit 0
+
+grep -q '^This reverts commit ' "$msg_file" && exit 0
+grep -q '^Revert "' "$msg_file" && exit 0
+
+# LC_ALL=C keeps [:print:] ASCII-only; without it a UTF-8 locale would treat
+# Chinese characters as printable and the check would never fire.
+if sed 's/^#.*$//' "$msg_file" | LC_ALL=C grep -q '[^[:print:][:space:]]'; then
+  cat >&2 <<'EOF'
+✗ Rejected: commit messages must be in English (AGENTS.md §3).
+
+  Non-ASCII characters found in the message. Rewrite the subject and body in
+  English; UI strings, docs/ and AGENTS.md itself may stay Chinese.
+
+  Bypass (not recommended): git commit --no-verify
+EOF
+  exit 1
+fi
+
+exit 0
