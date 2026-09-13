@@ -97,6 +97,13 @@ PostgreSQL + pgvector（1024 维）存元数据与向量；FastAPI + ONNX Runtim
   在 dev 容器里是手工装的、重建后会丢失（**生产镜像**已含 `libwebp-tools`，不受影响）。
 - 因此查数据库用 **Go 探针**：在 `tmp/` 写小 `main.go`，复用 `internal/config` + `internal/db` 与 `.env.local`
   （已有样例：`tmp/envcheck`、`tmp/dbcheck`）。
+- **dev 与生产共用同一个库、同一批文件**，三个目录必须对齐，否则会出现"缩略图有、原图 500"：
+  DB 都是 `photo_search`；缩略图都落在 `/volume1/docker/ShutterSeek/thumbnails`；
+  **上传目录必须指 `/photos_uploads`**（dev 容器把 `/volume1/Main/Photos/uploads` 以 `rw` 挂在这里，
+  见 `.devcontainer/devcontainer.json`；`.env.local` 里写 `/photos_uploads`，**别写仓库内的 `uploads/`**）。
+  生产把 DB 里的 `uploads/...` 解析到 `/photos_uploads/...`，dev 用仓库目录时那批文件生产看不到。
+  另注：`config.Load` 的 `loadDotEnv` 只在环境变量为空时才赋值，而 `air` 的子进程继承启动时的环境 ——
+  改完 `.env.local` 要**重启 air**（`touch` 触发重建不一定生效，先看子进程启动时间再判断）。
 
 ## 7. 已知问题（尚未修复；修好一条就删一条）
 
