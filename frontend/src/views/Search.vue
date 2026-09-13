@@ -23,7 +23,7 @@
     </div>
 
     <!-- 内容区 -->
-    <div class="flex-1 overflow-auto">
+    <div class="flex-1 overflow-auto overscroll-none">
       <div v-if="status === 'idle'" class="h-full flex flex-col items-center justify-center">
         <p class="text-base text-ink-2">输入描述，搜索你的照片</p>
         <p class="mt-1 text-sm text-ink-3">如：海边、猫、雪景</p>

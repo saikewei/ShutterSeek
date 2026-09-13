@@ -7,7 +7,7 @@
     >{{ open ? '◀' : '▶' }}</button>
 
     <div v-if="open" class="bg-raised/95 backdrop-blur rounded-r-xl border border-line overflow-hidden w-52 max-h-[60vh] flex flex-col">
-      <div class="flex-1 overflow-y-auto">
+      <div class="flex-1 overflow-y-auto overscroll-contain">
         <template v-for="g in yearGroups" :key="g.year">
           <!-- Year header — sticky within panel -->
           <div class="sticky top-0 z-10 px-4 py-1.5 bg-raised/95 backdrop-blur border-b border-line/60">

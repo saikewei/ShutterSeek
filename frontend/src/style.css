@@ -37,6 +37,15 @@
     color: var(--color-ink);
   }
 
+  /* 移动端滚动：所有滚动都发生在应用内部的容器里（App.vue 的 <main>、灯箱面板等），
+     页面本身不需要滚动。iOS 上如果不管，滚到列表底部时手势会链式传给 document，
+     整页（连底部导航栏）被橡皮筋拉一下再弹回来 —— 就是"滑到底栏往上弹一下"。
+     overscroll-behavior 在 Safari 16+ / Chrome / Firefox 生效；更老的 Safari
+     靠容器自身的 overflow 边界兜底（见 App.vue 各 shell 上的 overflow-hidden）。 */
+  html, body {
+    overscroll-behavior: none;
+  }
+
   /* Disable text selection everywhere, allow in inputs */
   * {
     user-select: none;
