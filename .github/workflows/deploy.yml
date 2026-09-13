@@ -95,10 +95,29 @@ jobs:
           set -e
           # 只推 latest：ACR 个人版不支持自动清理旧版本，推 sha tag 会每次多存一份
           # （两个镜像约 670MB）。历史版本仍保留在 GHCR 里，需要回滚时从那边取。
+          #
+          # 超时 + 重试：这是从 GitHub runner **跨境**推到阿里云 cn-hangzhou，
+          # 而 docker push 没有任何请求级超时 —— 某个 layer 的 PATCH/PUT 被黑洞
+          # 掉就会一直挂着，直到 job 的 6 小时上限（run 实测卡在 embedding 的
+          # 323MB pip 层）。push 本身是幂等的：已上传的 blob 留在 registry，
+          # 重试会打出 Layer already exists，只补没传完的部分。
           ACR_PREFIX="${ACR_REGISTRY}/${ACR_NAMESPACE}"
+          push_with_retry() {
+            ref="$1"
+            for i in 1 2 3; do
+              if timeout 600 docker push "$ref"; then
+                echo "✅ pushed $ref (第 $i 次尝试)"
+                return 0
+              fi
+              echo "⚠️ push $ref 第 $i 次失败或 10 分钟无进展，重试…"
+              sleep 15
+            done
+            echo "❌ push $ref 连续 3 次失败，放弃"
+            return 1
+          }
           for img in shutterseek shutterseek-embedding; do
             docker tag "${REGISTRY}/${GITHUB_REPOSITORY_OWNER}/${img}:latest" "${ACR_PREFIX}/${img}:latest"
-            docker push "${ACR_PREFIX}/${img}:latest"
+            push_with_retry "${ACR_PREFIX}/${img}:latest"
           done
 
       - name: Connect Tailscale
