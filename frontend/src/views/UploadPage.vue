@@ -4,9 +4,7 @@
     <header class="sticky top-0 z-30 bg-raised/95 backdrop-blur border-b border-line px-4 py-3">
       <div class="max-w-5xl mx-auto flex items-center gap-3 flex-wrap">
         <h1 class="font-display text-base font-semibold text-ink">上传照片</h1>
-        <span v-if="capability === 'wasm'" class="chip bg-accent-soft text-accent-strong">WASM 推理（较慢）</span>
-        <span v-else-if="capability === 'webgpu'" class="chip-ghost">WebGPU</span>
-        <span v-else-if="capability === 'webgpu-fp16'" class="chip-ghost">WebGPU fp16</span>
+        <span class="chip" :class="backendChipClass">{{ backendLabel }}</span>
         <div class="flex-1"></div>
         <label class="text-xs text-ink-3">目标相册</label>
         <select v-model.number="albumId" class="input w-40 py-1 text-xs">
@@ -98,6 +96,81 @@
         <p v-if="albumHint" class="mt-2 text-xs text-success">{{ albumHint }}</p>
       </div>
 
+      <!-- 推理诊断：实际执行后端 / 回退原因 / 并行度 -->
+      <section class="panel p-3">
+        <button class="flex w-full items-center gap-2 text-left" @click="diagOpen = !diagOpen">
+          <span class="text-ink-3 text-xs">{{ diagOpen ? '▾' : '▸' }}</span>
+          <span class="text-xs font-semibold text-ink-2">推理诊断</span>
+          <span class="chip" :class="backendChipClass">{{ backendLabel }}</span>
+          <span v-if="diag?.embed.samples" class="text-[11px] text-ink-3">
+            最近 {{ diag.embed.lastMs }}ms / 平均 {{ diag.embed.avgMs }}ms（{{ diag.embed.samples }} 张）
+          </span>
+        </button>
+
+        <div v-if="diagOpen" class="mt-3 space-y-1.5 text-[11px]">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+            <div class="flex justify-between gap-3 border-b border-line/60 py-1">
+              <span class="text-ink-3">实际执行后端</span>
+              <span :class="diag?.active === 'webgpu' ? 'text-success' : diag?.active === 'wasm' ? 'text-accent-strong' : 'text-ink-2'">
+                {{ actualBackend }}
+              </span>
+            </div>
+            <div class="flex justify-between gap-3 border-b border-line/60 py-1">
+              <span class="text-ink-3">建会话尝试</span>
+              <span class="text-ink-2 text-right">{{ attemptsLabel }}</span>
+            </div>
+            <div class="flex justify-between gap-3 border-b border-line/60 py-1">
+              <span class="text-ink-3">GPU 适配器</span>
+              <span class="text-ink-2 text-right">{{ gpuLabel }}</span>
+            </div>
+            <div class="flex justify-between gap-3 border-b border-line/60 py-1">
+              <span class="text-ink-3">shader-f16</span>
+              <span class="text-ink-2">{{ diag?.adapter ? (diag.adapter.f16 ? '支持' : '不支持（会走 fp32 路径）') : '—' }}</span>
+            </div>
+            <div class="flex justify-between gap-3 border-b border-line/60 py-1">
+              <span class="text-ink-3">crossOriginIsolated</span>
+              <span :class="diag?.wasm.crossOriginIsolated ? 'text-ink-2' : 'text-accent-strong'">
+                {{ diag?.wasm.crossOriginIsolated ? 'true' : 'false' }}
+                <span v-if="diag && !diag.wasm.crossOriginIsolated" class="text-ink-3">（WASM 只能单线程）</span>
+              </span>
+            </div>
+            <div class="flex justify-between gap-3 border-b border-line/60 py-1">
+              <span class="text-ink-3">WASM 线程数</span>
+              <span class="text-ink-2">
+                {{ diag?.wasm.numThreads ?? '—' }}
+                <span v-if="diag && diag.wasm.numThreads !== diag.wasm.expectedThreads" class="text-ink-3">
+                  （按隔离状态应为 {{ diag.wasm.expectedThreads }}）
+                </span>
+              </span>
+            </div>
+            <div class="flex justify-between gap-3 border-b border-line/60 py-1">
+              <span class="text-ink-3">硬件并发核数</span>
+              <span class="text-ink-2">{{ diag?.wasm.hardwareConcurrency ?? '—' }}</span>
+            </div>
+            <div class="flex justify-between gap-3 border-b border-line/60 py-1">
+              <span class="text-ink-3">队列并发</span>
+              <span class="text-ink-2">
+                解码 {{ queue.decodeConcurrency.value }} ∥ 向量 1 ∥ 上传 {{ queue.uploadConcurrency.value }}
+              </span>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2 pt-2">
+            <button class="btn-ghost px-3 py-1 text-[11px]" :disabled="probing" @click="runProbe">
+              {{ probing ? '探测中…' : '测一次推理（确认后端；会下载 1.2GB 模型）' }}
+            </button>
+            <span v-if="diag?.probe.status === 'ok'" class="text-success">探测成功：{{ diag.probe.ms }}ms/次</span>
+            <span v-else-if="diag?.probe.status === 'error'" class="text-danger-ink">{{ diag.probe.error }}</span>
+          </div>
+
+          <p class="text-ink-3 pt-1 leading-relaxed">
+            WebGPU 路径：单张推理在 GPU 内并行、不阻塞界面。WASM 路径：{{ diag?.wasm.numThreads === 1 ? '当前单线程，明显更慢' : `当前 ${diag?.wasm.numThreads} 线程` }}。
+            队列固定为「解码 N ∥ 向量 1 ∥ 上传 M」——向量阶段刻意不并发跑多张（同一个 session 并发只会互相抢算力/显存）。
+            只有「实际执行后端」是事实，「建会话尝试」里失败的 WebGPU 会列出回退原因。
+          </p>
+        </div>
+      </section>
+
       <!-- 队列 -->
       <ul v-if="queue.items.value.length" class="panel divide-y divide-line overflow-hidden">
         <li v-for="item in visibleItems" :key="item.id" class="flex items-center gap-3 px-3 py-2">
@@ -141,6 +214,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { createUploadQueue, type QueueItem } from '@/lib/uploadQueue'
+import type { EpReport } from '@/lib/visionEmbed'
 import { fetchAlbums, batchAddPhotos, type Album } from '@/api/albums'
 
 const route = useRoute()
@@ -157,6 +231,62 @@ const albumHint = ref('')
 const dragging = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
 const dirInput = ref<HTMLInputElement | null>(null)
+
+// ── 推理诊断（实际执行后端 / 回退原因 / 并行度）──
+const diag = ref<EpReport | null>(null)
+const diagOpen = ref(false)
+const probing = ref(false)
+let unsubscribeDiag: (() => void) | null = null
+
+const actualBackend = computed(() => {
+  const d = diag.value
+  if (!d) return '检测中…'
+  if (d.status === 'creating') return '建会话中…'
+  if (d.status === 'failed') return `失败：${d.error || '未知错误'}`
+  if (d.active === 'webgpu') return `webgpu${d.adapter?.f16 ? '（fp16）' : '（fp32）'}`
+  if (d.active === 'wasm') return `wasm（${d.wasm.numThreads} 线程）`
+  return '尚未建会话'
+})
+
+const backendLabel = computed(() => {
+  const d = diag.value
+  if (d?.active === 'webgpu') return 'WebGPU 实跑'
+  if (d?.active === 'wasm') return `WASM 实跑 · ${d.wasm.numThreads} 线程`
+  if (capability.value === 'wasm') return 'WASM 推理（较慢）'
+  if (capability.value === 'webgpu') return 'WebGPU（能力探测）'
+  if (capability.value === 'webgpu-fp16') return 'WebGPU fp16（能力探测）'
+  return '检测中…'
+})
+
+const backendChipClass = computed(() => {
+  const d = diag.value
+  if (d?.active === 'webgpu') return 'bg-success/15 text-success'
+  if (d?.active === 'wasm') return 'bg-accent-soft text-accent-strong'
+  return 'chip-ghost'
+})
+
+const attemptsLabel = computed(() => {
+  const list = diag.value?.attempts ?? []
+  if (!list.length) return '尚未建会话'
+  return list.map((a) => `${a.ep}: ${a.ok ? '成功' : '失败'}${a.ms ? ` ${a.ms}ms` : ''}${a.error ? ` — ${a.error}` : ''}`).join('；')
+})
+
+const gpuLabel = computed(() => {
+  const a = diag.value?.adapter
+  if (!diag.value?.gpuApi) return 'navigator.gpu 不可用'
+  if (!a) return '没有可用适配器'
+  return [a.vendor, a.architecture, a.device, a.description].filter(Boolean).join(' · ') || '（浏览器未提供型号）'
+})
+
+async function runProbe() {
+  probing.value = true
+  try {
+    const vision = await import('@/lib/visionEmbed')
+    diag.value = await vision.probe()
+  } catch { /* 失败信息已经记在报告里 */ } finally {
+    probing.value = false
+  }
+}
 
 const MAX_VISIBLE = 300
 const visibleItems = computed(() => queue.items.value.slice(0, MAX_VISIBLE))
@@ -183,12 +313,17 @@ onMounted(async () => {
   try {
     const vision = await import('@/lib/visionEmbed')
     capability.value = await vision.detectCapability()
+    diag.value = vision.epReport()
+    unsubscribeDiag = vision.onEpReportChange(() => { diag.value = vision.epReport() })
+    // 有 GPU 就直接把面板展开（否则默认收起，避免占地方）
+    if (capability.value !== 'wasm') diagOpen.value = true
   } catch { /* 能力探测失败按未知处理 */ }
   document.addEventListener('paste', onPaste)
 })
 
 onUnmounted(() => {
   document.removeEventListener('paste', onPaste)
+  unsubscribeDiag?.()
   queue.cancelAll()
 })
 
