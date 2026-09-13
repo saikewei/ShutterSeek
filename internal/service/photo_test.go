@@ -129,18 +129,27 @@ func TestListPhotosMonthJumpHead(t *testing.T) {
 
 func TestGetPhotoAndPublicAlbumGuard(t *testing.T) {
 	s := setupPhotoSvc(t)
-	res, err := s.ListPhotos(context.Background(), PhotoListParams{Limit: 1, Role: "admin"})
+	// 多取几条候选：上传相关的集成测试在**另一个包**里并行跑，会短暂地造出
+	// 「最新照片」再删掉（它们的文件没有 EXIF，taken_at 落到上传时刻）。
+	// 只取 1 条会偶发地拿到刚被删的行，导致 record not found。
+	res, err := s.ListPhotos(context.Background(), PhotoListParams{Limit: 5, Role: "admin"})
 	if err != nil || len(res.Photos) == 0 {
 		t.Fatalf("seed photo: %v", err)
 	}
-	p, err := s.GetPhoto(context.Background(), res.Photos[0].ID)
-	if err != nil || p.ID == 0 {
-		t.Fatalf("GetPhoto: %v", err)
+	var photoID int64
+	for _, cand := range res.Photos {
+		if p, err := s.GetPhoto(context.Background(), cand.ID); err == nil && p.ID != 0 {
+			photoID = cand.ID
+			break
+		}
+	}
+	if photoID == 0 {
+		t.Fatal("GetPhoto: 候选照片全部取不到")
 	}
 	if _, err := s.GetPhoto(context.Background(), -1); err == nil {
 		t.Fatal("expected error for missing photo")
 	}
-	ok, err := s.PhotoInPublicAlbum(context.Background(), res.Photos[0].ID)
+	ok, err := s.PhotoInPublicAlbum(context.Background(), photoID)
 	if err != nil {
 		t.Fatalf("PhotoInPublicAlbum: %v", err)
 	}

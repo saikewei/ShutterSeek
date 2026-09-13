@@ -54,7 +54,7 @@ PostgreSQL + pgvector（1024 维）存元数据与向量；FastAPI + ONNX Runtim
 | 后端编译 | `go build ./...` |
 | 后端单测（与 CI 等价） | `go test -count=1 ./cmd/... ./internal/...` |
 | 前端单测 + 构建 | `cd frontend && npm test && npm run build`（`build` 已含 `vue-tsc -b`） |
-| integration（连生产库、自清理） | `set -a; source .env.local; set +a; go test -tags integration ./internal/...` |
+| integration（连生产库、自清理） | `set -a; source .env.local; set +a; go test -tags integration ./internal/...`。包之间**并行且共享同一个库**：会临时造照片的测试（上传类）可能让别的包取到"刚被删的最新照片"，跨包断言要靠重试/多候选兜底 |
 
 ## 5. 架构不变量（改代码时不能破）
 
