@@ -28,6 +28,13 @@ var (
 const (
 	qvecCachePrefix = "cache:qvec:v1:"
 	qvecCacheTTL    = 7 * 24 * time.Hour
+
+	// hnswEfSearch 是 HNSW 的查询广度（pgvector 默认仅 40），它同时是**返回行数的
+	// 硬上限**：实测 LIMIT 200 配 ef_search=40 只会返回 40 行，且排序质量差
+	// （重建图之前精确 top-10 一个都进不来）。这里对齐 handler 的 limit 上限
+	// （search_handler.go 把 limit 封顶在 200），保证接口能要多少就给多少。
+	// 成本：LIMIT 200 的热查询实测 2ms(ef=40) → 6.6ms(ef=200) → 23ms(ef=400)。
+	hnswEfSearch = 200
 )
 
 type Embedder interface {
@@ -189,8 +196,13 @@ func (s *SearchService) Search(ctx context.Context, q, role string, limit int, a
 	// enable_sort=off：强制规划器使用 HNSW 索引的按距离有序扫描（而非先物化
 	// 过滤集合再精确排序）。对 guest/相册等带过滤查询，避免退化为全量精确扫描
 	//（实测 guest 从 ~450ms 降至 ~1ms）。SET LOCAL 仅在本次事务生效。
+	// hnsw.ef_search 同样必须显式设置：默认 40 会把返回行数卡在 40 行。
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec("SET LOCAL enable_sort = off").Error; err != nil {
+			return err
+		}
+		// SET 不接受绑定参数（$1 会语法错误），这里是编译期常量整数，直接拼
+		if err := tx.Exec(fmt.Sprintf("SET LOCAL hnsw.ef_search = %d", hnswEfSearch)).Error; err != nil {
 			return err
 		}
 		return tx.Raw(query, args...).Scan(&items).Error
