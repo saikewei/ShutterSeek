@@ -111,6 +111,9 @@ PostgreSQL + pgvector（1024 维）存元数据与向量；FastAPI + ONNX Runtim
 - GORM debug 模式会把**整条 1024 维向量**打进慢 SQL 日志（>200ms 触发）。
 - `GET /api/v1/photos/:id/original` 对 PNG 返回 `Content-Type: image/jpeg`（`internal/handler/handler.go:157` 硬编码）。
 - 文本向量（BGE-M3）与图片向量（CLIP）**不在同一向量空间**，是已知的工程取舍。
+- 老照片的 `photos.file_size` 是**建库时按 MiB 取整**的近似值（52k 条恰为整 MiB，其余偏差 <8%），
+  只有上传的照片是精确字节。代码里**只写不读**，所以**别拿它做文件校验**——校验只能比存在性
+  （2026-09-13 全量核对：68,635 行 / 0 缺失，用 `find` 索引 + 逐行比对即可，不要比大小）。
 
 ## 8. 文档地图（`docs/` 不进 git，仅本地参考）
 
