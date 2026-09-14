@@ -111,7 +111,6 @@
             :src="thumbSrc(cell.photo)"
             :alt="cell.photo.camera_model || 'Photo'"
             loading="lazy"
-            decoding="async"
             class="thumb-in w-full aspect-square object-cover"
             :class="cell.photo.height > cell.photo.width ? 'rotate-270 scale-150' : ''"
             @error="onThumbError(cell.photo)"
@@ -376,6 +375,23 @@ let aheadObserver: IntersectionObserver | null = null
 
 function observedId(target: Element): number {
   return Number((target as HTMLElement).dataset.photoId) || 0
+}
+
+/**
+ * Hand the load decision back to us for cells that are actually on screen.
+ *
+ * `loading="lazy"` leaves it to the browser's heuristic, which varies by
+ * machine and by the connection it thinks it is on -- the same Edge build
+ * loaded every visible thumbnail on macOS and left blanks on Windows. A cell
+ * that is on screen must be fetched now, so its <img> is switched to eager the
+ * moment it intersects. The attribute is static in the template, so Vue never
+ * writes it back.
+ */
+function forceEager(target: Element) {
+  const img = target.querySelector('img')
+  if (img && img.getAttribute('loading') !== 'eager') {
+    img.setAttribute('loading', 'eager')
+  }
 }
 
 /** Point both observers at every cell that has not been queued yet. Cells are
@@ -964,6 +980,7 @@ onMounted(() => {
     for (const e of entries) {
       if (!e.isIntersecting) continue
       preload.schedule(observedId(e.target), 'visible')
+      forceEager(e.target)
       obs.unobserve(e.target)
     }
   })
