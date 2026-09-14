@@ -122,8 +122,11 @@ PostgreSQL + pgvector（1024 维）存元数据与向量；FastAPI + ONNX Runtim
   （compose 网络内为 `redis:6379`）；凭据在 `.env.local`。
 - 三个进程与端口：后端 `:8080`（`air` 热重载）、文本向量 sidecar `:8000`（`./embed/run_dev.sh`）、
   Vite `:5173`（把 `/api`、`/models` 代理到 8080；已配 `--host 0.0.0.0`）。
-  **手机上看 dev 效果**：用 devc 的端口转发把 5173 转出来并 `bind: 0.0.0.0`，手机同 WiFi 开
-  `http://<Mac 的局域网 IP>:5173`（非安全源：剪贴板会退到 `execCommand` 兜底）。
+  **手机上看 dev 效果**：优先转发 **8080** —— 后端自己就带 `frontend/dist`，页面/API/缩略图同源，
+  和生产拓扑一致；手机同 WiFi 开 `http://<Mac 的局域网 IP>:8080`（非安全源：剪贴板会退到 `execCommand` 兜底）。
+  要热更新才用 5173。**5173 上的缩略图不可信**：Vite 的 http 代理会稳定弄坏一部分缩略图响应
+  （服务端 200、浏览器报 error，缓存重试也没用；2026-09-14 实测一批 ~137KB 的 webp 连续三次 200 仍破图，
+  同样的请求走 8080 完全正常）。这是**开发预览独有的问题，生产没有这一跳**，不要再花时间追它。
   **不要自己写 TCP 中继**：2026-09-14 手写过一个 python 中继，`create_connection(..., timeout=N)`
   会把超时留在 socket 上，空闲 N 秒就掐断 —— 它每 10 秒杀掉一次 HMR WebSocket，
   表现成「页面每隔几秒自动刷新一次」，查了很久。
