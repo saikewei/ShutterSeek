@@ -54,6 +54,7 @@ func Setup(h *handler.Handler, thumbDir, modelsDir string) *gin.Engine {
 			admin.GET("/invites", h.ListInvites)
 			admin.DELETE("/invites/:id", h.DeleteInvite)
 			admin.GET("/auth/logs", h.ListLogs)
+			admin.GET("/stats", h.AdminStats)
 			admin.GET("/photos/range", h.PhotoRange)
 			admin.POST("/photos/upload", h.Upload)
 			admin.POST("/photos/upload/batch", h.UploadBatch)

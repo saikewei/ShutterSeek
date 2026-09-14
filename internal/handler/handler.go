@@ -30,6 +30,7 @@ type Handler struct {
 	SearchSvc *service.SearchService
 	UploadSvc *service.UploadService
 	PhotoSvc  *service.PhotoService
+	StatsSvc  *service.StatsService
 }
 
 // ── Health ──────────────────────────────────────────────

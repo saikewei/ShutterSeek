@@ -91,15 +91,17 @@ func main() {
 	})
 	uploadSvc.Start()
 	photoSvc := service.NewPhotoService(gormDB, cache, albumSvc)
-	embedder := service.NewCachedEmbedder(
-		service.NewHTTPEmbedder(cfg.Embed.URL, cfg.Embed.Timeout(), cfg.Embed.Token),
-		rdb,
-	)
+	// The stats service pings the sidecar's health endpoint, which the caching
+	// wrapper does not expose, so it gets the raw HTTP embedder.
+	httpEmbedder := service.NewHTTPEmbedder(cfg.Embed.URL, cfg.Embed.Timeout(), cfg.Embed.Token)
+	embedder := service.NewCachedEmbedder(httpEmbedder, rdb)
 	searchSvc := service.NewSearchService(gormDB, embedder, cfg.Embed.MaxText)
+	statsSvc := service.NewStatsService(gormDB, pool, rdb, httpEmbedder)
 	h := &handler.Handler{
 		Pool: pool, Redis: rdb, DB: gormDB,
 		OrigSvc: origSvc, AlbumSvc: albumSvc, AuthSvc: authSvc,
 		SearchSvc: searchSvc, UploadSvc: uploadSvc, PhotoSvc: photoSvc,
+		StatsSvc: statsSvc,
 	}
 	r := router.Setup(h, cfg.Thumbnail.OutputDir, cfg.Model.Dir)
 

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -93,6 +94,26 @@ func (e *HTTPEmbedder) Embed(ctx context.Context, text string) ([]float32, error
 		return nil, fmt.Errorf("%w: dim=%d len=%d", ErrEmbedInvalid, out.Dim, len(out.Vector))
 	}
 	return out.Vector, nil
+}
+
+// Ping reports whether the embedding sidecar answers its health endpoint.
+// It is intentionally not part of the Embedder interface: callers type-assert
+// for it, so test doubles that only embed stay valid.
+func (e *HTTPEmbedder) Ping(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, e.url+"/healthz", nil)
+	if err != nil {
+		return err
+	}
+	resp, err := e.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("embed healthz: status %d", resp.StatusCode)
+	}
+	return nil
 }
 
 type CachedEmbedder struct {
