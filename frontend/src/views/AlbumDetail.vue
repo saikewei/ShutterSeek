@@ -29,7 +29,6 @@
       :remove-from-album-id="albumId"
       @photo-contextmenu="(photo, event) => isAdmin && onContextMenu(photo, event)"
       @removed-from-album="refreshAlbum"
-      @set-cover="setCover"
     />
 
     <!-- Right-click context menu -->
@@ -125,9 +124,4 @@ async function setAsCover() {
   fetchAlbum(albumId).then(a => { album.value = a })
 }
 
-// Same action as setAsCover, reached from the long-press sheet on touch.
-async function setCover(photo: Photo) {
-  await updateAlbum(albumId, { cover_photo_id: photo.id })
-  fetchAlbum(albumId).then(a => { album.value = a })
-}
 </script>

@@ -105,11 +105,6 @@
           :class="{ 'ring-2 ring-accent shadow-[0_0_14px_rgba(201,136,98,0.35)]': selectMode && selected.has(cell.photo.id) }"
           @click="onCellClick(cell, $event)"
           @contextmenu.prevent="onContextMenu(cell, $event)"
-          @pointerdown="onPressStart(cell, $event)"
-          @pointermove="onPressMove"
-          @pointerup="onPressEnd"
-          @pointercancel="onPressEnd"
-          @pointerleave="onPressEnd"
         >
           <img
             :src="thumbSrc(cell.photo)"
@@ -268,15 +263,6 @@
     <AppModal :open="monthPickerOpen && !singlePage" title="跳转到月份" @close="monthPickerOpen = false">
       <DateScrubber embedded :dates="datePoints" :active-month="activeMonth" @jump="onMonthJump" />
     </AppModal>
-
-    <!-- Long-press action sheet (touch only) -->
-    <ActionSheet
-      :open="sheet.open"
-      :title="sheet.photo?.file_name || ''"
-      :actions="sheetActions"
-      @close="sheet.open = false"
-      @select="onSheetSelect"
-    />
   </div>
 </template>
 
@@ -285,7 +271,7 @@ import { inject, ref, computed, onMounted, onUnmounted, reactive, watch } from '
 import type { Photo, PhotoListResponse } from '@/api/photos'
 import { fetchPhotoDates } from '@/api/photos'
 import { THUMB_BASE } from '@/api/client'
-import { fetchAlbums, batchAddPhotos, removeAlbumPhoto, removeAlbumPhotos, type Album } from '@/api/albums'
+import { fetchAlbums, batchAddPhotos, removeAlbumPhotos, type Album } from '@/api/albums'
 import { isAdmin } from '@/stores/auth'
 import { isMobileShell } from '@/stores/device'
 import { topOffsetKey, useElementHeight } from '@/lib/chrome'
@@ -304,7 +290,6 @@ import {
 import Lightbox from '@/components/Lightbox.vue'
 import DateScrubber from '@/components/DateScrubber.vue'
 import AppModal from '@/components/AppModal.vue'
-import ActionSheet, { type SheetAction } from '@/components/ActionSheet.vue'
 import type { DatePoint } from '@/components/DateScrubber.vue'
 
 const props = defineProps<{
@@ -322,7 +307,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   photoContextmenu: [photo: Photo, event: MouseEvent]
   removedFromAlbum: []
-  setCover: [photo: Photo]
 }>()
 
 // Sticky chrome geometry. `topOffset` is injected by whichever shell/page owns
@@ -506,123 +490,8 @@ function onCellClick(cell: BurstCell, e: MouseEvent) {
   onPhotoClick(cell.photo, e)
 }
 
-// ── Long press (touch) ───────────────────────────────
-// Touch has no hover and no dependable contextmenu, which used to leave every
-// per-photo action unreachable on a phone. A held press opens an action sheet.
-// The gesture is passive: it never calls preventDefault, so scrolling and the
-// normal tap path keep working, and a moving finger cancels the press.
-
-const LONG_PRESS_MS = 450
-const LONG_PRESS_SLOP = 8
-
-const sheet = reactive<{ open: boolean; photo: Photo | null }>({ open: false, photo: null })
-let pressTimer: number | null = null
-let pressOrigin = { x: 0, y: 0 }
-
-function cancelPress() {
-  if (pressTimer !== null) {
-    clearTimeout(pressTimer)
-    pressTimer = null
-  }
-}
-
-// A long press is still a gesture, so lifting the finger fires `touchend` and
-// then a synthetic `click`. The sheet opens while the finger is *still down*,
-// so both events arrive after it exists -- and headlessui's outside-click
-// detector reads both as "a click outside the dialog":
-//
-//   useDocumentEvent('click',    ..., true)                 // skipped on mobile
-//   useDocumentEvent('touchend', e => cb(e, () => e.target), true)
-//
-// On mobile it is the `touchend` branch that runs, and a touchend's target is
-// the element the gesture *started* on -- the grid cell, not the sheet. That
-// closed the sheet the instant it appeared. Swallowing only the click (an
-// earlier attempt) could never work: touchend comes first.
-//
-// These listeners are registered once, at setup, so they run before the ones
-// headlessui adds when the sheet mounts -- same node, same capture phase,
-// registration order decides. stopImmediatePropagation is what silences them.
-let swallowGestureEnd = false
-
-function onGestureEndCapture(e: Event) {
-  if (!swallowGestureEnd) return
-  // Swallow the click that follows too, then disarm.
-  if (e.type === 'click') swallowGestureEnd = false
-  e.stopImmediatePropagation()
-  e.preventDefault()
-}
-
-// A fresh gesture means the previous one is over; never eat a real tap.
-function onAnyPointerDown() {
-  swallowGestureEnd = false
-}
-
-function onPressStart(cell: BurstCell, e: PointerEvent) {
-  if (e.pointerType === 'mouse') return
-  if (cell.collapsed && cell.burstId) return
-  cancelPress()
-  pressOrigin = { x: e.clientX, y: e.clientY }
-  pressTimer = window.setTimeout(() => {
-    pressTimer = null
-    sheet.photo = cell.photo
-    sheet.open = true
-    swallowGestureEnd = true
-  }, LONG_PRESS_MS)
-}
-
-function onPressMove(e: PointerEvent) {
-  if (pressTimer === null) return
-  const moved =
-    Math.abs(e.clientX - pressOrigin.x) > LONG_PRESS_SLOP ||
-    Math.abs(e.clientY - pressOrigin.y) > LONG_PRESS_SLOP
-  if (moved) cancelPress()
-}
-
-function onPressEnd() {
-  cancelPress()
-}
-
 function onContextMenu(cell: BurstCell, e: MouseEvent) {
-  // On touch the long press owns this, so the desktop menu is not doubled up.
-  if (isMobileShell.value) return
   emit('photoContextmenu', cell.photo, e)
-}
-
-const sheetActions = computed<SheetAction[]>(() => {
-  if (!sheet.photo) return []
-  const actions: SheetAction[] = [{ key: 'open', label: '查看原图' }]
-  if (isAdmin.value) {
-    if (props.removeFromAlbumId !== undefined) {
-      actions.push({ key: 'cover', label: '设为封面' })
-    }
-    actions.push({ key: 'select', label: '选择照片' })
-    if (props.removeFromAlbumId !== undefined) {
-      actions.push({ key: 'remove', label: '从相册移除', danger: true })
-    }
-  }
-  return actions
-})
-
-function onSheetSelect(key: string) {
-  const photo = sheet.photo
-  if (!photo) return
-  if (key === 'open') {
-    openLightbox(photo)
-  } else if (key === 'cover') {
-    emit('setCover', photo)
-  } else if (key === 'select') {
-    enterSelectMode()
-    selected.value = new Set([photo.id])
-    anchorId.value = photo.id
-  } else if (key === 'remove' && props.removeFromAlbumId !== undefined) {
-    const albumId = props.removeFromAlbumId
-    removeAlbumPhoto(albumId, photo.id)
-      .then(() => {
-        removePhotoById(photo.id)
-        emit('removedFromAlbum')
-      })
-      .catch(() => { /* leave the grid untouched so the user can retry */ })
-  }
 }
 
 function dateLabel(iso: string): string {
@@ -1033,11 +902,6 @@ async function loadPage() {
 
 onMounted(() => {
   window.addEventListener('keydown', onKeyDown)
-  // Registered here, long before the action sheet's dialog exists, so these
-  // run ahead of headlessui's own document listeners. See onGestureEndCapture.
-  document.addEventListener('touchend', onGestureEndCapture, true)
-  document.addEventListener('click', onGestureEndCapture, true)
-  document.addEventListener('pointerdown', onAnyPointerDown, true)
   loadPage()
   observer = new IntersectionObserver(
     (entries) => {
@@ -1116,10 +980,6 @@ onUnmounted(() => {
   observer?.disconnect()
   offScroll?.()
   offScroll = null
-  cancelPress()
-  document.removeEventListener('touchend', onGestureEndCapture, true)
-  document.removeEventListener('click', onGestureEndCapture, true)
-  document.removeEventListener('pointerdown', onAnyPointerDown, true)
   controller?.abort()
 })
 </script>

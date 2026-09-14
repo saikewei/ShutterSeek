@@ -99,7 +99,11 @@ PostgreSQL + pgvector（1024 维）存元数据与向量；FastAPI + ONNX Runtim
   sticky 的 `top` 全部由它算出来，**不要再出现 37/46/53 这类魔数**；
   两条 chrome 高度定在 `style.css` 的 `--ss-topbar-h` / `--ss-tabbar-h`。
 - 弹窗一律用 `components/AppModal.vue`（headlessui Dialog → 自带 iOS 背景滚动锁 + 焦点管理），
-  触屏的「长按 → 动作面板」用 `components/ActionSheet.vue`。
+  触屏上需要「点一下弹面板」的地方（如相册列表的 `⋯`）用 `components/ActionSheet.vue`。
+  **照片网格故意没有长按菜单**（2026-09-14 按用户要求删掉）。如果以后要加回来，先知道这个坑：
+  headlessui 判定「点到 Dialog 外面」在**手机上读的是 `touchend`**（`isMobile()` 会跳过 click 分支），
+  而 `touchend` 的 target 是**手势开始时**那个元素 —— 长按弹出面板后一松手，它就把面板关掉了。
+  要压住它，监听器必须在**面板挂载之前**注册在 document 捕获阶段（同节点同阶段按注册顺序执行）。
   **触屏没有 hover，也没有可靠的 contextmenu**：任何只挂在 `group-hover` 或 `@contextmenu` 上的操作在手机上等于不存在。
 - 分页是游标式：`(taken_at, id) < (?, ?)` 配 `taken_at DESC, id DESC`；相册列表按 `sort_order, id`。
 - 上传：批量入口 `POST /photos/upload/batch`（multipart `file_N`/`vector_N`/`preview_N`，下标配对；`upload_handler.go`
