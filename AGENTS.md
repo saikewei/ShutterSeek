@@ -26,6 +26,10 @@ PostgreSQL + pgvector（1024 维）存元数据与向量；FastAPI + ONNX Runtim
 - 以下目录**不进 git**：`docs/`、`tmp/`、`models/`、`thumbnails/`、`uploads/`、`certs/`、`.claude/`、`.env*`。
 - 部署默认由 CI 完成，不要在 NAS 宿主机上手动 `docker compose` 改变线上状态；仅当 CI 不可用时作为例外，
   且事后说明改了什么、怎么验证的。
+- **删照片是「三处一起删」**：原图、`photos` 行、缩略图 `{id}.webp`。2026-08-02 的去重只做了前两处
+  （bash 脚本删原图、SQL 删行，脚本里连 `.webp` 字样都没有），7 天后遗留 **7,495 个孤儿缩略图 / 554 MiB**，
+  2026-09-14 才清掉。DB 侧当时是干净的（`album_photos`、`photo_embeddings`、`albums.cover_photo_id` 都无悬挂），
+  只有文件被漏了 —— 因为文件不在事务里，最容易忘。
 
 ## 3. 工作流与提交
 
