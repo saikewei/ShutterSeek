@@ -24,7 +24,7 @@
           <div v-else class="w-full h-full flex items-center justify-center text-ink-3 text-4xl">📷</div>
         </div>
 
-        <!-- 触屏没有 hover，管理入口必须常驻可见 -->
+        <!-- Touch has no hover, so the actions entry stays visible there -->
         <button
           v-if="isAdmin"
           class="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 text-ink hover:bg-black/80 backdrop-blur-[2px] transition-opacity duration-150 flex items-center justify-center text-sm opacity-100 md:opacity-0 md:group-hover:opacity-100"

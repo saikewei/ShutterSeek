@@ -36,8 +36,10 @@ PostgreSQL + pgvector（1024 维）存元数据与向量；FastAPI + ONNX Runtim
 - 一小步一提交，消息前缀：`feat | fix | perf | test | ci | style | docs | chore`。
 - **注释性文字一律英文**（硬规则）：代码注释、提交信息（subject 与 body）都必须写英文。
   `scripts/git-hooks/commit-msg` 强制——提交信息里出现非 ASCII 字符即拒绝（revert 消息放行，
-  git 生成的注释行会被忽略，`--no-verify` 可绕过但规则不允许）。UI 文案、`docs/`、本文件仍用中文。
-  历史提交是中文的**不追改**（改写历史违反 §2）。
+  git 生成的注释行会被忽略，`--no-verify` 可绕过但规则不允许）；`scripts/git-hooks/pre-commit`
+  另外拒绝**新增**的 `*.go` 行里出现非 ASCII 字节（Go 源码没有 UI 文案，可以精确判定；
+  `.vue`/`.ts` 里注释与中文 UI 文案混在一起，只能靠自觉）。UI 文案、`docs/`、本文件仍用中文。
+  历史提交是中文的**不追改**（改写历史违反 §2）。**改到哪就顺手译到哪**，不做全库翻译。
 - 提交身份固定 `saikewei <saikewei27@gmail.com>`（仓库 local 与容器 global 都已配置），别再改回
   `ShutterSeek Dev <3184054890@qq.com>`。GitHub 按**邮箱**归因：历史那 285 条提交要用旧邮箱
   `3184054890@qq.com`，只有把它加进 GitHub 账号邮箱列表后，那些提交才会显示成本人的（不需要改历史）。
@@ -67,6 +69,8 @@ PostgreSQL + pgvector（1024 维）存元数据与向量；FastAPI + ONNX Runtim
 
 - 分层 `handler → service → model`；**handler 不得直接访问 DB/Redis**（无测试守护，靠自觉）。
   前端对应 `views/`（页面）、`components/`（复用组件）、`api/`（后端封装）。
+  管理台入口：`GET /api/v1/admin/stats`（`AdminOnly()`，`StatsService.Snapshot`，**永不返回 error**——
+  依赖不可用时降级成 `*_ok:false`/0，保证页面能渲染）。
 - 复杂或性能敏感查询用**裸 SQL 写在 service 层**（pgvector、日期聚合、range、`SET LOCAL`）；常规 CRUD 用 GORM。
 - 角色 `admin` / `guest`：guest 的可见性在 **SQL 层**限定 `is_public`（不是 UI 层）；公开路由仅
   `POST /auth/login`、`POST /invites/redeem`、`GET /invites/validate/:code`，其余经 `AdminOnly()` 守卫。
@@ -75,10 +79,23 @@ PostgreSQL + pgvector（1024 维）存元数据与向量；FastAPI + ONNX Runtim
 - HTTPS 可选：`SHUTTERSEEK_TLS_ENABLED=true` → certmagic + Let's Encrypt **DNS-01**（阿里云 DNS，因 80/443 不可用）；
   开启后 cookie 置 `Secure`，未开启走明文 HTTP。
 - 缓存 key / TTL / 失效（**只有第一页进缓存**）：`cache:first_page:`(60s)、`cache:total_photos`(5m)、`cache:photo_dates:`(5m)、
-  `cache:albums:`(60s)、`cache:album_dates:`、`cache:album_photos:`、`cache:qvec:v1:`(7d)。
+  `cache:albums:`(60s)、`cache:album_dates:`、`cache:album_photos:`、`cache:qvec:v1:`(7d)、`cache:admin_stats:v1`(60s)。
   guest 的数据**一律加 `guest:` 前缀**，绝不跨角色共享。
   **改查询参数或响应格式后必须清缓存**；切换相册 `is_public` 必须走 `AlbumService.InvalidateCaches()`。
+  `cache:admin_stats:v1` 只缓存计数（`photo_embeddings` 的 `COUNT(*)` 是 6.8 万行全表扫描，实测 ~450ms）；
+  健康检查与运行时长**不进缓存**，否则管理台的「刷新」按钮会撒谎。
 - 时区固定 **+08**（`cstZone = time.FixedZone("CST", 8*3600)`）：日期解析与格式化统一走它，不要用 `time.Local`。
+- **前端两套 shell，靠媒体查询切换**（`stores/device.ts` 的 `isMobileShell`，不看 UA）：
+  桌面是 `<main data-scroll-host>` 内部滚动；**移动端必须让 document 自己滚**——
+  iOS 只在整个文档滚动时才收起底部地址栏，内层 `overflow:auto` 永远触发不了。
+  ⇒ 要读/写滚动位置、监听 scroll、量视口顶部，**一律走 `lib/scrollHost.ts`**，
+  不要再写 `document.querySelector('.overflow-auto')`。
+  ⇒ 贴顶元素的高度（移动端顶栏、相册页头）由 `lib/chrome.ts` 的 `topOffsetKey` 逐层叠加，
+  sticky 的 `top` 全部由它算出来，**不要再出现 37/46/53 这类魔数**；
+  两条 chrome 高度定在 `style.css` 的 `--ss-topbar-h` / `--ss-tabbar-h`。
+- 弹窗一律用 `components/AppModal.vue`（headlessui Dialog → 自带 iOS 背景滚动锁 + 焦点管理），
+  触屏的「长按 → 动作面板」用 `components/ActionSheet.vue`。
+  **触屏没有 hover，也没有可靠的 contextmenu**：任何只挂在 `group-hover` 或 `@contextmenu` 上的操作在手机上等于不存在。
 - 分页是游标式：`(taken_at, id) < (?, ?)` 配 `taken_at DESC, id DESC`；相册列表按 `sort_order, id`。
 - 上传：批量入口 `POST /photos/upload/batch`（multipart `file_N`/`vector_N`/`preview_N`，下标配对；`upload_handler.go`
   用 `MultipartReader` 流式落盘，不走 `ParseMultipartForm`）。`POST /photos/upload` 只是单文件兼容壳。
@@ -91,7 +108,10 @@ PostgreSQL + pgvector（1024 维）存元数据与向量；FastAPI + ONNX Runtim
 - 依赖服务：`postgres-main:5432`（库 `photo_search`、用户 `photo_user`）、Redis `172.18.0.3:6379` DB 2
   （compose 网络内为 `redis:6379`）；凭据在 `.env.local`。
 - 三个进程与端口：后端 `:8080`（`air` 热重载）、文本向量 sidecar `:8000`（`./embed/run_dev.sh`）、
-  Vite `:5173`（把 `/api`、`/thumbnails`、`/models` 代理到 8080）。
+  Vite `:5173`（把 `/api`、`/thumbnails`、`/models` 代理到 8080；已配 `--host 0.0.0.0`）。
+  **手机上看 dev 效果**：容器 `172.18.0.4:5173` → 在 NAS 宿主机上用 `python3` 起一个 TCP 中继监听
+  `0.0.0.0:5173` → 手机同 WiFi 直接开 `http://192.168.0.108:5173`（非安全源：剪贴板会退到 `execCommand` 兜底）。
+  注意 `api/client.ts` 里缩略图的绝对地址只在 `localhost` 上生效，否则手机上会指到手机自己。
 - 模型文件：`models/model.onnx`（BGE-M3 INT8，文本）、`models/vision_encoder/model.onnx`（fp16 1.2GB，浏览器下载）。
 - 容器内**没有** `psql`、`redis-cli`、`rg`、`docker` CLI、`cwebp`；其中 `cwebp` 是上传缩略图的依赖，
   在 dev 容器里是手工装的、重建后会丢失（**生产镜像**已含 `libwebp-tools`，不受影响）。
@@ -108,6 +128,9 @@ PostgreSQL + pgvector（1024 维）存元数据与向量；FastAPI + ONNX Runtim
 ## 7. 已知问题（尚未修复；修好一条就删一条）
 
 - 静态文件缺失会被 SPA fallback 成 **200 + index.html**（缺缩略图时不返回 404，掩盖问题）。
+  **同理：请求一个没注册的 `/api/...` 路由也会拿到 200 + index.html**，
+  所以「路由是否注册成功」不能只看状态码，要看 `Content-Type` 是不是 JSON
+  （或直接看后端启动日志里的 `[GIN-debug]` 路由表 —— 2026-09-14 就这么误判过一次）。
 - GORM debug 模式会把**整条 1024 维向量**打进慢 SQL 日志（>200ms 触发）。
 - `GET /api/v1/photos/:id/original` 对 PNG 返回 `Content-Type: image/jpeg`（`internal/handler/handler.go:157` 硬编码）。
 - 文本向量（BGE-M3）与图片向量（CLIP）**不在同一向量空间**，是已知的工程取舍。

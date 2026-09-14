@@ -1,7 +1,8 @@
 <template>
   <div class="bg-canvas text-ink">
-    <!-- 搜索条：钉在当前 shell 的顶栏下方。页面本身交给文档滚动，
-         手机上这样 iOS 的地址栏才会跟着收起。 -->
+    <!-- Search bar, pinned below whatever chrome the shell already has. The
+         page itself relies on document scrolling so iOS collapses its own
+         address bar while the results move. -->
     <div
       class="sticky z-30 px-4 py-3 border-b border-line bg-raised/95 backdrop-blur"
       :style="{ top: topOffset + 'px' }"
@@ -26,7 +27,7 @@
       </div>
     </div>
 
-    <!-- 内容区 -->
+    <!-- Results -->
     <div>
       <div v-if="status === 'idle'" class="flex flex-col items-center justify-center py-24">
         <p class="text-base text-ink-2">输入描述，搜索你的照片</p>
@@ -85,7 +86,8 @@ function albumTitle(id: number): string {
   return albumTitles.value[id] || `相册 ${id}`
 }
 
-// 从 URL 初始化；q 与 activeQuery 相同且 album 未变时跳过（防止 self-replace 重复搜索）
+// Initialise from the URL. Skipped when q already equals activeQuery and the
+// album is unchanged, so our own router.replace() cannot re-trigger a search.
 function readURL() {
   const q = typeof route.query.q === 'string' ? route.query.q : ''
   const a = Number(route.query.album_id) || 0
@@ -138,7 +140,8 @@ function clearAlbum() {
   if (activeQuery.value) doSearch()
 }
 
-// 供 Task 4 的 PhotoGrid 使用：适配 fetchFn 签名（补 next_cursor）
+// Adapter for PhotoGrid's fetchFn signature: search is single-page, so it
+// reports an empty cursor.
 function wrapFetch(
   params: { limit: number; cursor?: string },
   signal?: AbortSignal,
@@ -158,7 +161,7 @@ onMounted(async () => {
     for (const a of data.items) map[a.id] = a.title
     albumTitles.value = map
   } catch {
-    // 无相册标题不影响搜索
+    // Missing album titles do not affect searching
   }
   readURL()
 })

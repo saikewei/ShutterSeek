@@ -1,12 +1,35 @@
 #!/bin/sh
-# ShutterSeek branch discipline: main only accepts merges, never direct commits.
-# See AGENTS.md §2/§3. Active only inside this repository (core.hooksPath).
+# ShutterSeek commit guards. See AGENTS.md §2/§3.
+# Active only inside this repository (core.hooksPath).
 #
-# Allows: any commit on dev / feature branches; merge commits on main
-#         (including --ff-only, which produces no commit at all).
-# Blocks: direct git commit / cherry-pick / revert / amend on main.
-# Bypass: git commit --no-verify (not recommended; the rule does not allow it).
+# 1. Comment text must be English: reject newly added lines in *.go that carry
+#    non-ASCII bytes. Go files hold no user-facing strings, so the check can be
+#    exact here. *.vue / *.ts mix comments with Chinese UI copy and *.md files
+#    are Chinese by design, so they are not checked.
+# 2. Branch discipline: main only accepts merges, never direct commits.
+#    Allows: any commit on dev / feature branches; merge commits on main
+#            (including --ff-only, which produces no commit at all).
+#    Blocks: direct git commit / cherry-pick / revert / amend on main.
+# Bypass: git commit --no-verify (not recommended; the rules do not allow it).
 
+# ── 1. Comments must be English (staged Go lines) ──────────────────────────
+added=$(git diff --cached -U0 -- '*.go' | grep '^+' | grep -v '^+++')
+if [ -n "$added" ]; then
+  offenders=$(printf '%s\n' "$added" | LC_ALL=C grep -n '[^[:print:][:space:]]' | head -5)
+  if [ -n "$offenders" ]; then
+    cat >&2 <<EOF
+✗ Rejected: newly added Go lines contain non-ASCII text.
+
+$offenders
+
+  Code comments must be English (AGENTS.md §3). UI copy, docs/ and AGENTS.md
+  stay Chinese, but no Go source line should need either.
+EOF
+    exit 1
+  fi
+fi
+
+# ── 2. Branch discipline ───────────────────────────────────────────────────
 branch=$(git symbolic-ref --short -q HEAD 2>/dev/null)
 case "$branch" in
   main|master) ;;

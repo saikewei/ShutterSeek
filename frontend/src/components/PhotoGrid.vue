@@ -1,7 +1,8 @@
 <template>
   <div ref="rootEl">
-    <!-- Filter bar（单页模式无筛选语义，整栏隐藏）。
-         手机上一行放不下，改成横向滚动而不是挤压每个按钮的命中区。 -->
+    <!-- Filter bar. Hidden entirely in single-page mode, which has no filter
+         semantics. On a phone one row cannot hold every control, so the bar
+         scrolls sideways instead of shrinking each tap target. -->
     <div
       v-if="!singlePage"
       ref="filterBar"
@@ -78,7 +79,7 @@
       </div>
     </div>
 
-    <!-- Grid with date separators (单页模式不分组、不显示日期栏) -->
+    <!-- Grid with date separators (single-page mode is not grouped) -->
     <div v-for="group in groupCells" :key="group.label || 'all'">
       <div
         v-if="group.label"
@@ -138,7 +139,7 @@
             <span v-if="albumTags(cell.photo).length > 2" class="text-[10px] text-ink-3">+{{ albumTags(cell.photo).length - 2 }}</span>
           </div>
 
-          <!-- 连拍折叠角标 / 展开收起按钮 -->
+          <!-- Burst collapse badge / expand-collapse button -->
           <div v-if="cell.collapsed" class="absolute top-1 right-1">
             <span class="px-1.5 py-0.5 text-[10px] rounded bg-black/60 text-ink-2 backdrop-blur-[2px]">×{{ cell.burstCount }}</span>
           </div>
@@ -403,13 +404,14 @@ const groups = computed<Group[]>(() => {
   return result
 })
 
-// 单页模式（搜索结果按相似度排序）不按日期分组，仅渲染无标题的单组
+// Single-page mode (search results, ordered by similarity) is not grouped
+// by date: it renders one untitled group.
 const displayGroups = computed<Group[]>(() => {
   if (props.singlePage) return [{ label: '', photos: photos.value }]
   return groups.value
 })
 
-// ── 连拍堆叠 ──────────────────────────────────────
+// ── Burst stacking ────────────────────────────────
 
 interface BurstCell {
   photo: Photo
@@ -428,7 +430,8 @@ function toggleBurst(id: string) {
   expandedBursts.value = s
 }
 
-// 同一秒的连续照片合并为一组；singlePage（搜索）与选择模式不折叠
+// Photos sharing one timestamp collapse into a single cell. Single-page
+// mode (search) and selection mode never collapse.
 function buildCells(list: Photo[]): BurstCell[] {
   const out: BurstCell[] = []
   if (props.singlePage || selectMode.value) {
@@ -568,7 +571,8 @@ function dateLabel(iso: string): string {
   return `${y}年${m}月${d.getDate()}日`
 }
 
-// 日期头「N 张」：从已加载的日期分布取数（day→当日计数；month→当月合计），纯展示
+// "N photos" beside a date header, read from the loaded date distribution
+// (per day, or summed per month). Display only.
 function groupCount(label: string): number {
   if (!label) return 0
   if (groupBy.value === 'month') {
@@ -610,7 +614,8 @@ const monthPickerOpen = ref(false)
 function jumpToDate(monthKey: string) {
   jumpMonth.value = monthKey
   hasNewer.value = monthKey !== ''
-  // 同步日期导航锚点到目标月的第一张照片日期（按全库日期分布）
+  // Move the day-navigation anchor to the first photo day of the target
+  // month, taken from the whole-library date distribution.
   const first = allDates.value.map(d => d.date).find(d => d.startsWith(monthKey))
   focusDate.value = first || monthKey + '-01'
   jumpCooldown.value = true
@@ -623,10 +628,12 @@ function jumpToDate(monthKey: string) {
 const focusDate = ref('') // YYYY-MM-DD — the day nav anchor
 const jumpDate = ref('')  // pending date jump param
 
-// 月份选择器高亮：跟随当前可见日期（由滚动同步 focusDate 派生）
+// Month-picker highlight: derived from focusDate, which the scroll handler
+// keeps in sync with the visible date.
 const activeMonth = computed(() => (focusDate.value ? focusDate.value.slice(0, 7) : ''))
 
-// 滚动时检测当前钉在顶部的日期分组，同步日期导航锚点
+// While scrolling, find the date group currently pinned to the top and sync
+// the day-navigation anchor to it.
 function updateVisibleDate() {
   const headers = Array.from(rootEl.value?.querySelectorAll<HTMLElement>('[data-date-iso]') ?? [])
   if (headers.length === 0) return
@@ -937,7 +944,7 @@ onMounted(() => {
   )
   setTimeout(() => { if (sentinel.value) observer?.observe(sentinel.value) }, 1000)
 
-  // Scroll-up detection for loading newer photos（单页模式跳过）
+  // Scroll-up detection for loading newer photos (skipped in single-page mode)
   if (!props.singlePage) {
     let ticking = false
     offScroll = onHostScroll(() => {

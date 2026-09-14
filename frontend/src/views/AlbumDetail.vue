@@ -6,7 +6,8 @@
         <h1 class="text-sm font-medium font-display text-ink truncate">{{ album?.title || 'Album' }}</h1>
         <p class="text-xs text-ink-3 tabular-nums">{{ album?.photo_count?.toLocaleString() || 0 }} photos</p>
       </div>
-      <!-- 上传不在移动端流程里，手机上只保留更常用的「搜索相册」 -->
+      <!-- Upload is not part of the mobile flow, so only the more useful
+           "search this album" action survives there -->
       <button
         v-if="isAdmin && !isMobileShell"
         @click="$router.push('/upload?album=' + albumId)"
