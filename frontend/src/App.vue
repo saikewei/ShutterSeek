@@ -1,39 +1,30 @@
 <template>
-  <!-- Mobile guest shell: top bar + bottom tabs, no sidebar -->
-  <div v-if="isMobileShell" class="flex flex-col h-screen supports-[height:100dvh]:h-dvh overflow-hidden bg-canvas text-ink">
-    <header class="shrink-0 px-4 py-3 border-b border-line bg-raised flex items-center justify-between">
-      <h1 class="font-display text-sm font-semibold tracking-wide text-ink">ShutterSeek</h1>
-      <button @click="doLogout" class="text-xs text-ink-3 hover:text-ink-2 transition-colors duration-150">退出</button>
-    </header>
+  <!-- Auth / invite pages render standalone on every device -->
+  <router-view v-if="chromeless" />
 
-    <!-- overscroll-none：滚动到底时不把橡皮筋效果/链式滚动传给页面（否则底栏会跟着弹） -->
-    <main data-scroll-host class="flex-1 overflow-auto overflow-x-hidden overscroll-none">
-      <router-view />
+  <!-- Mobile shell.
+       Scrolling happens on the document here, not in an inner container: iOS
+       Safari only collapses its bottom toolbar in response to document-level
+       scrolling. The top bar is sticky and the tab bar is fixed, so neither of
+       them moves with the rubber-band the way a flow-layout footer used to. -->
+  <div v-else-if="isMobileShell" class="min-h-svh bg-canvas text-ink">
+    <MobileTopBar ref="topBar" />
+
+    <main :style="{ paddingBottom: 'calc(var(--ss-tabbar-h) + env(safe-area-inset-bottom))' }">
+      <router-view v-slot="{ Component }">
+        <Transition name="page" mode="out-in">
+          <component :is="Component" />
+        </Transition>
+      </router-view>
     </main>
 
-    <nav class="shrink-0 flex border-t border-line bg-raised pb-[env(safe-area-inset-bottom)]">
-      <router-link
-        to="/"
-        class="flex-1 py-3 text-xs text-center transition-colors duration-150"
-        :class="$route.path === '/' ? 'text-accent-strong font-semibold' : 'text-ink-3'"
-      >全部照片</router-link>
-      <router-link
-        to="/albums"
-        class="flex-1 py-3 text-xs text-center transition-colors duration-150"
-        :class="$route.path.startsWith('/albums') ? 'text-accent-strong font-semibold' : 'text-ink-3'"
-      >相册</router-link>
-      <router-link
-        to="/search"
-        class="flex-1 py-3 text-xs text-center transition-colors duration-150"
-        :class="$route.path === '/search' ? 'text-accent-strong font-semibold' : 'text-ink-3'"
-      >搜索</router-link>
-    </nav>
+    <MobileTabBar />
   </div>
 
   <!-- Desktop shell -->
   <div v-else class="flex h-screen supports-[height:100dvh]:h-dvh overflow-hidden bg-canvas text-ink">
     <!-- Sidebar -->
-    <nav v-if="!hideSidebar" class="w-48 shrink-0 bg-raised border-r border-line flex flex-col">
+    <nav class="w-48 shrink-0 bg-raised border-r border-line flex flex-col">
       <div class="px-4 pt-5 pb-4">
         <h1 class="font-display text-base font-medium tracking-wide text-ink">ShutterSeek</h1>
         <p class="text-[9px] tracking-[0.2em] uppercase text-ink-3 mt-1">Private Archive</p>
@@ -109,15 +100,30 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, provide, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { authState, isAdmin, clearUser } from '@/stores/auth'
 import { isMobileShell } from '@/stores/device'
+import { topOffsetKey, useElementHeight } from '@/lib/chrome'
 import { logout } from '@/api/auth'
+import MobileTopBar from '@/components/mobile/MobileTopBar.vue'
+import MobileTabBar from '@/components/mobile/MobileTabBar.vue'
 
 const route = useRoute()
 const router = useRouter()
-const hideSidebar = computed(() => route.meta.hideSidebar)
+
+// Login / invite pages render without any app chrome.
+const chromeless = computed(() => !!route.meta.chromeless)
+
+// Height of the sticky top bar, published so pages and the photo grid can
+// stack their own sticky headers underneath it. Zero on the desktop shell,
+// where no top bar exists.
+const topBar = ref<{ $el?: unknown } | null>(null)
+const topBarH = useElementHeight(() => {
+  const el = topBar.value?.$el
+  return el instanceof HTMLElement ? el : null
+})
+provide(topOffsetKey, () => topBarH.value)
 
 async function doLogout() {
   try { await logout() } catch { /* ignore */ }

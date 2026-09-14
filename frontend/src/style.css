@@ -29,6 +29,12 @@
 }
 
 @layer base {
+  :root {
+    /* Mobile chrome heights. The shell lays the bars out and the views offset
+       their own sticky headers by these, so they live in one place. */
+    --ss-topbar-h: 48px;
+    --ss-tabbar-h: 52px;
+  }
   html {
     font-family: var(--font-body);
   }
@@ -122,6 +128,20 @@
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+/* Route transition for the mobile shell. Kept to opacity + a hair of translate
+   so it never creates a long-lived containing block around fixed children. */
+.page-enter-active,
+.page-leave-active {
+  transition: opacity 160ms ease-out, transform 160ms ease-out;
+}
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(4px);
+}
+.page-leave-to {
+  opacity: 0;
 }
 
 @keyframes modalIn {
