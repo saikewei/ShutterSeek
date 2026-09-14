@@ -1,56 +1,74 @@
 <template>
   <div ref="rootEl">
     <!-- Filter bar. Hidden entirely in single-page mode, which has no filter
-         semantics. On a phone one row cannot hold every control, so the bar
-         scrolls sideways instead of shrinking each tap target. -->
+         semantics. Everything lives on one row: the controls scroll sideways
+         when they do not fit, and the day stepper stays pinned on the right so
+         it is always reachable. The current day is already shown by the sticky
+         date header below, so the stepper does not repeat it. -->
     <div
       v-if="!singlePage"
       ref="filterBar"
       class="sticky z-20 bg-canvas/90 backdrop-blur border-b border-line"
       :style="{ top: topOffset + 'px' }"
     >
-      <div class="no-scrollbar flex items-center gap-1.5 px-2 py-1.5 overflow-x-auto">
-        <button
-          @click="filterOpen = true"
-          class="relative shrink-0 px-3.5 py-1.5 text-xs rounded-full transition-colors"
-          :class="hasActiveFilter ? 'bg-ink text-[#1C1208]' : 'bg-surface text-ink-2 hover:bg-line-strong hover:text-ink'"
-        >
-          筛选
-          <span v-if="hasActiveFilter" class="ml-1 text-[10px]">●</span>
-        </button>
-
-        <button
-          v-if="isMobileShell && !selectMode && !singlePage"
-          @click="monthPickerOpen = true"
-          class="shrink-0 px-3.5 py-1.5 text-xs rounded-full bg-surface text-ink-2 hover:bg-line-strong hover:text-ink transition-colors"
-        >月份</button>
-
-        <button
-          v-if="isAdmin && !selectMode"
-          @click="enterSelectMode"
-          class="shrink-0 px-3.5 py-1.5 text-xs rounded-full bg-surface text-ink-2 hover:bg-line-strong hover:text-ink transition-colors"
-        >选择</button>
-
-        <button
-          v-if="!selectMode && (!atTop || hasNewer)"
-          @click="scrollToTop"
-          class="shrink-0 px-3.5 py-1.5 text-xs rounded-full bg-line-strong text-ink-2 hover:text-ink transition-colors"
-        >{{ hasNewer ? '返回最新' : '↑ 顶部' }}</button>
-
-        <template v-if="selectMode">
-          <span class="shrink-0 text-xs text-ink-2 whitespace-nowrap">
-            已选 {{ selected.size }} 张
-            <span v-if="rangeLoading"> · 选择中...</span>
-          </span>
+      <div class="flex items-center gap-1.5 px-2 py-1.5">
+        <div class="no-scrollbar flex-1 min-w-0 flex items-center gap-1.5 overflow-x-auto">
           <button
-            v-if="rangeFn"
-            @click="rangeMode = !rangeMode"
-            class="shrink-0 px-3.5 py-1.5 text-xs rounded-full transition-colors"
-            :class="rangeMode ? 'bg-accent text-[#1C1208] font-semibold' : 'bg-surface text-ink-2 hover:text-ink'"
-            title="打开后，点第二张即可选中区间"
-          >范围</button>
-          <span v-if="rangeError" class="shrink-0 text-xs text-danger-ink whitespace-nowrap">{{ rangeError }}</span>
-        </template>
+            @click="filterOpen = true"
+            class="relative shrink-0 px-3.5 py-1.5 text-xs rounded-full transition-colors"
+            :class="hasActiveFilter ? 'bg-ink text-[#1C1208]' : 'bg-surface text-ink-2 hover:bg-line-strong hover:text-ink'"
+          >
+            筛选
+            <span v-if="hasActiveFilter" class="ml-1 text-[10px]">●</span>
+          </button>
+
+          <button
+            v-if="isMobileShell && !selectMode && !singlePage"
+            @click="monthPickerOpen = true"
+            class="shrink-0 px-3.5 py-1.5 text-xs rounded-full bg-surface text-ink-2 hover:bg-line-strong hover:text-ink transition-colors"
+          >月份</button>
+
+          <button
+            v-if="isAdmin && !selectMode"
+            @click="enterSelectMode"
+            class="shrink-0 px-3.5 py-1.5 text-xs rounded-full bg-surface text-ink-2 hover:bg-line-strong hover:text-ink transition-colors"
+          >选择</button>
+
+          <button
+            v-if="!selectMode && (!atTop || hasNewer)"
+            @click="scrollToTop"
+            class="shrink-0 px-3.5 py-1.5 text-xs rounded-full bg-line-strong text-ink-2 hover:text-ink transition-colors"
+          >{{ hasNewer ? '返回最新' : '↑ 顶部' }}</button>
+
+          <template v-if="selectMode">
+            <span class="shrink-0 text-xs text-ink-2 whitespace-nowrap">
+              已选 {{ selected.size }} 张
+              <span v-if="rangeLoading"> · 选择中...</span>
+            </span>
+            <button
+              v-if="rangeFn"
+              @click="rangeMode = !rangeMode"
+              class="shrink-0 px-3.5 py-1.5 text-xs rounded-full transition-colors"
+              :class="rangeMode ? 'bg-accent text-[#1C1208] font-semibold' : 'bg-surface text-ink-2 hover:text-ink'"
+              title="打开后，点第二张即可选中区间"
+            >范围</button>
+            <span v-if="rangeError" class="shrink-0 text-xs text-danger-ink whitespace-nowrap">{{ rangeError }}</span>
+          </template>
+        </div>
+
+        <!-- Day stepper, pinned so it never scrolls out of reach -->
+        <div v-if="!selectMode" class="shrink-0 flex items-center gap-1">
+          <button
+            @click="prevDay"
+            class="h-8 px-2.5 rounded-lg bg-surface hover:bg-line-strong text-ink-2 hover:text-ink transition-colors whitespace-nowrap text-xs"
+            title="前一天"
+          >{{ isMobileShell ? '‹' : '◀ 前一天' }}</button>
+          <button
+            @click="nextDay"
+            class="h-8 px-2.5 rounded-lg bg-surface hover:bg-line-strong text-ink-2 hover:text-ink transition-colors whitespace-nowrap text-xs"
+            title="后一天"
+          >{{ isMobileShell ? '›' : '后一天 ▶' }}</button>
+        </div>
       </div>
 
       <div v-if="selectMode" class="flex items-center gap-1.5 px-2 pb-1.5">
@@ -61,21 +79,6 @@
           添加到相册
         </button>
         <button @click="exitSelectMode" class="ml-auto px-3 py-1.5 text-xs rounded-full text-ink-3 hover:text-ink transition-colors">取消</button>
-      </div>
-
-      <!-- Day navigation (sticky filter bar, always visible; compact on mobile) -->
-      <div v-if="!selectMode && !singlePage" class="flex items-center justify-center gap-2 px-2 pb-1.5">
-        <button
-          @click="prevDay"
-          class="h-8 min-w-9 px-3 rounded-lg bg-surface hover:bg-line-strong text-ink-2 hover:text-ink transition-colors whitespace-nowrap text-xs"
-          title="前一天"
-        >{{ isMobileShell ? '‹' : '◀ 前一天' }}</button>
-        <span class="text-[11px] text-ink-3 tabular-nums min-w-[6.5rem] text-center">{{ focusDate || '—' }}</span>
-        <button
-          @click="nextDay"
-          class="h-8 min-w-9 px-3 rounded-lg bg-surface hover:bg-line-strong text-ink-2 hover:text-ink transition-colors whitespace-nowrap text-xs"
-          title="后一天"
-        >{{ isMobileShell ? '›' : '后一天 ▶' }}</button>
       </div>
     </div>
 
