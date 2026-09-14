@@ -31,6 +31,9 @@ type Handler struct {
 	UploadSvc *service.UploadService
 	PhotoSvc  *service.PhotoService
 	StatsSvc  *service.StatsService
+	// ThumbnailsDir is where {id}.webp files live; Thumbnail serves them from
+	// inside the authenticated group.
+	ThumbnailsDir string
 }
 
 // ── Health ──────────────────────────────────────────────
@@ -156,7 +159,7 @@ func (h *Handler) GetOriginal(c *gin.Context) {
 	}
 
 	c.Header("Content-Type", "image/jpeg")
-	c.Header("Cache-Control", "public, max-age=86400")
+	c.Header("Cache-Control", "private, max-age=86400")
 	if err := h.OrigSvc.ServeOriginal(c.Writer, photo.FilePath); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 	}

@@ -55,7 +55,8 @@ export default defineConfig({
           })
         },
       },
-      '/thumbnails': 'http://localhost:8080',
+      // Thumbnails are served under /api/v1/thumbnails, so the '/api' rule
+      // above covers them; the old public '/thumbnails' alias is gone.
       '/models': 'http://localhost:8080',
     },
   },

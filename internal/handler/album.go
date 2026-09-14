@@ -338,7 +338,7 @@ func (h *Handler) BatchAddPhotos(c *gin.Context) {
 func toPhotoItem(p *model.Photo) PhotoItem {
 	return PhotoItem{
 		ID:           p.ID,
-		ThumbnailURL: "/api/thumbnails/" + strconv.FormatInt(p.ID, 10) + ".webp",
+		ThumbnailURL: service.ThumbnailURL(p.ID),
 		FileName:     filepath.Base(p.FilePath),
 		FilePath:     p.FilePath,
 		CameraMake:   p.CameraMake,

@@ -561,5 +561,5 @@ func (s *AlbumService) coverURL(albumID int64, coverID *int64) string {
 	if coverID == nil {
 		return ""
 	}
-	return "/api/thumbnails/" + strconv.FormatInt(*coverID, 10) + ".webp"
+	return ThumbnailURL(*coverID)
 }

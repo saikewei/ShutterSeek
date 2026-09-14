@@ -101,7 +101,7 @@ func main() {
 		Pool: pool, Redis: rdb, DB: gormDB,
 		OrigSvc: origSvc, AlbumSvc: albumSvc, AuthSvc: authSvc,
 		SearchSvc: searchSvc, UploadSvc: uploadSvc, PhotoSvc: photoSvc,
-		StatsSvc: statsSvc,
+		StatsSvc: statsSvc, ThumbnailsDir: cfg.Thumbnail.OutputDir,
 	}
 	r := router.Setup(h, cfg.Thumbnail.OutputDir, cfg.Model.Dir)
 

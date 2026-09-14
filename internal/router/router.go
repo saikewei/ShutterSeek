@@ -32,6 +32,7 @@ func Setup(h *handler.Handler, thumbDir, modelsDir string) *gin.Engine {
 		v1.GET("/photos", h.ListPhotos)
 		v1.GET("/photos/dates", h.PhotoDates)
 		v1.GET("/photos/:id/original", h.GetOriginal)
+		v1.GET("/thumbnails/:file", h.Thumbnail)
 		v1.GET("/albums", h.ListAlbums)
 		v1.GET("/albums/:id", h.GetAlbum)
 		v1.GET("/albums/:id/dates", h.AlbumDates)
@@ -76,12 +77,11 @@ func Setup(h *handler.Handler, thumbDir, modelsDir string) *gin.Engine {
 		c.File(p)
 	})
 
-	// Thumbnails — served under /api/thumbnails/ to avoid Vite proxy issues
-	if _, err := os.Stat(thumbDir); err == nil {
-		r.Static("/api/thumbnails", thumbDir)
-		r.Static("/thumbnails", thumbDir) // keep old path for direct backend access
-		log.Printf("✓ Thumbnails: %s", thumbDir)
-	} else {
+	// Thumbnails are served by h.Thumbnail inside the authenticated group. The
+	// two public r.Static aliases that used to live here (/api/thumbnails and
+	// /thumbnails) let anyone walk the ids and download the whole library
+	// without a session, so they are gone.
+	if _, err := os.Stat(thumbDir); err != nil {
 		log.Printf("⚠ Thumbnails dir not found: %s", thumbDir)
 	}
 

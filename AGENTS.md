@@ -37,8 +37,9 @@ PostgreSQL + pgvector（1024 维）存元数据与向量；FastAPI + ONNX Runtim
 - **注释性文字一律英文**（硬规则）：代码注释、提交信息（subject 与 body）都必须写英文。
   `scripts/git-hooks/commit-msg` 强制——提交信息里出现非 ASCII 字符即拒绝（revert 消息放行，
   git 生成的注释行会被忽略，`--no-verify` 可绕过但规则不允许）；`scripts/git-hooks/pre-commit`
-  另外拒绝**新增**的 `*.go` 行里出现非 ASCII 字节（Go 源码没有 UI 文案，可以精确判定；
-  `.vue`/`.ts` 里注释与中文 UI 文案混在一起，只能靠自觉）。UI 文案、`docs/`、本文件仍用中文。
+  另外拒绝**新增的 `*.go` 注释行**里出现非 ASCII —— 只看注释行，因为 Go 里合法的中文**字符串字面量**
+  是 UI 文案（如 `gin.H{"error": "无权访问"}`，前端会直接展示），不属于这条规则。
+  行尾注释与 `.vue`/`.ts` 里的注释拦不住，靠自觉。UI 文案、`docs/`、本文件仍用中文。
   历史提交是中文的**不追改**（改写历史违反 §2）。**改到哪就顺手译到哪**，不做全库翻译。
 - 提交身份固定 `saikewei <saikewei27@gmail.com>`（仓库 local 与容器 global 都已配置），别再改回
   `ShutterSeek Dev <3184054890@qq.com>`。GitHub 按**邮箱**归因：历史那 285 条提交要用旧邮箱
@@ -74,6 +75,10 @@ PostgreSQL + pgvector（1024 维）存元数据与向量；FastAPI + ONNX Runtim
 - 复杂或性能敏感查询用**裸 SQL 写在 service 层**（pgvector、日期聚合、range、`SET LOCAL`）；常规 CRUD 用 GORM。
 - 角色 `admin` / `guest`：guest 的可见性在 **SQL 层**限定 `is_public`（不是 UI 层）；公开路由仅
   `POST /auth/login`、`POST /invites/redeem`、`GET /invites/validate/:code`，其余经 `AdminOnly()` 守卫。
+- **缩略图也走鉴权**：`GET /api/v1/thumbnails/<id>.webp`（`handler.Thumbnail`），URL 由
+  `service.ThumbnailURL(id)` 统一产出，guest 再套 `PhotoInPublicAlbum`。**绝不要**把它改回
+  `r.Static`——2026-09-14 之前它挂在根引擎上且另有一个 `/thumbnails` 别名，等于把 7.5 万张缩略图
+  对任何能访问端口的人开放（按 id 递增即可全量爬取）。
 - JWT 存 HttpOnly cookie `shutterseek_token`（`path=/api`、30 天）；撤销靠比较 `iat` 与 `users.updated_at`（1s 容差）。
   启动必需 `SHUTTERSEEK_JWT_SECRET`；库里没有 admin 时才用 `SHUTTERSEEK_ADMIN_PASSWORD` 播种初始管理员。
 - HTTPS 可选：`SHUTTERSEEK_TLS_ENABLED=true` → certmagic + Let's Encrypt **DNS-01**（阿里云 DNS，因 80/443 不可用）；
@@ -108,9 +113,12 @@ PostgreSQL + pgvector（1024 维）存元数据与向量；FastAPI + ONNX Runtim
 - 依赖服务：`postgres-main:5432`（库 `photo_search`、用户 `photo_user`）、Redis `172.18.0.3:6379` DB 2
   （compose 网络内为 `redis:6379`）；凭据在 `.env.local`。
 - 三个进程与端口：后端 `:8080`（`air` 热重载）、文本向量 sidecar `:8000`（`./embed/run_dev.sh`）、
-  Vite `:5173`（把 `/api`、`/thumbnails`、`/models` 代理到 8080；已配 `--host 0.0.0.0`）。
-  **手机上看 dev 效果**：容器 `172.18.0.4:5173` → 在 NAS 宿主机上用 `python3` 起一个 TCP 中继监听
-  `0.0.0.0:5173` → 手机同 WiFi 直接开 `http://192.168.0.108:5173`（非安全源：剪贴板会退到 `execCommand` 兜底）。
+  Vite `:5173`（把 `/api`、`/models` 代理到 8080；已配 `--host 0.0.0.0`）。
+  **手机上看 dev 效果**：用 devc 的端口转发把 5173 转出来并 `bind: 0.0.0.0`，手机同 WiFi 开
+  `http://<Mac 的局域网 IP>:5173`（非安全源：剪贴板会退到 `execCommand` 兜底）。
+  **不要自己写 TCP 中继**：2026-09-14 手写过一个 python 中继，`create_connection(..., timeout=N)`
+  会把超时留在 socket 上，空闲 N 秒就掐断 —— 它每 10 秒杀掉一次 HMR WebSocket，
+  表现成「页面每隔几秒自动刷新一次」，查了很久。
   注意 `api/client.ts` 里缩略图的绝对地址只在 `localhost` 上生效，否则手机上会指到手机自己。
 - 模型文件：`models/model.onnx`（BGE-M3 INT8，文本）、`models/vision_encoder/model.onnx`（fp16 1.2GB，浏览器下载）。
 - 容器内**没有** `psql`、`redis-cli`、`rg`、`docker` CLI、`cwebp`；其中 `cwebp` 是上传缩略图的依赖，

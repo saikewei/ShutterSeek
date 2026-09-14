@@ -202,7 +202,7 @@ func TestUploadBatchMixed(t *testing.T) {
 		switch r.Status {
 		case service.StatusCreated:
 			createdID = r.ID
-			if r.ID == 0 || r.TakenAt == "" || !strings.Contains(r.ThumbnailURL, "/api/thumbnails/") {
+			if r.ID == 0 || r.TakenAt == "" || !strings.Contains(r.ThumbnailURL, "/api/v1/thumbnails/") {
 				t.Fatalf("created 项字段不全: %+v", r)
 			}
 		case service.StatusDuplicate:

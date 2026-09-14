@@ -75,7 +75,7 @@ func (h *Handler) Upload(c *gin.Context) {
 		"taken_at":      p.TakenAt.Format("2006-01-02T15:04:05Z07:00"),
 		"width":         p.Width,
 		"height":        p.Height,
-		"thumbnail_url": fmt.Sprintf("/api/thumbnails/%d.webp", p.ID),
+		"thumbnail_url": service.ThumbnailURL(p.ID),
 		"duplicate":     false,
 	})
 }
@@ -259,7 +259,7 @@ func (h *Handler) UploadBatch(c *gin.Context) {
 			item["taken_at"] = formatTime(p.TakenAt)
 			item["width"] = p.Width
 			item["height"] = p.Height
-			item["thumbnail_url"] = fmt.Sprintf("/api/thumbnails/%d.webp", p.ID)
+			item["thumbnail_url"] = service.ThumbnailURL(p.ID)
 			item["thumbnail"] = r.ThumbnailOK
 		case service.StatusDuplicate:
 			item["existing_id"] = r.ExistingID
