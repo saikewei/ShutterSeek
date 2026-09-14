@@ -101,6 +101,7 @@
         <div
           v-for="cell in group.cells"
           :key="cell.photo.id"
+          :data-photo-id="cell.photo.id"
           class="group cursor-pointer relative rounded-md overflow-hidden bg-surface"
           :class="{ 'ring-2 ring-accent shadow-[0_0_14px_rgba(201,136,98,0.35)]': selectMode && selected.has(cell.photo.id) }"
           @click="onCellClick(cell, $event)"
@@ -267,7 +268,7 @@
 </template>
 
 <script setup lang="ts">
-import { inject, ref, computed, onMounted, onUnmounted, reactive, watch } from 'vue'
+import { inject, nextTick, ref, computed, onMounted, onUnmounted, reactive, watch } from 'vue'
 import type { Photo, PhotoListResponse } from '@/api/photos'
 import { fetchPhotoDates } from '@/api/photos'
 import { THUMB_BASE } from '@/api/client'
@@ -277,6 +278,7 @@ import { isMobileShell } from '@/stores/device'
 import { topOffsetKey, useElementHeight } from '@/lib/chrome'
 import { colsFor } from '@/lib/grid'
 import { loadAheadPx, shouldAutoLoad } from '@/lib/infiniteScroll'
+import { createPreloadScheduler } from '@/lib/thumbPreload'
 import {
   getScrollTop,
   hostScrollHeight,
@@ -348,6 +350,51 @@ function onThumbError(photo: Photo) {
   if (attempt >= THUMB_MAX_RETRY) return
   thumbRetry.set(photo.id, attempt + 1)
 }
+
+// ── Thumbnail preload ────────────────────────────────
+// Native loading="lazy" starts a whole band of requests at once, only about
+// two viewports ahead, so a burst of 72 cold reads from the NAS can still be
+// queueing when the cells reach the screen -- which reads as "it never loads".
+// This warms the cache further ahead at a bounded rate, on-screen cells first.
+// Native lazy loading stays as the safety net.
+//
+// See lib/thumbPreload.ts.
+
+/** How far ahead of the viewport thumbnails are warmed. */
+const PRELOAD_AHEAD_PX = () => window.innerHeight * 3
+
+const preload = createPreloadScheduler((id, done) => {
+  const img = new Image()
+  img.onload = done
+  img.onerror = done
+  img.decoding = 'async'
+  img.src = `${THUMB_BASE}/${id}.webp`
+})
+
+let visibleObserver: IntersectionObserver | null = null
+let aheadObserver: IntersectionObserver | null = null
+
+function observedId(target: Element): number {
+  return Number((target as HTMLElement).dataset.photoId) || 0
+}
+
+/** Point both observers at every cell that has not been queued yet. Cells are
+ *  released as soon as a decision is made about them, so the observer
+ *  callbacks stay proportional to what scrolls past, not to the DOM size. */
+function observeCells() {
+  const nodes = rootEl.value?.querySelectorAll<HTMLElement>('[data-photo-id]')
+  if (!nodes || !visibleObserver || !aheadObserver) return
+  for (const node of nodes) {
+    const id = observedId(node)
+    if (!id || preload.has(id)) continue
+    visibleObserver.observe(node)
+    aheadObserver.observe(node)
+  }
+}
+
+// Every appended page adds cells the observers have not seen yet. Waiting for
+// the render keeps this off the critical path of the append itself.
+watch(() => photos.value.length, () => nextTick(observeCells))
 
 // Mobile density. Persisted so the choice survives a reload.
 const GRID_COLS_KEY = 'ss.gridCols'
@@ -911,6 +958,29 @@ onMounted(() => {
   )
   if (sentinel.value) observer.observe(sentinel.value)
 
+  visibleObserver = new IntersectionObserver((entries, obs) => {
+    for (const e of entries) {
+      if (!e.isIntersecting) continue
+      preload.schedule(observedId(e.target), 'visible')
+      obs.unobserve(e.target)
+    }
+  })
+  aheadObserver = new IntersectionObserver(
+    (entries, obs) => {
+      // Nearest first, so a flick through the grid fills the screen before its
+      // surroundings instead of in DOM order.
+      entries
+        .filter((e) => e.isIntersecting)
+        .sort((a, b) => Math.abs(a.boundingClientRect.top) - Math.abs(b.boundingClientRect.top))
+        .forEach((e) => {
+          preload.schedule(observedId(e.target), 'ahead')
+          obs.unobserve(e.target)
+        })
+    },
+    { rootMargin: `${PRELOAD_AHEAD_PX()}px` },
+  )
+  observeCells()
+
   // Scroll-up detection for loading newer photos (skipped in single-page mode)
   if (!props.singlePage) {
     let ticking = false
@@ -978,6 +1048,10 @@ defineExpose({ removePhotoById, reload })
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeyDown)
   observer?.disconnect()
+  visibleObserver?.disconnect()
+  aheadObserver?.disconnect()
+  visibleObserver = null
+  aheadObserver = null
   offScroll?.()
   offScroll = null
   controller?.abort()
