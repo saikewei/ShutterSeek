@@ -54,7 +54,10 @@ func Setup(h *handler.Handler, thumbDir, modelsDir string) *gin.Engine {
 			admin.GET("/invites", h.ListInvites)
 			admin.DELETE("/invites/:id", h.DeleteInvite)
 			admin.GET("/auth/logs", h.ListLogs)
-			admin.GET("/stats", h.AdminStats)
+			// Admin console snapshot. Registered under /admin/ on purpose: it is
+			// not a resource of its own, and the flat group prefix would
+			// otherwise expose it as the very generic /api/v1/stats.
+			admin.GET("/admin/stats", h.AdminStats)
 			admin.GET("/photos/range", h.PhotoRange)
 			admin.POST("/photos/upload", h.Upload)
 			admin.POST("/photos/upload/batch", h.UploadBatch)

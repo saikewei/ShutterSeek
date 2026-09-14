@@ -10,6 +10,8 @@ import Login from './views/Login.vue'
 import InviteRedeem from './views/InviteRedeem.vue'
 import AdminInvites from './views/AdminInvites.vue'
 import AdminLogs from './views/AdminLogs.vue'
+import AdminHome from './views/admin/AdminHome.vue'
+import AdminStatus from './views/admin/AdminStatus.vue'
 import UploadPage from './views/UploadPage.vue'
 import { authState, checkAuth, isAdmin } from './stores/auth'
 import { scrollHostToTop } from './lib/scrollHost'
@@ -25,6 +27,8 @@ const routes = [
   // Admin-only pages. The APIs behind them carry AdminOnly() as well; this
   // guard is what keeps the pages themselves unreachable for guests.
   { path: '/upload', component: UploadPage, meta: { adminOnly: true } },
+  { path: '/admin', component: AdminHome, meta: { adminOnly: true } },
+  { path: '/admin/status', component: AdminStatus, meta: { adminOnly: true } },
   { path: '/admin/invites', component: AdminInvites, meta: { adminOnly: true } },
   { path: '/admin/logs', component: AdminLogs, meta: { adminOnly: true } },
 ]

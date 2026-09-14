@@ -69,6 +69,14 @@
         <template v-if="isAdmin">
           <div class="border-t border-line my-2 mx-4"></div>
           <router-link
+            to="/admin"
+            class="relative block px-4 py-2 text-sm transition-colors duration-150 rounded-r-md"
+            :class="adminHomeActive ? 'text-ink font-semibold bg-accent-soft' : 'text-ink-2 hover:text-ink hover:bg-white/5'"
+          >
+            <span v-if="adminHomeActive" class="absolute left-0 top-1.5 bottom-1.5 w-[2.5px] rounded-full bg-accent"></span>
+            管理
+          </router-link>
+          <router-link
             to="/admin/invites"
             class="relative block px-4 py-2 text-sm transition-colors duration-150 rounded-r-md"
             :class="$route.path === '/admin/invites' ? 'text-ink font-semibold bg-accent-soft' : 'text-ink-2 hover:text-ink hover:bg-white/5'"
@@ -114,6 +122,11 @@ const router = useRouter()
 
 // Login / invite pages render without any app chrome.
 const chromeless = computed(() => !!route.meta.chromeless)
+
+// The dashboard and the status page share one sidebar entry.
+const adminHomeActive = computed(
+  () => route.path === '/admin' || route.path === '/admin/status',
+)
 
 // Height of the sticky top bar, published so pages and the photo grid can
 // stack their own sticky headers underneath it. Zero on the desktop shell,

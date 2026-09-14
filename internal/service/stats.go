@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -15,22 +16,36 @@ import (
 // the admin console open.
 const pingerTimeout = 2 * time.Second
 
+// The embeddings count is a full scan of a table holding 1024-dim vectors
+// (~450ms measured at 68k rows), so the counters are cached. Health and uptime
+// are deliberately NOT cached: the console's refresh button has to tell the
+// truth about a dependency that just went away.
+const (
+	KeyAdminStats = "cache:admin_stats:v1"
+	TTLAdminStats = 60 * time.Second
+)
+
+// StatsCounts is the cached half of the snapshot.
+type StatsCounts struct {
+	Photos         int64 `json:"photos"`
+	Embeddings     int64 `json:"embeddings"`
+	Albums         int64 `json:"albums"`
+	PublicAlbums   int64 `json:"public_albums"`
+	Users          int64 `json:"users"`
+	Admins         int64 `json:"admins"`
+	InvitesPending int64 `json:"invites_pending"`
+	InvitesTotal   int64 `json:"invites_total"`
+	Logs           int64 `json:"logs"`
+}
+
 // Stats is the read-only snapshot rendered by the admin console.
 type Stats struct {
-	Photos         int64     `json:"photos"`
-	Embeddings     int64     `json:"embeddings"`
-	Albums         int64     `json:"albums"`
-	PublicAlbums   int64     `json:"public_albums"`
-	Users          int64     `json:"users"`
-	Admins         int64     `json:"admins"`
-	InvitesPending int64     `json:"invites_pending"`
-	InvitesTotal   int64     `json:"invites_total"`
-	Logs           int64     `json:"logs"`
-	DBOK           bool      `json:"db_ok"`
-	RedisOK        bool      `json:"redis_ok"`
-	EmbedOK        bool      `json:"embed_ok"`
-	StartedAt      time.Time `json:"started_at"`
-	UptimeSeconds  int64     `json:"uptime_seconds"`
+	StatsCounts
+	DBOK          bool      `json:"db_ok"`
+	RedisOK       bool      `json:"redis_ok"`
+	EmbedOK       bool      `json:"embed_ok"`
+	StartedAt     time.Time `json:"started_at"`
+	UptimeSeconds int64     `json:"uptime_seconds"`
 }
 
 // embedderPinger is deliberately separate from Embedder: the search service's
@@ -57,11 +72,29 @@ func NewStatsService(db *gorm.DB, pool *pgxpool.Pool, rdb *goredis.Client, embed
 // down, so failures surface as false/zero fields rather than an error. Like
 // Cache, every collaborator may be nil and is then simply reported as down.
 func (s *StatsService) Snapshot(ctx context.Context) Stats {
-	out := Stats{
+	return Stats{
+		StatsCounts:   s.counts(ctx),
+		DBOK:          s.probePool(ctx),
+		RedisOK:       s.probeRedis(ctx),
+		EmbedOK:       s.probeEmbed(ctx),
 		StartedAt:     s.started,
 		UptimeSeconds: int64(time.Since(s.started).Seconds()),
 	}
+}
 
+// counts returns the cached counters, refilling them when the cache is cold or
+// absent. A nil database reports all zeros.
+func (s *StatsService) counts(ctx context.Context) StatsCounts {
+	if s.Redis != nil {
+		if data, err := s.Redis.Get(ctx, KeyAdminStats).Bytes(); err == nil {
+			var cached StatsCounts
+			if json.Unmarshal(data, &cached) == nil {
+				return cached
+			}
+		}
+	}
+
+	var out StatsCounts
 	if s.DB != nil {
 		out.Photos = countRows(ctx, s.DB.Model(&model.Photo{}))
 		out.Embeddings = countRows(ctx, s.DB.Model(&model.PhotoEmbedding{}))
@@ -75,25 +108,41 @@ func (s *StatsService) Snapshot(ctx context.Context) Stats {
 		out.Logs = countRows(ctx, s.DB.Model(&model.UserLog{}))
 	}
 
-	if s.Pool != nil {
-		pingCtx, cancel := context.WithTimeout(ctx, pingerTimeout)
-		out.DBOK = s.Pool.Ping(pingCtx) == nil
-		cancel()
-	}
-
 	if s.Redis != nil {
-		pingCtx, cancel := context.WithTimeout(ctx, pingerTimeout)
-		out.RedisOK = s.Redis.Ping(pingCtx).Err() == nil
-		cancel()
-	}
-
-	if pinger, ok := s.Embed.(embedderPinger); ok {
-		pingCtx, cancel := context.WithTimeout(ctx, pingerTimeout)
-		out.EmbedOK = pinger.Ping(pingCtx) == nil
-		cancel()
+		if data, err := json.Marshal(out); err == nil {
+			s.Redis.Set(ctx, KeyAdminStats, data, TTLAdminStats)
+		}
 	}
 
 	return out
+}
+
+func (s *StatsService) probePool(ctx context.Context) bool {
+	if s.Pool == nil {
+		return false
+	}
+	pingCtx, cancel := context.WithTimeout(ctx, pingerTimeout)
+	defer cancel()
+	return s.Pool.Ping(pingCtx) == nil
+}
+
+func (s *StatsService) probeRedis(ctx context.Context) bool {
+	if s.Redis == nil {
+		return false
+	}
+	pingCtx, cancel := context.WithTimeout(ctx, pingerTimeout)
+	defer cancel()
+	return s.Redis.Ping(pingCtx).Err() == nil
+}
+
+func (s *StatsService) probeEmbed(ctx context.Context) bool {
+	pinger, ok := s.Embed.(embedderPinger)
+	if !ok {
+		return false
+	}
+	pingCtx, cancel := context.WithTimeout(ctx, pingerTimeout)
+	defer cancel()
+	return pinger.Ping(pingCtx) == nil
 }
 
 // countRows reports 0 on error: a count that cannot be read is not worth
