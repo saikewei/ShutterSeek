@@ -169,9 +169,14 @@
       <span v-if="loadingNewer" class="text-xs">加载中...</span>
     </div>
 
-    <div ref="sentinel" class="py-12 text-center text-ink-3 text-sm">
-      <span v-if="loading && photos.length === 0">加载中...</span>
-      <span v-else-if="!hasMore">没有更多了 · 共 {{ total.toLocaleString() }} 张</span>
+    <div ref="sentinel" class="py-12 flex flex-col items-center gap-3 text-center text-ink-3 text-sm">
+      <!-- A visible way out: if automatic loading ever gives up, the list must
+           not become a dead end that only a reload can fix. -->
+      <button v-if="hasMore && !loading" class="btn-ghost px-4 py-1.5 text-xs" @click="loadPage()">
+        加载更多
+      </button>
+      <span v-else-if="hasMore" class="text-xs">加载中...</span>
+      <span v-else>没有更多了 · 共 {{ total.toLocaleString() }} 张</span>
     </div>
 
     <Lightbox
@@ -287,6 +292,7 @@ import { isAdmin } from '@/stores/auth'
 import { isMobileShell } from '@/stores/device'
 import { topOffsetKey, useElementHeight } from '@/lib/chrome'
 import { colsFor } from '@/lib/grid'
+import { loadAheadPx, shouldAutoLoad } from '@/lib/infiniteScroll'
 import {
   getScrollTop,
   hostScrollHeight,
@@ -856,6 +862,31 @@ function calcLimit(): number {
   return Math.max(30, cols * visibleRows * 3)
 }
 
+// ── Infinite scroll ──────────────────────────────────
+// See lib/infiniteScroll.ts for why this is a re-checkable condition instead
+// of a one-shot observer callback. It is drained from three places: the
+// observer, the scroll handler, and the end of every completed page.
+
+const RETRY_COOLDOWN_MS = 2000
+let retryAfter = 0
+
+function maybeLoadMore() {
+  if (
+    !shouldAutoLoad({
+      hasMore: hasMore.value,
+      loading: loading.value,
+      sentinelTop: sentinel.value?.getBoundingClientRect().top ?? Infinity,
+      viewportHeight: window.innerHeight,
+      aheadPx: loadAheadPx(window.innerHeight),
+      now: Date.now(),
+      retryAfter,
+    })
+  ) {
+    return
+  }
+  loadPage()
+}
+
 let loadId = 0
 
 async function loadPage() {
@@ -874,6 +905,7 @@ async function loadPage() {
   const limit = wasInterrupted ? 200 : jumpParam ? 80 : calcLimit()
   wasInterrupted = false
 
+  let appended = 0
   loading.value = true
   try {
     const data = await props.fetchFn(
@@ -892,6 +924,7 @@ async function loadPage() {
     if (myLoadId !== loadId) return
 
     photos.value.push(...data.items)
+    appended = data.items.length
     total.value = data.total
     cursor = data.next_cursor
     hasMore.value = data.next_cursor !== ''
@@ -931,8 +964,16 @@ async function loadPage() {
   } catch (e: any) {
     if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return
     console.error('load failed', e)
+    retryAfter = Date.now() + RETRY_COOLDOWN_MS
   } finally {
-    loading.value = false
+    // Only the newest request may clear the flag: reload() force-resets it, so
+    // an aborted older request must not unlock a third concurrent load.
+    if (myLoadId === loadId) loading.value = false
+    // Drain: when the page that just landed did not push the sentinel out of
+    // range (a short page, or the reader already parked at the bottom), fill
+    // again instead of waiting for an intersection transition that may never
+    // come. Only chain when progress was actually made.
+    if (appended > 0 && hasMore.value) requestAnimationFrame(maybeLoadMore)
   }
 }
 
@@ -941,11 +982,11 @@ onMounted(() => {
   loadPage()
   observer = new IntersectionObserver(
     (entries) => {
-      if (entries[0].isIntersecting && hasMore.value && !loading.value) loadPage()
+      if (entries.some((e) => e.isIntersecting)) maybeLoadMore()
     },
-    { rootMargin: `${window.innerHeight * 2}px` }
+    { rootMargin: `${loadAheadPx(window.innerHeight)}px` },
   )
-  setTimeout(() => { if (sentinel.value) observer?.observe(sentinel.value) }, 1000)
+  if (sentinel.value) observer.observe(sentinel.value)
 
   // Scroll-up detection for loading newer photos (skipped in single-page mode)
   if (!props.singlePage) {
@@ -957,6 +998,7 @@ onMounted(() => {
         const top = getScrollTop()
         atTop.value = top < 50
         updateVisibleDate()
+        maybeLoadMore()
         if (top < 100 && hasNewer.value && !loadingNewer.value && !jumpCooldown.value) {
           loadNewer()
         }
