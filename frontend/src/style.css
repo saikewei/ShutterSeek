@@ -107,10 +107,6 @@
 
   .panel { @apply rounded-xl bg-raised border border-line; }
 
-  .modal-overlay { @apply absolute inset-0 bg-black/60; animation: fadeIn 150ms ease-out; }
-
-  .modal-panel { @apply relative rounded-xl bg-raised border border-line p-5 shadow-2xl shadow-black/50; animation: modalIn 150ms ease-out; }
-
   .input {
     @apply w-full rounded-lg bg-surface border border-line-strong px-3 py-2 text-sm text-ink placeholder:text-ink-3 outline-none transition-colors duration-150 focus:border-accent disabled:opacity-50 disabled:cursor-not-allowed;
   }
@@ -123,6 +119,10 @@
   .date-header { @apply font-display text-[20px] leading-none text-ink; }
 
   .fade-in { animation: fadeIn 150ms ease-out; }
+
+  /* Horizontally scrollable bars that must not show a scrollbar. */
+  .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
 }
 
 @keyframes fadeIn {
@@ -144,9 +144,22 @@
   opacity: 0;
 }
 
-@keyframes modalIn {
-  from { opacity: 0; transform: scale(0.98); }
-  to { opacity: 1; transform: scale(1); }
+/* Lightbox EXIF panel: slides up as a sheet on mobile, in from the right on
+   desktop (the pre-existing `exif` transition had no styles at all). */
+.exif-enter-active,
+.exif-leave-active {
+  transition: transform 200ms ease-out, opacity 200ms ease-out;
+}
+.exif-enter-from,
+.exif-leave-to {
+  transform: translateY(100%);
+  opacity: 0;
+}
+@media (min-width: 640px) {
+  .exif-enter-from,
+  .exif-leave-to {
+    transform: translateX(100%);
+  }
 }
 
 /* 微动效：系统减少动态时全部禁用 */

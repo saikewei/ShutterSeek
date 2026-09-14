@@ -1,7 +1,11 @@
 <template>
-  <div class="h-full flex flex-col bg-canvas text-ink">
-    <!-- 搜索条 -->
-    <div class="sticky top-0 z-30 px-4 py-3 border-b border-line bg-raised/95 backdrop-blur">
+  <div class="bg-canvas text-ink">
+    <!-- 搜索条：钉在当前 shell 的顶栏下方。页面本身交给文档滚动，
+         手机上这样 iOS 的地址栏才会跟着收起。 -->
+    <div
+      class="sticky z-30 px-4 py-3 border-b border-line bg-raised/95 backdrop-blur"
+      :style="{ top: topOffset + 'px' }"
+    >
       <div class="flex items-center gap-2">
         <input
           v-model="query"
@@ -23,13 +27,13 @@
     </div>
 
     <!-- 内容区 -->
-    <div class="flex-1 overflow-auto overscroll-none">
-      <div v-if="status === 'idle'" class="h-full flex flex-col items-center justify-center">
+    <div>
+      <div v-if="status === 'idle'" class="flex flex-col items-center justify-center py-24">
         <p class="text-base text-ink-2">输入描述，搜索你的照片</p>
         <p class="mt-1 text-sm text-ink-3">如：海边、猫、雪景</p>
       </div>
 
-      <div v-else-if="status === 'loading'" class="flex items-center justify-center py-16">
+      <div v-else-if="status === 'loading'" class="flex items-center justify-center py-24">
         <div class="animate-spin h-6 w-6 border-2 border-line-strong border-t-accent rounded-full"></div>
       </div>
 
@@ -38,7 +42,7 @@
         <button v-if="canRetry" class="mt-3 text-sm text-ink-2 underline" @click="doSearch">重试</button>
       </div>
 
-      <div v-else-if="items.length === 0" class="h-full flex items-center justify-center text-sm text-ink-3">
+      <div v-else-if="items.length === 0" class="flex items-center justify-center py-24 text-sm text-ink-3">
         未找到匹配的照片，换个词试试
       </div>
 
@@ -53,14 +57,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, computed, inject, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchSearch, type SearchPhotoItem, type SearchResponse } from '@/api/search'
 import { fetchAlbums } from '@/api/albums'
 import PhotoGrid from '@/components/PhotoGrid.vue'
+import { topOffsetKey } from '@/lib/chrome'
 
 const route = useRoute()
 const router = useRouter()
+
+// Sticks below whatever chrome the shell pinned (the mobile top bar).
+const topOffset = computed(inject(topOffsetKey, () => 0))
 
 const query = ref('')
 const activeQuery = ref('')

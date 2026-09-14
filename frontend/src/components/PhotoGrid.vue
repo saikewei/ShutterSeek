@@ -1,16 +1,17 @@
 <template>
   <div ref="rootEl">
-    <!-- Filter bar（单页模式无筛选语义，整栏隐藏） -->
+    <!-- Filter bar（单页模式无筛选语义，整栏隐藏）。
+         手机上一行放不下，改成横向滚动而不是挤压每个按钮的命中区。 -->
     <div
       v-if="!singlePage"
       ref="filterBar"
-      class="sticky z-20 flex items-center justify-between px-2 py-1.5 bg-canvas/90 backdrop-blur border-b border-line"
+      class="sticky z-20 bg-canvas/90 backdrop-blur border-b border-line"
       :style="{ top: topOffset + 'px' }"
     >
-      <div class="flex items-center gap-1.5">
+      <div class="no-scrollbar flex items-center gap-1.5 px-2 py-1.5 overflow-x-auto">
         <button
           @click="filterOpen = true"
-          class="relative px-3 py-1 text-xs rounded-full transition-colors"
+          class="relative shrink-0 px-3.5 py-1.5 text-xs rounded-full transition-colors"
           :class="hasActiveFilter ? 'bg-ink text-[#1C1208]' : 'bg-surface text-ink-2 hover:bg-line-strong hover:text-ink'"
         >
           筛选
@@ -20,50 +21,60 @@
         <button
           v-if="isMobileShell && !selectMode && !singlePage"
           @click="monthPickerOpen = true"
-          class="px-3 py-1 text-xs rounded-full bg-surface text-ink-2 hover:bg-line-strong hover:text-ink transition-colors"
+          class="shrink-0 px-3.5 py-1.5 text-xs rounded-full bg-surface text-ink-2 hover:bg-line-strong hover:text-ink transition-colors"
         >月份</button>
 
         <button
           v-if="isAdmin && !selectMode"
           @click="enterSelectMode"
-          class="px-3 py-1 text-xs rounded-full bg-surface text-ink-2 hover:bg-line-strong hover:text-ink transition-colors"
+          class="shrink-0 px-3.5 py-1.5 text-xs rounded-full bg-surface text-ink-2 hover:bg-line-strong hover:text-ink transition-colors"
         >选择</button>
 
         <button
           v-if="!selectMode && (!atTop || hasNewer)"
           @click="scrollToTop"
-          class="px-3 py-1 text-xs rounded-full bg-line-strong text-ink-2 hover:text-ink transition-colors"
+          class="shrink-0 px-3.5 py-1.5 text-xs rounded-full bg-line-strong text-ink-2 hover:text-ink transition-colors"
         >{{ hasNewer ? '返回最新' : '↑ 顶部' }}</button>
 
-        <span v-if="selectMode" class="text-xs text-ink-2">
-          已选 {{ selected.size }} 张
-          <span v-if="rangeLoading"> · 选择中...</span>
-          <span v-if="rangeError" class="text-xs text-danger-ink ml-2">{{ rangeError }}</span>
-        </span>
+        <template v-if="selectMode">
+          <span class="shrink-0 text-xs text-ink-2 whitespace-nowrap">
+            已选 {{ selected.size }} 张
+            <span v-if="rangeLoading"> · 选择中...</span>
+          </span>
+          <button
+            v-if="rangeFn"
+            @click="rangeMode = !rangeMode"
+            class="shrink-0 px-3.5 py-1.5 text-xs rounded-full transition-colors"
+            :class="rangeMode ? 'bg-accent text-[#1C1208] font-semibold' : 'bg-surface text-ink-2 hover:text-ink'"
+            title="打开后，点第二张即可选中区间"
+          >范围</button>
+          <span v-if="rangeError" class="shrink-0 text-xs text-danger-ink whitespace-nowrap">{{ rangeError }}</span>
+        </template>
       </div>
 
-      <div v-if="selectMode" class="flex items-center gap-1.5">
-        <button v-if="isAdmin && removeFromAlbumId !== undefined" @click="confirmRemoveOpen = true" class="btn-danger-soft px-3 py-1 text-xs">
+      <div v-if="selectMode" class="flex items-center gap-1.5 px-2 pb-1.5">
+        <button v-if="isAdmin && removeFromAlbumId !== undefined" @click="confirmRemoveOpen = true" class="btn-danger-soft px-3 py-1.5 text-xs">
           从相册删除
         </button>
-        <button v-if="isAdmin" @click="openAlbumPicker" class="px-3 py-1 text-xs rounded-full bg-accent text-[#1C1208] font-semibold hover:bg-accent-strong transition-colors">
+        <button v-if="isAdmin" @click="openAlbumPicker" class="px-3 py-1.5 text-xs rounded-full bg-accent text-[#1C1208] font-semibold hover:bg-accent-strong transition-colors">
           添加到相册
         </button>
-        <button @click="exitSelectMode" class="px-3 py-1 text-xs rounded-full text-ink-3 hover:text-ink transition-colors">取消</button>
+        <button @click="exitSelectMode" class="ml-auto px-3 py-1.5 text-xs rounded-full text-ink-3 hover:text-ink transition-colors">取消</button>
       </div>
 
       <!-- Day navigation (sticky filter bar, always visible; compact on mobile) -->
-      <div v-if="!selectMode && !singlePage" class="flex items-center gap-1 text-xs">
+      <div v-if="!selectMode && !singlePage" class="flex items-center justify-center gap-2 px-2 pb-1.5">
         <button
           @click="prevDay"
-          class="px-2 py-1 rounded bg-surface hover:bg-line-strong text-ink-2 hover:text-ink transition-colors whitespace-nowrap"
+          class="h-8 min-w-9 px-3 rounded-lg bg-surface hover:bg-line-strong text-ink-2 hover:text-ink transition-colors whitespace-nowrap text-xs"
           title="前一天"
-        >{{ isMobileShell ? '◀' : '◀ 前一天' }}</button>
+        >{{ isMobileShell ? '‹' : '◀ 前一天' }}</button>
+        <span class="text-[11px] text-ink-3 tabular-nums min-w-[6.5rem] text-center">{{ focusDate || '—' }}</span>
         <button
           @click="nextDay"
-          class="px-2 py-1 rounded bg-surface hover:bg-line-strong text-ink-2 hover:text-ink transition-colors whitespace-nowrap"
+          class="h-8 min-w-9 px-3 rounded-lg bg-surface hover:bg-line-strong text-ink-2 hover:text-ink transition-colors whitespace-nowrap text-xs"
           title="后一天"
-        >{{ isMobileShell ? '▶' : '后一天 ▶' }}</button>
+        >{{ isMobileShell ? '›' : '后一天 ▶' }}</button>
       </div>
     </div>
 
@@ -71,28 +82,40 @@
     <div v-for="group in groupCells" :key="group.label || 'all'">
       <div
         v-if="group.label"
-        class="sticky z-10 bg-canvas/95 backdrop-blur px-2 h-[46px] flex items-center gap-2.5 border-b border-line"
+        class="sticky z-10 bg-canvas/95 backdrop-blur px-2 h-[42px] flex items-center gap-2.5 border-b border-line"
         :style="{ top: topOffset + filterH + 'px' }"
         :data-date="group.label"
         :data-date-iso="group.cells[0]?.photo?.taken_at?.slice(0, 10) || ''"
       >
         <span class="date-header border-l-2 border-accent pl-2.5">{{ group.label }}</span>
-        <span v-if="groupCount(group.label)" class="text-xs text-ink-3">{{ groupCount(group.label) }} 张</span>
+        <span v-if="groupCount(group.label)" class="text-xs text-ink-3 tabular-nums">{{ groupCount(group.label) }} 张</span>
       </div>
-      <div class="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-1 p-1">
+      <div
+        class="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-[3px] p-[3px]"
+        :style="gridStyle"
+      >
         <div
           v-for="cell in group.cells"
           :key="cell.photo.id"
-          class="group cursor-pointer relative rounded-[7px] overflow-hidden bg-surface"
+          class="group cursor-pointer relative rounded-md overflow-hidden bg-surface"
           :class="{ 'ring-2 ring-accent shadow-[0_0_14px_rgba(201,136,98,0.35)]': selectMode && selected.has(cell.photo.id) }"
           @click="onCellClick(cell, $event)"
-          @contextmenu.prevent="$emit('photoContextmenu', cell.photo, $event)"
+          @contextmenu.prevent="onContextMenu(cell, $event)"
+          @pointerdown="onPressStart(cell, $event)"
+          @pointermove="onPressMove"
+          @pointerup="onPressEnd"
+          @pointercancel="onPressEnd"
+          @pointerleave="onPressEnd"
         >
           <img
             :src="THUMB_BASE + '/' + cell.photo.id + '.webp'"
             :alt="cell.photo.camera_model || 'Photo'"
             loading="lazy"
-            :class="['w-full aspect-square object-cover', cell.photo.height > cell.photo.width ? 'rotate-270 scale-150' : '']"
+            decoding="async"
+            class="w-full aspect-square object-cover transition-opacity duration-300"
+            :class="cell.photo.height > cell.photo.width ? 'rotate-270 scale-150' : ''"
+            :style="{ opacity: loadedIds.has(cell.photo.id) ? 1 : 0 }"
+            @load="loadedIds.add(cell.photo.id)"
             @error="onImgError(cell.photo)"
           />
 
@@ -143,8 +166,8 @@
     </div>
 
     <div ref="sentinel" class="py-12 text-center text-ink-3 text-sm">
-      <span v-if="loading && photos.length === 0">Loading...</span>
-      <span v-else-if="!hasMore">— End of {{ total.toLocaleString() }} photos —</span>
+      <span v-if="loading && photos.length === 0">加载中...</span>
+      <span v-else-if="!hasMore">没有更多了 · 共 {{ total.toLocaleString() }} 张</span>
     </div>
 
     <Lightbox
@@ -162,100 +185,91 @@
     </Lightbox>
 
     <!-- Filter dialog -->
-    <Teleport to="body">
-      <div v-if="filterOpen" class="fixed inset-0 z-50 flex items-center justify-center">
-        <div class="modal-overlay" @click="filterOpen = false" />
-        <div class="modal-panel w-72">
-          <h2 class="font-display text-sm font-medium text-ink mb-4">筛选设置</h2>
-
-          <div class="space-y-4">
-            <div>
-              <label class="text-xs text-ink-2 block mb-2">日期分组</label>
-              <div class="flex gap-1">
-                <button
-                  v-for="opt in [{k:'day',l:'按日'},{k:'month',l:'按月'}]"
-                  :key="opt.k"
-                  @click="groupBy = opt.k as 'day'|'month'"
-                  :class="groupBy === opt.k ? 'bg-line-strong text-ink' : 'bg-surface text-ink-3 hover:text-ink'"
-                  class="flex-1 py-1.5 text-xs rounded-lg transition-colors"
-                >{{ opt.l }}</button>
-              </div>
-            </div>
-
-            <label v-if="isAdmin" class="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" v-model="uncategorizedOnly" class="rounded accent-accent" />
-              <span class="text-xs text-ink-2">仅显示未归类照片</span>
-            </label>
-          </div>
-
-          <div class="flex justify-end mt-4">
-            <button @click="filterOpen = false" class="px-4 py-1.5 text-xs rounded-full bg-accent text-[#1C1208] font-semibold hover:bg-accent-strong">关闭</button>
+    <AppModal :open="filterOpen" title="筛选设置" @close="filterOpen = false">
+      <div class="space-y-5">
+        <div>
+          <label class="text-xs text-ink-2 block mb-2">日期分组</label>
+          <div class="flex gap-1">
+            <button
+              v-for="opt in [{k:'day',l:'按日'},{k:'month',l:'按月'}]"
+              :key="opt.k"
+              @click="groupBy = opt.k as 'day'|'month'"
+              :class="groupBy === opt.k ? 'bg-line-strong text-ink' : 'bg-surface text-ink-3 hover:text-ink'"
+              class="flex-1 py-1.5 text-xs rounded-lg transition-colors"
+            >{{ opt.l }}</button>
           </div>
         </div>
+
+        <div v-if="isMobileShell">
+          <label class="text-xs text-ink-2 block mb-2">每行张数</label>
+          <div class="flex gap-1">
+            <button
+              v-for="n in [3, 4, 5]"
+              :key="n"
+              @click="gridCols = n"
+              :class="gridCols === n ? 'bg-line-strong text-ink' : 'bg-surface text-ink-3 hover:text-ink'"
+              class="flex-1 py-1.5 text-xs rounded-lg transition-colors"
+            >{{ n }} 张</button>
+          </div>
+        </div>
+
+        <label v-if="isAdmin" class="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" v-model="uncategorizedOnly" class="rounded accent-accent" />
+          <span class="text-xs text-ink-2">仅显示未归类照片</span>
+        </label>
       </div>
-    </Teleport>
+
+      <template #footer>
+        <div class="flex justify-end">
+          <button @click="filterOpen = false" class="px-4 py-1.5 text-xs rounded-full bg-accent text-[#1C1208] font-semibold hover:bg-accent-strong">关闭</button>
+        </div>
+      </template>
+    </AppModal>
 
     <!-- Date scrubber (desktop only; mobile uses the month-picker modal) -->
     <DateScrubber v-if="!isMobileShell && !singlePage" :dates="datePoints" :active-month="activeMonth" @jump="jumpToDate" />
 
     <!-- Album picker dialog -->
-    <Teleport to="body">
-      <div v-if="albumPickerOpen" class="fixed inset-0 z-50 flex items-center justify-center">
-        <div class="modal-overlay" @click="albumPickerOpen = false" />
-        <div class="modal-panel w-80 max-h-[70vh] flex flex-col">
-          <h2 class="font-display text-sm font-medium text-ink mb-3">添加到相册</h2>
-
-          <div class="flex-1 overflow-y-auto space-y-1 mb-3">
-            <button
-              v-for="album in albumList"
-              :key="album.id"
-              @click="doBatchAdd(album.id)"
-              class="w-full text-left px-3 py-2 rounded-lg text-sm text-ink-2 hover:bg-surface hover:text-ink transition-colors flex justify-between"
-            >
-              <span>{{ album.title }}</span>
-              <span class="text-xs text-ink-3">{{ album.photo_count }}</span>
-            </button>
-          </div>
-
-          <div v-if="addingResult" class="text-xs text-ink-2 mb-2">
-            {{ addingResult }}
-          </div>
-
-          <button @click="albumPickerOpen = false" class="text-xs text-ink-3 hover:text-ink self-end">关闭</button>
-        </div>
+    <AppModal :open="albumPickerOpen" title="添加到相册" @close="albumPickerOpen = false">
+      <div class="space-y-1">
+        <button
+          v-for="album in albumList"
+          :key="album.id"
+          @click="doBatchAdd(album.id)"
+          class="w-full text-left px-3 py-2.5 rounded-lg text-sm text-ink-2 hover:bg-surface hover:text-ink transition-colors flex justify-between"
+        >
+          <span>{{ album.title }}</span>
+          <span class="text-xs text-ink-3">{{ album.photo_count }}</span>
+        </button>
       </div>
-    </Teleport>
+
+      <p v-if="addingResult" class="text-xs text-ink-2 mt-3">{{ addingResult }}</p>
+    </AppModal>
 
     <!-- Remove from album confirmation -->
-    <Teleport to="body">
-      <div v-if="confirmRemoveOpen" class="fixed inset-0 z-50 flex items-center justify-center">
-        <div class="modal-overlay" @click="confirmRemoveOpen = false" />
-        <div class="modal-panel w-80">
-          <h2 class="font-display text-sm font-medium text-ink mb-1">从相册移除</h2>
-          <p class="text-xs text-ink-2 mb-4">确定从相册移除选中的 {{ selected.size }} 张照片吗？</p>
-          <div class="flex justify-end gap-2">
-            <button @click="confirmRemoveOpen = false" class="px-3 py-1.5 text-xs rounded-full text-ink-3 hover:text-ink">取消</button>
-            <button @click="doRemoveFromAlbum" :disabled="removingFromAlbum" class="btn-danger px-4 py-1.5 text-xs">
-              {{ removingFromAlbum ? '移除中...' : '移除' }}
-            </button>
-          </div>
-        </div>
+    <AppModal :open="confirmRemoveOpen" title="从相册移除" @close="confirmRemoveOpen = false">
+      <p class="text-xs text-ink-2 mb-4">确定从相册移除选中的 {{ selected.size }} 张照片吗？</p>
+      <div class="flex justify-end gap-2">
+        <button @click="confirmRemoveOpen = false" class="px-3 py-1.5 text-xs rounded-full text-ink-3 hover:text-ink">取消</button>
+        <button @click="doRemoveFromAlbum" :disabled="removingFromAlbum" class="btn-danger px-4 py-1.5 text-xs">
+          {{ removingFromAlbum ? '移除中...' : '移除' }}
+        </button>
       </div>
-    </Teleport>
+    </AppModal>
 
     <!-- Mobile month picker modal -->
-    <Teleport to="body">
-      <div v-if="monthPickerOpen && !singlePage" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
-        <div class="modal-overlay" @click="monthPickerOpen = false" />
-        <div class="relative w-full max-h-[70vh] flex flex-col px-3 pb-3">
-          <div class="mb-2 flex items-center justify-between">
-            <h2 class="font-display text-sm font-medium text-ink">跳转到月份</h2>
-            <button @click="monthPickerOpen = false" class="text-xs text-ink-3 hover:text-ink">关闭</button>
-          </div>
-          <DateScrubber embedded :dates="datePoints" :active-month="activeMonth" @jump="onMonthJump" />
-        </div>
-      </div>
-    </Teleport>
+    <AppModal :open="monthPickerOpen && !singlePage" title="跳转到月份" @close="monthPickerOpen = false">
+      <DateScrubber embedded :dates="datePoints" :active-month="activeMonth" @jump="onMonthJump" />
+    </AppModal>
+
+    <!-- Long-press action sheet (touch only) -->
+    <ActionSheet
+      :open="sheet.open"
+      :title="sheet.photo?.file_name || ''"
+      :actions="sheetActions"
+      @close="sheet.open = false"
+      @select="onSheetSelect"
+    />
   </div>
 </template>
 
@@ -264,10 +278,11 @@ import { inject, ref, computed, onMounted, onUnmounted, reactive, watch } from '
 import type { Photo, PhotoListResponse } from '@/api/photos'
 import { fetchPhotoDates } from '@/api/photos'
 import { THUMB_BASE } from '@/api/client'
-import { fetchAlbums, batchAddPhotos, removeAlbumPhotos, type Album } from '@/api/albums'
+import { fetchAlbums, batchAddPhotos, removeAlbumPhoto, removeAlbumPhotos, type Album } from '@/api/albums'
 import { isAdmin } from '@/stores/auth'
 import { isMobileShell } from '@/stores/device'
 import { topOffsetKey, useElementHeight } from '@/lib/chrome'
+import { colsFor } from '@/lib/grid'
 import {
   getScrollTop,
   hostScrollHeight,
@@ -280,6 +295,8 @@ import {
 } from '@/lib/scrollHost'
 import Lightbox from '@/components/Lightbox.vue'
 import DateScrubber from '@/components/DateScrubber.vue'
+import AppModal from '@/components/AppModal.vue'
+import ActionSheet, { type SheetAction } from '@/components/ActionSheet.vue'
 import type { DatePoint } from '@/components/DateScrubber.vue'
 
 const props = defineProps<{
@@ -297,6 +314,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   photoContextmenu: [photo: Photo, event: MouseEvent]
   removedFromAlbum: []
+  setCover: [photo: Photo]
 }>()
 
 // Sticky chrome geometry. `topOffset` is injected by whichever shell/page owns
@@ -306,10 +324,27 @@ const topOffsetFn = inject(topOffsetKey, () => 0)
 const topOffset = computed(topOffsetFn)
 const rootEl = ref<HTMLElement | null>(null)
 const filterBar = ref<HTMLElement | null>(null)
-const filterH = useElementHeight(filterBar)
+const filterH = useElementHeight(() => filterBar.value)
 
-// Keep in sync with the h-[46px] date header in the template.
-const dateHeaderH = 46
+// Keep in sync with the h-[42px] date header in the template.
+const dateHeaderH = 42
+
+// Thumbnails fade in as they decode, so a scrolled-to row does not pop in.
+// Also records images that failed, which would otherwise stay invisible.
+const loadedIds = reactive(new Set<number>())
+
+// Mobile density. Persisted so the choice survives a reload.
+const GRID_COLS_KEY = 'ss.gridCols'
+const gridCols = ref(Number(localStorage.getItem(GRID_COLS_KEY)) || 3)
+watch(gridCols, (n) => {
+  try { localStorage.setItem(GRID_COLS_KEY, String(n)) } catch { /* private mode */ }
+})
+
+const gridStyle = computed(() =>
+  isMobileShell.value
+    ? { gridTemplateColumns: `repeat(${gridCols.value}, minmax(0, 1fr))` }
+    : undefined,
+)
 
 const jumpMonth = ref('')
 const atTop = ref(true)
@@ -435,6 +470,93 @@ function onCellClick(cell: BurstCell, e: MouseEvent) {
     return
   }
   onPhotoClick(cell.photo, e)
+}
+
+// ── Long press (touch) ───────────────────────────────
+// Touch has no hover and no dependable contextmenu, which used to leave every
+// per-photo action unreachable on a phone. A held press opens an action sheet.
+// The gesture is passive: it never calls preventDefault, so scrolling and the
+// normal tap path keep working, and a moving finger cancels the press.
+
+const LONG_PRESS_MS = 450
+const LONG_PRESS_SLOP = 8
+
+const sheet = reactive<{ open: boolean; photo: Photo | null }>({ open: false, photo: null })
+let pressTimer: number | null = null
+let pressOrigin = { x: 0, y: 0 }
+
+function cancelPress() {
+  if (pressTimer !== null) {
+    clearTimeout(pressTimer)
+    pressTimer = null
+  }
+}
+
+function onPressStart(cell: BurstCell, e: PointerEvent) {
+  if (e.pointerType === 'mouse') return
+  if (cell.collapsed && cell.burstId) return
+  cancelPress()
+  pressOrigin = { x: e.clientX, y: e.clientY }
+  pressTimer = window.setTimeout(() => {
+    pressTimer = null
+    sheet.photo = cell.photo
+    sheet.open = true
+  }, LONG_PRESS_MS)
+}
+
+function onPressMove(e: PointerEvent) {
+  if (pressTimer === null) return
+  const moved =
+    Math.abs(e.clientX - pressOrigin.x) > LONG_PRESS_SLOP ||
+    Math.abs(e.clientY - pressOrigin.y) > LONG_PRESS_SLOP
+  if (moved) cancelPress()
+}
+
+function onPressEnd() {
+  cancelPress()
+}
+
+function onContextMenu(cell: BurstCell, e: MouseEvent) {
+  // On touch the long press owns this, so the desktop menu is not doubled up.
+  if (isMobileShell.value) return
+  emit('photoContextmenu', cell.photo, e)
+}
+
+const sheetActions = computed<SheetAction[]>(() => {
+  if (!sheet.photo) return []
+  const actions: SheetAction[] = [{ key: 'open', label: '查看原图' }]
+  if (isAdmin.value) {
+    if (props.removeFromAlbumId !== undefined) {
+      actions.push({ key: 'cover', label: '设为封面' })
+    }
+    actions.push({ key: 'select', label: '选择照片' })
+    if (props.removeFromAlbumId !== undefined) {
+      actions.push({ key: 'remove', label: '从相册移除', danger: true })
+    }
+  }
+  return actions
+})
+
+function onSheetSelect(key: string) {
+  const photo = sheet.photo
+  if (!photo) return
+  if (key === 'open') {
+    openLightbox(photo)
+  } else if (key === 'cover') {
+    emit('setCover', photo)
+  } else if (key === 'select') {
+    enterSelectMode()
+    selected.value = new Set([photo.id])
+    anchorId.value = photo.id
+  } else if (key === 'remove' && props.removeFromAlbumId !== undefined) {
+    const albumId = props.removeFromAlbumId
+    removeAlbumPhoto(albumId, photo.id)
+      .then(() => {
+        removePhotoById(photo.id)
+        emit('removedFromAlbum')
+      })
+      .catch(() => { /* leave the grid untouched so the user can retry */ })
+  }
 }
 
 function dateLabel(iso: string): string {
@@ -622,13 +744,16 @@ const selected = ref<Set<number>>(new Set())
 const anchorId = ref<number | null>(null)
 const rangeLoading = ref(false)
 const rangeError = ref('')
+// Touch keyboards have no shift key, so range selection gets an explicit
+// toggle: with it on, the second tap selects everything in between.
+const rangeMode = ref(false)
 
 function enterSelectMode() { selectMode.value = true; selected.value = new Set(); anchorId.value = null; rangeError.value = '' }
-function exitSelectMode() { selectMode.value = false; selected.value = new Set(); anchorId.value = null; rangeError.value = '' }
+function exitSelectMode() { selectMode.value = false; selected.value = new Set(); anchorId.value = null; rangeError.value = ''; rangeMode.value = false }
 
 function onPhotoClick(photo: Photo, e: MouseEvent) {
   if (selectMode.value) {
-    if (e.shiftKey && anchorId.value !== null && props.rangeFn) {
+    if ((e.shiftKey || rangeMode.value) && anchorId.value !== null && props.rangeFn) {
       doRangeSelect(anchorId.value, photo.id)
       return
     }
@@ -715,7 +840,7 @@ async function doRemoveFromAlbum() {
 
 function calcLimit(): number {
   const w = window.innerWidth
-  const cols = w >= 1280 ? 5 : w >= 1024 ? 4 : w >= 768 ? 3 : 2
+  const cols = colsFor(w, isMobileShell.value ? gridCols.value : null)
   const cellSize = w / cols
   const visibleRows = Math.ceil(window.innerHeight / cellSize)
   return Math.max(30, cols * visibleRows * 3)
@@ -869,6 +994,8 @@ async function loadNewer() {
 }
 
 function onImgError(photo: Photo) {
+  // Un-hide the cell first: a failed thumbnail must not stay invisible.
+  loadedIds.add(photo.id)
   const url = photo.thumbnail_url
   photo.thumbnail_url = ''
   setTimeout(() => { photo.thumbnail_url = url }, 2000)

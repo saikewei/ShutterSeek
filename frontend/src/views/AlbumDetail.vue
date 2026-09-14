@@ -1,20 +1,21 @@
 <template>
   <div>
-    <header ref="headerEl" class="sticky top-0 z-30 bg-canvas/80 backdrop-blur border-b border-line px-4 py-2 flex items-center gap-3" :style="{ top: inheritedTop + 'px' }">
-      <button @click="$router.push('/albums')" class="text-ink-3 hover:text-ink text-lg transition-colors">←</button>
-      <div class="flex-1">
-        <h1 class="text-sm font-medium font-display text-ink">{{ album?.title || 'Album' }}</h1>
-        <p class="text-xs text-ink-3">{{ album?.photo_count?.toLocaleString() || 0 }} photos</p>
+    <header ref="headerEl" class="sticky top-0 z-30 bg-canvas/80 backdrop-blur border-b border-line px-3 sm:px-4 py-2 flex items-center gap-2 sm:gap-3" :style="{ top: inheritedTop + 'px' }">
+      <button @click="$router.push('/albums')" class="shrink-0 w-8 h-8 -ml-1 flex items-center justify-center text-ink-3 hover:text-ink text-lg transition-colors" aria-label="返回相册列表">←</button>
+      <div class="flex-1 min-w-0">
+        <h1 class="text-sm font-medium font-display text-ink truncate">{{ album?.title || 'Album' }}</h1>
+        <p class="text-xs text-ink-3 tabular-nums">{{ album?.photo_count?.toLocaleString() || 0 }} photos</p>
       </div>
+      <!-- 上传不在移动端流程里，手机上只保留更常用的「搜索相册」 -->
       <button
-        v-if="isAdmin"
+        v-if="isAdmin && !isMobileShell"
         @click="$router.push('/upload?album=' + albumId)"
         class="shrink-0 btn-ghost px-3 py-1.5 text-xs"
       >上传到此相册</button>
       <button
         @click="$router.push('/search?album_id=' + albumId)"
         class="shrink-0 text-xs text-ink-2 hover:text-ink border border-line-strong rounded-lg px-3 py-1.5 transition-colors"
-      >搜索相册</button>
+      >{{ isMobileShell ? '搜索' : '搜索相册' }}</button>
     </header>
 
     <PhotoGrid
@@ -27,6 +28,7 @@
       :remove-from-album-id="albumId"
       @photo-contextmenu="(photo, event) => isAdmin && onContextMenu(photo, event)"
       @removed-from-album="refreshAlbum"
+      @set-cover="setCover"
     />
 
     <!-- Right-click context menu -->
@@ -59,6 +61,7 @@ import { fetchAlbum, fetchAlbumDates, updateAlbum, removeAlbumPhoto } from '@/ap
 import { fetchPhotos, fetchPhotoRange } from '@/api/photos'
 import type { Photo } from '@/api/photos'
 import { isAdmin } from '@/stores/auth'
+import { isMobileShell } from '@/stores/device'
 import { topOffsetKey, useElementHeight } from '@/lib/chrome'
 
 const route = useRoute()
@@ -72,7 +75,7 @@ const albumTitles: Record<number, string> = {}
 const inheritedTopFn = inject(topOffsetKey, () => 0)
 const inheritedTop = computed(inheritedTopFn)
 const headerEl = ref<HTMLElement | null>(null)
-const headerH = useElementHeight(headerEl)
+const headerH = useElementHeight(() => headerEl.value)
 provide(topOffsetKey, () => inheritedTop.value + headerH.value)
 
 // Load album info
@@ -118,6 +121,12 @@ async function setAsCover() {
   if (!ctxMenu.photo) return
   await updateAlbum(albumId, { cover_photo_id: ctxMenu.photo.id })
   ctxMenu.show = false
+  fetchAlbum(albumId).then(a => { album.value = a })
+}
+
+// Same action as setAsCover, reached from the long-press sheet on touch.
+async function setCover(photo: Photo) {
+  await updateAlbum(albumId, { cover_photo_id: photo.id })
   fetchAlbum(albumId).then(a => { album.value = a })
 }
 </script>

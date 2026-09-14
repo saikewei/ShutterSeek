@@ -5,19 +5,21 @@
     <div class="fixed inset-0 flex items-center justify-center overflow-hidden fade-in"
          @click.self="$emit('close')">
 
-      <!-- Close (hidden on mobile while the EXIF panel covers it) -->
+      <!-- Close (hidden on mobile while the EXIF sheet covers it) -->
       <button v-if="!(isMobileShell && exifOpen)" @click="$emit('close')"
-        class="absolute top-4 z-10 text-ink/70 hover:text-ink text-2xl w-10 h-10"
-        :style="{ right: photo && !isMobileShell ? '308px' : '16px' }">✕</button>
+        class="absolute z-10 text-ink/70 hover:text-ink text-2xl w-10 h-10"
+        :style="{ top: safeTop, right: photo && !isMobileShell ? '308px' : '16px' }">✕</button>
 
-      <!-- Info (mobile only — EXIF is popover-style; hidden while panel is open) -->
+      <!-- Info (mobile only — EXIF is a bottom sheet; hidden while it is open) -->
       <button v-if="photo && isMobileShell && !exifOpen" @click="exifOpen = true"
-        class="absolute top-4 right-16 z-10 h-10 flex items-center px-3 rounded-lg bg-white/10 hover:bg-white/20 text-ink/70 hover:text-ink text-xs transition-colors"
+        class="absolute right-16 z-10 h-10 flex items-center px-3 rounded-lg bg-white/10 hover:bg-white/20 text-ink/70 hover:text-ink text-xs transition-colors"
+        :style="{ top: safeTop }"
         title="图片信息">信息</button>
 
       <!-- Rotate -->
       <button @click="rot = (rot + 90) % 360"
-        class="absolute top-4 left-4 z-10 h-10 flex items-center gap-1.5 px-3 rounded-lg bg-white/10 hover:bg-white/20 text-ink/70 hover:text-ink transition-colors"
+        class="absolute left-4 z-10 h-10 flex items-center gap-1.5 px-3 rounded-lg bg-white/10 hover:bg-white/20 text-ink/70 hover:text-ink transition-colors"
+        :style="{ top: safeTop }"
         title="旋转">
         <span class="text-lg leading-none">↻</span>
         <span class="text-xs">旋转</span>
@@ -25,7 +27,8 @@
 
       <!-- Reset zoom -->
       <button v-if="scale !== 1" @click="resetZoom"
-        class="absolute top-4 left-28 z-10 h-10 flex items-center text-ink/50 hover:text-ink text-sm px-2">Reset</button>
+        class="absolute left-28 z-10 h-10 flex items-center text-ink/50 hover:text-ink text-sm px-2"
+        :style="{ top: safeTop }">Reset</button>
 
       <!-- Prev / Next -->
       <button v-if="hasPrev" @click.stop="$emit('prev')"
@@ -69,19 +72,21 @@
         <div v-if="loading" class="text-ink/50 text-sm absolute">Loading...</div>
       </div>
 
-      <!-- EXIF sidebar — always-on desktop; popover on mobile -->
-      <!-- Overlay (mobile, click to dismiss) -->
+      <!-- EXIF — always-on sidebar on desktop, bottom sheet on mobile -->
       <div v-if="photo && isMobileShell && exifOpen" class="absolute inset-0 bg-black/50" @click="exifOpen = false" />
 
       <Transition name="exif">
         <div
           v-if="photo && (!isMobileShell || exifOpen)"
-          class="absolute right-0 top-0 bottom-0 w-72 bg-canvas/85 backdrop-blur border-l border-line overflow-y-auto overscroll-contain pointer-events-auto"
+          class="absolute bg-canvas/90 backdrop-blur border-line overflow-y-auto overscroll-contain pointer-events-auto
+                 inset-x-0 bottom-0 max-h-[70svh] rounded-t-2xl border-t pb-[env(safe-area-inset-bottom)]
+                 sm:inset-x-auto sm:right-0 sm:top-0 sm:bottom-0 sm:w-72 sm:max-h-none sm:rounded-none sm:border-t-0 sm:border-l sm:pb-0"
         >
           <div class="p-4 space-y-3 text-sm">
+            <span class="sm:hidden block mx-auto mb-2 h-1 w-9 rounded-full bg-line-strong" aria-hidden="true" />
             <div class="flex items-center justify-between border-b border-line pb-2">
-              <h3 class="font-display text-ink font-medium text-base">{{ photo.file_name }}</h3>
-              <button v-if="isMobileShell" @click="exifOpen = false" class="text-ink/50 hover:text-ink text-lg leading-none">✕</button>
+              <h3 class="font-display text-ink font-medium text-base truncate">{{ photo.file_name }}</h3>
+              <button v-if="isMobileShell" @click="exifOpen = false" class="shrink-0 ml-2 text-ink/50 hover:text-ink text-lg leading-none" aria-label="关闭信息面板">✕</button>
             </div>
 
             <div v-if="photo.taken_at" class="flex justify-between">
@@ -149,7 +154,10 @@ const emit = defineEmits<{ close: []; prev: []; next: [] }>()
 const loading = ref(true)
 const container = ref<HTMLElement | null>(null)
 const rot = ref(0)
-const exifOpen = ref(false) // mobile: EXIF panel is popover-style
+const exifOpen = ref(false) // mobile: the EXIF panel is a bottom sheet
+
+// Keeps the floating controls clear of the notch / status bar area.
+const safeTop = 'calc(env(safe-area-inset-top) + 12px)'
 
 // zoom + pan state
 const scale = ref(1)
