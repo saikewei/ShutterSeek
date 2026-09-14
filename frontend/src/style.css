@@ -123,9 +123,20 @@
   /* Horizontally scrollable bars that must not show a scrollbar. */
   .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
   .no-scrollbar::-webkit-scrollbar { display: none; }
+
+  /* Grid thumbnails fade in as they appear. Deliberately a CSS animation and
+     not a JS-gated opacity: a `both` fill always reaches opacity 1, so a
+     thumbnail can never stay permanently invisible just because its load
+     event did not arrive. */
+  .thumb-in { animation: thumbIn 260ms ease-out both; }
 }
 
 @keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes thumbIn {
   from { opacity: 0; }
   to { opacity: 1; }
 }

@@ -112,15 +112,13 @@
           @pointerleave="onPressEnd"
         >
           <img
-            :src="THUMB_BASE + '/' + cell.photo.id + '.webp'"
+            :src="thumbSrc(cell.photo)"
             :alt="cell.photo.camera_model || 'Photo'"
             loading="lazy"
             decoding="async"
-            class="w-full aspect-square object-cover transition-opacity duration-300"
+            class="thumb-in w-full aspect-square object-cover"
             :class="cell.photo.height > cell.photo.width ? 'rotate-270 scale-150' : ''"
-            :style="{ opacity: loadedIds.has(cell.photo.id) ? 1 : 0 }"
-            @load="loadedIds.add(cell.photo.id)"
-            @error="onImgError(cell.photo)"
+            @error="onThumbError(cell.photo)"
           />
 
           <!-- Selection checkbox -->
@@ -339,9 +337,33 @@ const filterH = useElementHeight(() => filterBar.value)
 // Keep in sync with the h-[42px] date header in the template.
 const dateHeaderH = 42
 
-// Thumbnails fade in as they decode, so a scrolled-to row does not pop in.
-// Also records images that failed, which would otherwise stay invisible.
-const loadedIds = reactive(new Set<number>())
+// Thumbnail loading.
+//
+// The fade-in used to be a JS-gated opacity: the <img> started at opacity 0
+// and only `load` could reveal it. Any thumbnail whose load event did not
+// arrive (a request the browser retried internally, a decode hiccup, a
+// re-created element) stayed invisible forever -- "the thumbnail never loads"
+// even though the file had arrived. The fade is now a CSS animation, which
+// always reaches opacity 1 on its own, so it cannot get stuck.
+//
+// A failed image also never retries by itself, so failures get a bounded
+// number of attempts with a cache-busting query. (The previous handler mutated
+// photo.thumbnail_url, which the <img> does not render -- so it did nothing.)
+const THUMB_MAX_RETRY = 2
+const thumbRetry = reactive(new Map<number, number>())
+
+function thumbSrc(photo: Photo): string {
+  const attempt = thumbRetry.get(photo.id) ?? 0
+  return attempt === 0
+    ? `${THUMB_BASE}/${photo.id}.webp`
+    : `${THUMB_BASE}/${photo.id}.webp?r=${attempt}`
+}
+
+function onThumbError(photo: Photo) {
+  const attempt = thumbRetry.get(photo.id) ?? 0
+  if (attempt >= THUMB_MAX_RETRY) return
+  thumbRetry.set(photo.id, attempt + 1)
+}
 
 // Mobile density. Persisted so the choice survives a reload.
 const GRID_COLS_KEY = 'ss.gridCols'
@@ -1043,14 +1065,6 @@ async function loadNewer() {
   } finally {
     loadingNewer.value = false
   }
-}
-
-function onImgError(photo: Photo) {
-  // Un-hide the cell first: a failed thumbnail must not stay invisible.
-  loadedIds.add(photo.id)
-  const url = photo.thumbnail_url
-  photo.thumbnail_url = ''
-  setTimeout(() => { photo.thumbnail_url = url }, 2000)
 }
 
 function removePhotoById(id: number) {
