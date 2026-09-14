@@ -392,10 +392,6 @@ function observeCells() {
   }
 }
 
-// Every appended page adds cells the observers have not seen yet. Waiting for
-// the render keeps this off the critical path of the append itself.
-watch(() => photos.value.length, () => nextTick(observeCells))
-
 // Mobile density. Persisted so the choice survives a reload.
 const GRID_COLS_KEY = 'ss.gridCols'
 const gridCols = ref(Number(localStorage.getItem(GRID_COLS_KEY)) || 3)
@@ -413,6 +409,12 @@ const jumpMonth = ref('')
 const atTop = ref(true)
 
 const photos = ref<Photo[]>([])
+
+// Every appended page adds cells the observers have not seen yet. This must
+// sit *after* `photos` and `observeCells`: watch() runs its getter once right
+// away to capture the initial value, so anything it reads has to exist
+// already. Waiting for the render keeps it off the append's critical path.
+watch(() => photos.value.length, () => nextTick(observeCells))
 const total = ref(0)
 const loading = ref(false)
 const hasMore = ref(true)
