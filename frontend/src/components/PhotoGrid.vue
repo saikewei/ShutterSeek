@@ -526,6 +526,41 @@ function cancelPress() {
   }
 }
 
+// Lifting the finger after a long press still produces a synthetic click. By
+// then the action sheet covers the screen, so that click lands on the sheet's
+// own backdrop and closed it the instant it appeared -- the reported "hold,
+// menu shows, let go, menu disappears". Swallow exactly that one click.
+//
+// It is disarmed by the first pointerdown, because a real tap on the sheet
+// starts a fresh gesture while the leftover click does not; the timeout is
+// only a safety net so the listener can never stay armed.
+let disarmSwallow: (() => void) | null = null
+
+function swallowNextClick() {
+  disarmSwallow?.()
+
+  const timer = window.setTimeout(() => cleanup(), 800)
+
+  function cleanup() {
+    clearTimeout(timer)
+    document.removeEventListener('click', onClick, true)
+    document.removeEventListener('pointerdown', onPointerDown, true)
+    disarmSwallow = null
+  }
+  function onClick(e: Event) {
+    e.stopPropagation()
+    e.preventDefault()
+    cleanup()
+  }
+  function onPointerDown() {
+    cleanup()
+  }
+
+  document.addEventListener('click', onClick, true)
+  document.addEventListener('pointerdown', onPointerDown, true)
+  disarmSwallow = cleanup
+}
+
 function onPressStart(cell: BurstCell, e: PointerEvent) {
   if (e.pointerType === 'mouse') return
   if (cell.collapsed && cell.burstId) return
@@ -535,6 +570,7 @@ function onPressStart(cell: BurstCell, e: PointerEvent) {
     pressTimer = null
     sheet.photo = cell.photo
     sheet.open = true
+    swallowNextClick()
   }, LONG_PRESS_MS)
 }
 
@@ -1079,6 +1115,8 @@ onUnmounted(() => {
   observer?.disconnect()
   offScroll?.()
   offScroll = null
+  cancelPress()
+  disarmSwallow?.()
   controller?.abort()
 })
 </script>
