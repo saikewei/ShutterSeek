@@ -6,12 +6,12 @@
          @click.self="$emit('close')">
 
       <!-- Close (hidden on mobile while the EXIF panel covers it) -->
-      <button v-if="!(isMobile && exifOpen)" @click="$emit('close')"
+      <button v-if="!(isMobileShell && exifOpen)" @click="$emit('close')"
         class="absolute top-4 z-10 text-ink/70 hover:text-ink text-2xl w-10 h-10"
-        :style="{ right: photo && !isMobile ? '308px' : '16px' }">✕</button>
+        :style="{ right: photo && !isMobileShell ? '308px' : '16px' }">✕</button>
 
       <!-- Info (mobile only — EXIF is popover-style; hidden while panel is open) -->
-      <button v-if="photo && isMobile && !exifOpen" @click="exifOpen = true"
+      <button v-if="photo && isMobileShell && !exifOpen" @click="exifOpen = true"
         class="absolute top-4 right-16 z-10 h-10 flex items-center px-3 rounded-lg bg-white/10 hover:bg-white/20 text-ink/70 hover:text-ink text-xs transition-colors"
         title="图片信息">信息</button>
 
@@ -36,7 +36,7 @@
       <!-- Photo container -->
       <div
         ref="container"
-        :style="{ paddingRight: photo && !isMobile ? '288px' : '0' }"
+        :style="{ paddingRight: photo && !isMobileShell ? '288px' : '0' }"
         class="w-full h-full flex items-center justify-center overflow-hidden transition-[padding] duration-200 touch-none"
         @wheel.prevent="onWheel"
         @mousedown="onMouseDown"
@@ -71,17 +71,17 @@
 
       <!-- EXIF sidebar — always-on desktop; popover on mobile -->
       <!-- Overlay (mobile, click to dismiss) -->
-      <div v-if="photo && isMobile && exifOpen" class="absolute inset-0 bg-black/50" @click="exifOpen = false" />
+      <div v-if="photo && isMobileShell && exifOpen" class="absolute inset-0 bg-black/50" @click="exifOpen = false" />
 
       <Transition name="exif">
         <div
-          v-if="photo && (!isMobile || exifOpen)"
+          v-if="photo && (!isMobileShell || exifOpen)"
           class="absolute right-0 top-0 bottom-0 w-72 bg-canvas/85 backdrop-blur border-l border-line overflow-y-auto overscroll-contain pointer-events-auto"
         >
           <div class="p-4 space-y-3 text-sm">
             <div class="flex items-center justify-between border-b border-line pb-2">
               <h3 class="font-display text-ink font-medium text-base">{{ photo.file_name }}</h3>
-              <button v-if="isMobile" @click="exifOpen = false" class="text-ink/50 hover:text-ink text-lg leading-none">✕</button>
+              <button v-if="isMobileShell" @click="exifOpen = false" class="text-ink/50 hover:text-ink text-lg leading-none">✕</button>
             </div>
 
             <div v-if="photo.taken_at" class="flex justify-between">
@@ -135,7 +135,7 @@
 import { ref, watch } from 'vue'
 import { Dialog } from '@headlessui/vue'
 import type { Photo } from '@/api/photos'
-import { isMobile } from '@/stores/device'
+import { isMobileShell } from '@/stores/device'
 
 const props = defineProps<{
   open: boolean

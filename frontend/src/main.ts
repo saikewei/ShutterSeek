@@ -1,5 +1,5 @@
 import './style.css'
-import { createApp } from 'vue'
+import { createApp, nextTick } from 'vue'
 import { createRouter, createWebHashHistory } from 'vue-router'
 import App from './App.vue'
 import Home from './views/Home.vue'
@@ -12,17 +12,21 @@ import AdminInvites from './views/AdminInvites.vue'
 import AdminLogs from './views/AdminLogs.vue'
 import UploadPage from './views/UploadPage.vue'
 import { authState, checkAuth, isAdmin } from './stores/auth'
+import { scrollHostToTop } from './lib/scrollHost'
 
+// `chromeless` routes render without the app shell (no sidebar, no tab bar).
 const routes = [
-  { path: '/login', component: Login, meta: { noAuth: true, hideSidebar: true } },
-  { path: '/invite/:code', component: InviteRedeem, meta: { noAuth: true, hideSidebar: true } },
+  { path: '/login', component: Login, meta: { noAuth: true, chromeless: true } },
+  { path: '/invite/:code', component: InviteRedeem, meta: { noAuth: true, chromeless: true } },
   { path: '/', component: Home },
   { path: '/albums', component: AlbumList },
   { path: '/albums/:id', component: AlbumDetail },
   { path: '/search', component: Search },
+  // Admin-only pages. The APIs behind them carry AdminOnly() as well; this
+  // guard is what keeps the pages themselves unreachable for guests.
   { path: '/upload', component: UploadPage, meta: { adminOnly: true } },
-  { path: '/admin/invites', component: AdminInvites },
-  { path: '/admin/logs', component: AdminLogs },
+  { path: '/admin/invites', component: AdminInvites, meta: { adminOnly: true } },
+  { path: '/admin/logs', component: AdminLogs, meta: { adminOnly: true } },
 ]
 
 const router = createRouter({
@@ -39,11 +43,16 @@ router.beforeEach(async (to, _from, next) => {
   } else if (!authState.user) {
     next('/login')
   } else if (to.meta.adminOnly && !isAdmin.value) {
-    // 上传页仅管理员可达（接口本身也有 AdminOnly 守卫）
     next('/')
   } else {
     next()
   }
+})
+
+// Every navigation starts at the top of the current scroll host. Neither the
+// document nor the inner <main> is reset automatically by the router.
+router.afterEach(() => {
+  nextTick(() => scrollHostToTop(false))
 })
 
 createApp(App).use(router).mount('#app')

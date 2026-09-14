@@ -1,6 +1,6 @@
 <template>
   <div>
-    <header class="sticky top-0 z-30 bg-canvas/80 backdrop-blur border-b border-line px-4 py-2 flex items-center gap-3">
+    <header ref="headerEl" class="sticky top-0 z-30 bg-canvas/80 backdrop-blur border-b border-line px-4 py-2 flex items-center gap-3" :style="{ top: inheritedTop + 'px' }">
       <button @click="$router.push('/albums')" class="text-ink-3 hover:text-ink text-lg transition-colors">←</button>
       <div class="flex-1">
         <h1 class="text-sm font-medium font-display text-ink">{{ album?.title || 'Album' }}</h1>
@@ -23,7 +23,6 @@
       :fetch-fn="wrapFetch"
       :dates-fn="albumDatesFn"
       :album-titles="albumTitles"
-      :sticky-offset="53"
       :range-fn="rangeFn"
       :remove-from-album-id="albumId"
       @photo-contextmenu="(photo, event) => isAdmin && onContextMenu(photo, event)"
@@ -53,19 +52,28 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { computed, inject, provide, ref, reactive } from 'vue'
 import { useRoute } from 'vue-router'
 import PhotoGrid from '@/components/PhotoGrid.vue'
 import { fetchAlbum, fetchAlbumDates, updateAlbum, removeAlbumPhoto } from '@/api/albums'
 import { fetchPhotos, fetchPhotoRange } from '@/api/photos'
 import type { Photo } from '@/api/photos'
 import { isAdmin } from '@/stores/auth'
+import { topOffsetKey, useElementHeight } from '@/lib/chrome'
 
 const route = useRoute()
 const albumId = Number(route.params.id)
 const album = ref<any>(null)
 const gridRef = ref<InstanceType<typeof PhotoGrid> | null>(null)
 const albumTitles: Record<number, string> = {}
+
+// The album header stacks below whatever chrome the shell already pinned
+// (the mobile top bar), and the grid stacks below both.
+const inheritedTopFn = inject(topOffsetKey, () => 0)
+const inheritedTop = computed(inheritedTopFn)
+const headerEl = ref<HTMLElement | null>(null)
+const headerH = useElementHeight(headerEl)
+provide(topOffsetKey, () => inheritedTop.value + headerH.value)
 
 // Load album info
 function refreshAlbum() {

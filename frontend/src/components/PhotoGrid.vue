@@ -1,10 +1,11 @@
 <template>
-  <div>
+  <div ref="rootEl">
     <!-- Filter bar（单页模式无筛选语义，整栏隐藏） -->
     <div
       v-if="!singlePage"
+      ref="filterBar"
       class="sticky z-20 flex items-center justify-between px-2 py-1.5 bg-canvas/90 backdrop-blur border-b border-line"
-      :style="{ top: (stickyOffset || 0) + 'px' }"
+      :style="{ top: topOffset + 'px' }"
     >
       <div class="flex items-center gap-1.5">
         <button
@@ -17,7 +18,7 @@
         </button>
 
         <button
-          v-if="isGuestMobile && !selectMode && !singlePage"
+          v-if="isMobileShell && !selectMode && !singlePage"
           @click="monthPickerOpen = true"
           class="px-3 py-1 text-xs rounded-full bg-surface text-ink-2 hover:bg-line-strong hover:text-ink transition-colors"
         >月份</button>
@@ -57,12 +58,12 @@
           @click="prevDay"
           class="px-2 py-1 rounded bg-surface hover:bg-line-strong text-ink-2 hover:text-ink transition-colors whitespace-nowrap"
           title="前一天"
-        >{{ isGuestMobile ? '◀' : '◀ 前一天' }}</button>
+        >{{ isMobileShell ? '◀' : '◀ 前一天' }}</button>
         <button
           @click="nextDay"
           class="px-2 py-1 rounded bg-surface hover:bg-line-strong text-ink-2 hover:text-ink transition-colors whitespace-nowrap"
           title="后一天"
-        >{{ isGuestMobile ? '▶' : '后一天 ▶' }}</button>
+        >{{ isMobileShell ? '▶' : '后一天 ▶' }}</button>
       </div>
     </div>
 
@@ -71,7 +72,7 @@
       <div
         v-if="group.label"
         class="sticky z-10 bg-canvas/95 backdrop-blur px-2 h-[46px] flex items-center gap-2.5 border-b border-line"
-        :style="{ top: (stickyOffset || 0) + 37 + 'px' }"
+        :style="{ top: topOffset + filterH + 'px' }"
         :data-date="group.label"
         :data-date-iso="group.cells[0]?.photo?.taken_at?.slice(0, 10) || ''"
       >
@@ -195,7 +196,7 @@
     </Teleport>
 
     <!-- Date scrubber (desktop only; mobile uses the month-picker modal) -->
-    <DateScrubber v-if="!isGuestMobile && !singlePage" :dates="datePoints" :active-month="activeMonth" @jump="jumpToDate" />
+    <DateScrubber v-if="!isMobileShell && !singlePage" :dates="datePoints" :active-month="activeMonth" @jump="jumpToDate" />
 
     <!-- Album picker dialog -->
     <Teleport to="body">
@@ -259,13 +260,24 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, reactive, watch } from 'vue'
+import { inject, ref, computed, onMounted, onUnmounted, reactive, watch } from 'vue'
 import type { Photo, PhotoListResponse } from '@/api/photos'
 import { fetchPhotoDates } from '@/api/photos'
 import { THUMB_BASE } from '@/api/client'
 import { fetchAlbums, batchAddPhotos, removeAlbumPhotos, type Album } from '@/api/albums'
 import { isAdmin } from '@/stores/auth'
-import { isGuestMobile } from '@/stores/device'
+import { isMobileShell } from '@/stores/device'
+import { topOffsetKey, useElementHeight } from '@/lib/chrome'
+import {
+  getScrollTop,
+  hostScrollHeight,
+  hostViewportTop,
+  onHostScroll,
+  scrollHostBy,
+  scrollHostToTop,
+  setHostVisibility,
+  setScrollTop,
+} from '@/lib/scrollHost'
 import Lightbox from '@/components/Lightbox.vue'
 import DateScrubber from '@/components/DateScrubber.vue'
 import type { DatePoint } from '@/components/DateScrubber.vue'
@@ -276,7 +288,6 @@ const props = defineProps<{
     signal?: AbortSignal
   ) => Promise<PhotoListResponse>
   albumTitles?: Record<number, string>
-  stickyOffset?: number
   datesFn?: () => Promise<Array<{ date: string; count: number }>>
   rangeFn?: (fromId: number, toId: number, opts?: { album_id?: string }) => Promise<number[]>
   removeFromAlbumId?: number
@@ -287,6 +298,18 @@ const emit = defineEmits<{
   photoContextmenu: [photo: Photo, event: MouseEvent]
   removedFromAlbum: []
 }>()
+
+// Sticky chrome geometry. `topOffset` is injected by whichever shell/page owns
+// the pinned header above the grid; the filter bar height is measured here.
+// Everything sticky is expressed in these terms, no hard-coded offsets.
+const topOffsetFn = inject(topOffsetKey, () => 0)
+const topOffset = computed(topOffsetFn)
+const rootEl = ref<HTMLElement | null>(null)
+const filterBar = ref<HTMLElement | null>(null)
+const filterH = useElementHeight(filterBar)
+
+// Keep in sync with the h-[46px] date header in the template.
+const dateHeaderH = 46
 
 const jumpMonth = ref('')
 const atTop = ref(true)
@@ -304,6 +327,7 @@ const loadingNewer = ref(false)
 const hasNewer = ref(false)
 let cursor = ''
 let observer: IntersectionObserver | null = null
+let offScroll: (() => void) | null = null
 let controller: AbortController | null = null
 let wasInterrupted = false
 
@@ -482,12 +506,11 @@ const activeMonth = computed(() => (focusDate.value ? focusDate.value.slice(0, 7
 
 // 滚动时检测当前钉在顶部的日期分组，同步日期导航锚点
 function updateVisibleDate() {
-  const sp = document.querySelector('.overflow-auto') as HTMLElement
-  if (!sp) return
-  const headers = Array.from(sp.querySelectorAll<HTMLElement>('[data-date-iso]'))
+  const headers = Array.from(rootEl.value?.querySelectorAll<HTMLElement>('[data-date-iso]') ?? [])
   if (headers.length === 0) return
-  // 日期头 sticky top = stickyOffset + 37（筛选栏高度），换算到视口坐标
-  const line = sp.getBoundingClientRect().top + (props.stickyOffset || 0) + 37 + 1
+  // A date header becomes "current" once its top edge meets the line where
+  // stacked sticky headers settle: host top + pinned chrome + filter bar.
+  const line = hostViewportTop() + topOffset.value + filterH.value + 1
   let current = headers[0]
   for (const h of headers) {
     if (h.getBoundingClientRect().top <= line) current = h
@@ -553,8 +576,7 @@ function onMonthJump(monthKey: string) {
 }
 
 function scrollToTop() {
-  const sp = document.querySelector('.overflow-auto') as HTMLElement
-  if (sp) sp.scrollTo({ top: 0, behavior: 'smooth' })
+  scrollHostToTop(true)
   // Also reset any month filter
   if (hasNewer.value) {
     jumpMonth.value = ''
@@ -751,26 +773,24 @@ async function loadPage() {
       jumpMonth.value = ''
       jumpDate.value = ''
       if (headCount.value > 0) {
-        const headerOffset = (props.stickyOffset || 0) + 37 + 46
+        const headerOffset = topOffset.value + filterH.value + dateHeaderH
         const hc = headCount.value
 
-        const scrollParent = document.querySelector('.overflow-auto') as HTMLElement
-        if (scrollParent) scrollParent.style.visibility = 'hidden'
+        setHostVisibility(false)
 
         const doScroll = () => {
-          if (!scrollParent) return
-          const imgs = scrollParent.querySelectorAll('img[src*="thumbnails"]')
+          const imgs = rootEl.value?.querySelectorAll('img[src*="thumbnails"]') ?? []
           if (imgs.length > hc) {
             const target = imgs[hc] as HTMLElement
             const rect = target.getBoundingClientRect()
-            const containerRect = scrollParent.getBoundingClientRect()
-            scrollParent.scrollTop = Math.max(0, rect.top - containerRect.top + scrollParent.scrollTop - headerOffset)
+            const delta = rect.top - hostViewportTop() - headerOffset
+            setScrollTop(Math.max(0, getScrollTop() + delta))
           }
-          scrollParent.style.visibility = ''
+          setHostVisibility(true)
         }
 
-        requestAnimationFrame(() => { doScroll() })
-        setTimeout(() => { if (scrollParent) scrollParent.style.visibility = '' }, 2000)
+        requestAnimationFrame(doScroll)
+        setTimeout(() => setHostVisibility(true), 2000)
       }
     }
   } catch (e: any) {
@@ -794,22 +814,20 @@ onMounted(() => {
 
   // Scroll-up detection for loading newer photos（单页模式跳过）
   if (!props.singlePage) {
-    const scrollParent = document.querySelector('.overflow-auto') as HTMLElement
-    if (scrollParent) {
-      let ticking = false
-      scrollParent.addEventListener('scroll', () => {
-        if (ticking) return
-        ticking = true
-        requestAnimationFrame(() => {
-          atTop.value = scrollParent.scrollTop < 50
-          updateVisibleDate()
-          if (scrollParent.scrollTop < 100 && hasNewer.value && !loadingNewer.value && !jumpCooldown.value) {
-            loadNewer()
-          }
-          ticking = false
-        })
-      }, { passive: true })
-    }
+    let ticking = false
+    offScroll = onHostScroll(() => {
+      if (ticking) return
+      ticking = true
+      requestAnimationFrame(() => {
+        const top = getScrollTop()
+        atTop.value = top < 50
+        updateVisibleDate()
+        if (top < 100 && hasNewer.value && !loadingNewer.value && !jumpCooldown.value) {
+          loadNewer()
+        }
+        ticking = false
+      })
+    })
   }
 })
 
@@ -822,8 +840,7 @@ async function loadNewer() {
   const newerID = first.id
 
   // Save scroll position before prepending
-  const scrollParent = document.querySelector('.overflow-auto') as HTMLElement
-  const oldHeight = scrollParent?.scrollHeight || 0
+  const oldHeight = hostScrollHeight()
 
   loadingNewer.value = true
   try {
@@ -840,12 +857,9 @@ async function loadNewer() {
     total.value = data.total
 
     // Restore scroll position so content doesn't jump
-    if (scrollParent) {
-      requestAnimationFrame(() => {
-        const newHeight = scrollParent.scrollHeight
-        scrollParent.scrollTop += newHeight - oldHeight
-      })
-    }
+    requestAnimationFrame(() => {
+      scrollHostBy(hostScrollHeight() - oldHeight)
+    })
   } catch (e: any) {
     if (e?.name === 'CanceledError') return
     console.error('load newer failed', e)
@@ -870,6 +884,8 @@ defineExpose({ removePhotoById, reload })
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeyDown)
   observer?.disconnect()
+  offScroll?.()
+  offScroll = null
   controller?.abort()
 })
 </script>

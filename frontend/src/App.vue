@@ -1,13 +1,13 @@
 <template>
   <!-- Mobile guest shell: top bar + bottom tabs, no sidebar -->
-  <div v-if="isGuestMobile" class="flex flex-col h-screen supports-[height:100dvh]:h-dvh overflow-hidden bg-canvas text-ink">
+  <div v-if="isMobileShell" class="flex flex-col h-screen supports-[height:100dvh]:h-dvh overflow-hidden bg-canvas text-ink">
     <header class="shrink-0 px-4 py-3 border-b border-line bg-raised flex items-center justify-between">
       <h1 class="font-display text-sm font-semibold tracking-wide text-ink">ShutterSeek</h1>
       <button @click="doLogout" class="text-xs text-ink-3 hover:text-ink-2 transition-colors duration-150">退出</button>
     </header>
 
     <!-- overscroll-none：滚动到底时不把橡皮筋效果/链式滚动传给页面（否则底栏会跟着弹） -->
-    <main class="flex-1 overflow-auto overflow-x-hidden overscroll-none">
+    <main data-scroll-host class="flex-1 overflow-auto overflow-x-hidden overscroll-none">
       <router-view />
     </main>
 
@@ -102,7 +102,7 @@
     </nav>
 
     <!-- Main content -->
-    <main class="flex-1 overflow-auto overscroll-none">
+    <main data-scroll-host class="flex-1 overflow-auto overscroll-none">
       <router-view />
     </main>
   </div>
@@ -112,7 +112,7 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { authState, isAdmin, clearUser } from '@/stores/auth'
-import { isGuestMobile } from '@/stores/device'
+import { isMobileShell } from '@/stores/device'
 import { logout } from '@/api/auth'
 
 const route = useRoute()
