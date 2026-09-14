@@ -526,39 +526,35 @@ function cancelPress() {
   }
 }
 
-// Lifting the finger after a long press still produces a synthetic click. By
-// then the action sheet covers the screen, so that click lands on the sheet's
-// own backdrop and closed it the instant it appeared -- the reported "hold,
-// menu shows, let go, menu disappears". Swallow exactly that one click.
+// A long press is still a gesture, so lifting the finger fires `touchend` and
+// then a synthetic `click`. The sheet opens while the finger is *still down*,
+// so both events arrive after it exists -- and headlessui's outside-click
+// detector reads both as "a click outside the dialog":
 //
-// It is disarmed by the first pointerdown, because a real tap on the sheet
-// starts a fresh gesture while the leftover click does not; the timeout is
-// only a safety net so the listener can never stay armed.
-let disarmSwallow: (() => void) | null = null
+//   useDocumentEvent('click',    ..., true)                 // skipped on mobile
+//   useDocumentEvent('touchend', e => cb(e, () => e.target), true)
+//
+// On mobile it is the `touchend` branch that runs, and a touchend's target is
+// the element the gesture *started* on -- the grid cell, not the sheet. That
+// closed the sheet the instant it appeared. Swallowing only the click (an
+// earlier attempt) could never work: touchend comes first.
+//
+// These listeners are registered once, at setup, so they run before the ones
+// headlessui adds when the sheet mounts -- same node, same capture phase,
+// registration order decides. stopImmediatePropagation is what silences them.
+let swallowGestureEnd = false
 
-function swallowNextClick() {
-  disarmSwallow?.()
+function onGestureEndCapture(e: Event) {
+  if (!swallowGestureEnd) return
+  // Swallow the click that follows too, then disarm.
+  if (e.type === 'click') swallowGestureEnd = false
+  e.stopImmediatePropagation()
+  e.preventDefault()
+}
 
-  const timer = window.setTimeout(() => cleanup(), 800)
-
-  function cleanup() {
-    clearTimeout(timer)
-    document.removeEventListener('click', onClick, true)
-    document.removeEventListener('pointerdown', onPointerDown, true)
-    disarmSwallow = null
-  }
-  function onClick(e: Event) {
-    e.stopPropagation()
-    e.preventDefault()
-    cleanup()
-  }
-  function onPointerDown() {
-    cleanup()
-  }
-
-  document.addEventListener('click', onClick, true)
-  document.addEventListener('pointerdown', onPointerDown, true)
-  disarmSwallow = cleanup
+// A fresh gesture means the previous one is over; never eat a real tap.
+function onAnyPointerDown() {
+  swallowGestureEnd = false
 }
 
 function onPressStart(cell: BurstCell, e: PointerEvent) {
@@ -570,7 +566,7 @@ function onPressStart(cell: BurstCell, e: PointerEvent) {
     pressTimer = null
     sheet.photo = cell.photo
     sheet.open = true
-    swallowNextClick()
+    swallowGestureEnd = true
   }, LONG_PRESS_MS)
 }
 
@@ -1037,6 +1033,11 @@ async function loadPage() {
 
 onMounted(() => {
   window.addEventListener('keydown', onKeyDown)
+  // Registered here, long before the action sheet's dialog exists, so these
+  // run ahead of headlessui's own document listeners. See onGestureEndCapture.
+  document.addEventListener('touchend', onGestureEndCapture, true)
+  document.addEventListener('click', onGestureEndCapture, true)
+  document.addEventListener('pointerdown', onAnyPointerDown, true)
   loadPage()
   observer = new IntersectionObserver(
     (entries) => {
@@ -1116,7 +1117,9 @@ onUnmounted(() => {
   offScroll?.()
   offScroll = null
   cancelPress()
-  disarmSwallow?.()
+  document.removeEventListener('touchend', onGestureEndCapture, true)
+  document.removeEventListener('click', onGestureEndCapture, true)
+  document.removeEventListener('pointerdown', onAnyPointerDown, true)
   controller?.abort()
 })
 </script>
