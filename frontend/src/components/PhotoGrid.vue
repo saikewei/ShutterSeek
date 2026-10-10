@@ -71,7 +71,10 @@
         </div>
       </div>
 
-      <div v-if="selectMode" class="flex items-center gap-1.5 px-2 pb-1.5">
+      <div v-if="selectMode" class="flex flex-wrap items-center gap-1.5 px-2 pb-1.5">
+        <button v-if="isAdmin && creationsEnabled" @click="createFromSelection" :disabled="creatingWork || selected.size === 0 || selected.size > 200" class="btn-ghost px-3 py-1.5 text-xs">
+          {{ selected.size > 200 ? '创作最多 200 张' : creatingWork ? '创建中…' : 'AI 创作' }}
+        </button>
         <button v-if="isAdmin && removeFromAlbumId !== undefined" @click="confirmRemoveOpen = true" class="btn-danger-soft px-3 py-1.5 text-xs">
           从相册删除
         </button>
@@ -267,6 +270,23 @@
 </template>
 
 <script setup lang="ts">
+import { useRouter } from 'vue-router'
+import { createCreation } from '@/api/creations'
+import { creationsEnabled } from '@/stores/creations'
+const creationRouter = useRouter()
+const creatingWork = ref(false)
+async function createFromSelection() {
+  if (!selected.value.size || selected.value.size > 200 || creatingWork.value) return
+  creatingWork.value = true
+  try {
+    const work = await createCreation({ photo_ids: [...selected.value] })
+    await creationRouter.push('/creations/' + work.id)
+  } catch (e) {
+    const value = e as { response?: { data?: { error?: string } } }
+    rangeError.value = value.response?.data?.error || '创建失败，请稍后重试'
+  } finally { creatingWork.value = false }
+}
+
 import { inject, nextTick, ref, computed, onMounted, onUnmounted, reactive, watch } from 'vue'
 import type { Photo, PhotoListResponse } from '@/api/photos'
 import { fetchPhotoDates } from '@/api/photos'

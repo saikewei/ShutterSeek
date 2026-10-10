@@ -66,6 +66,7 @@
           <span v-if="$route.path === '/search'" class="absolute left-0 top-1.5 bottom-1.5 w-[2.5px] rounded-full bg-accent"></span>
           搜索
         </router-link>
+        <router-link v-if="isAdmin && creationsEnabled" to="/creations" class="block px-4 py-2 text-sm text-ink-2 hover:text-ink">AI 创作</router-link>
         <template v-if="isAdmin">
           <div class="border-t border-line my-2 mx-4"></div>
           <router-link
@@ -108,6 +109,7 @@
 </template>
 
 <script setup lang="ts">
+import { creationsEnabled } from "@/stores/creations"
 import { computed, provide, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { authState, isAdmin, clearUser } from '@/stores/auth'

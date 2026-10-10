@@ -46,6 +46,7 @@
 </template>
 
 <script setup lang="ts">
+import { creationsEnabled } from "@/stores/creations"
 import { computed, onMounted, ref } from 'vue'
 import { fetchStats, formatUptime, type SystemStats } from '@/api/admin'
 
@@ -74,6 +75,7 @@ const health = computed(() => [
 ])
 
 const entries = computed(() => [
+  ...(creationsEnabled.value ? [{ to: '/creations', label: 'AI 网页创作', hint: '', icon: 'M4 4h16v16H4zM4 9h16M9 9v11' }] : []),
   {
     to: '/albums',
     label: '相册管理',
