@@ -189,3 +189,19 @@ func TestCreationPreviewBlocksSelfNavigationAndKeepsOpaqueFrame(t *testing.T) {
 		t.Fatal("opaque origin was removed")
 	}
 }
+
+func TestCreationRestoreChecksBaseAndRestoresSnapshot(t *testing.T) {
+	s, mock := mockCreations(t)
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT .* FROM "creations" WHERE id = \$1 AND user_id = \$2`).WithArgs("work", int64(7), 1).WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "current_version"}).AddRow("work", 7, "v2"))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "creation_runs"`).WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT .* FROM "creation_versions" WHERE id = \$1 AND creation_id = \$2`).WithArgs("v1", "work", 1).WillReturnRows(sqlmock.NewRows([]string{"id", "creation_id", "state"}).AddRow("v1", "work", `{"proposal":{"style":"restored"}}`))
+	mock.ExpectExec(`UPDATE "creations"`).WithArgs("v1", `{"proposal":{"style":"restored"}}`, sqlmock.AnyArg(), "work").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	if err := s.Restore(context.Background(), 7, "work", "v1", "v2"); err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}

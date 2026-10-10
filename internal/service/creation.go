@@ -529,7 +529,7 @@ func (s *CreationService) callback(ctx context.Context, r model.CreationRun, c m
 	case "asset":
 		encoded, _ := p["data"].(string)
 		b, err := base64.StdEncoding.DecodeString(encoded)
-		if err != nil || len(b) > 2<<20 || len(b) < 8 || string(b[:8]) != "\x89PNG\r\n\x1a\n" {
+		if err != nil || len(b) > 6<<20 || len(b) < 8 || string(b[:8]) != "\x89PNG\r\n\x1a\n" {
 			return nil, ErrCreationInvalid
 		}
 		var count int64
