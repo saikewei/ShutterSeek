@@ -1,0 +1,89 @@
+"""Async gRPC server; no database credentials or photo mounts."""
+import asyncio
+import os
+import grpc
+from google.protobuf.struct_pb2 import Struct
+from concurrency import FairGate
+from rpc import Workspace, encode, decode
+from model import CreationModel
+from browser import Browser
+from workflow import Workflow
+
+
+class Agent:
+    def __init__(self, model, browser, channel):
+        self.model,self.browser,self.channel=model,browser,channel
+        self.tasks={}
+
+    async def execute(self, request, context):
+        value=decode(request)
+        run_id=value.get("run_id")
+        credential=value.get("credential")
+        if not run_id or not credential:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT,"run credential required")
+        if run_id in self.tasks:
+            await context.abort(grpc.StatusCode.ALREADY_EXISTS,"run already executing")
+        workspace=Workspace(self.channel,run_id,credential)
+        # Authenticate before exposing the cancellation capability or doing work.
+        await workspace.call("context")
+        if run_id in self.tasks:
+            await context.abort(grpc.StatusCode.ALREADY_EXISTS,"run already executing")
+        events=asyncio.Queue()
+        async def emit(value):
+            await events.put(value)
+        async def work():
+            await Workflow(workspace,self.model,self.browser,emit).execute()
+        task=asyncio.create_task(work())
+        # A task cancelled before its first step never enters coroutine finally.
+        task.add_done_callback(lambda completed: events.put_nowait(None))
+        self.tasks[run_id]=(credential,task)
+        try:
+            while True:
+                item=await events.get()
+                if item is None:
+                    await task
+                    break
+                yield encode(item)
+        finally:
+            task.cancel()
+            try:
+                await asyncio.gather(task,return_exceptions=True)
+            finally:
+                self.tasks.pop(run_id,None)
+
+    async def cancel(self,request,context):
+        value=decode(request)
+        current=self.tasks.get(value.get("run_id"))
+        if not current or current[0]!=value.get("credential"):
+            await context.abort(grpc.StatusCode.PERMISSION_DENIED,"invalid run credential")
+        current[1].cancel()
+        return encode({"cancelled":True})
+
+
+async def main():
+    channel=grpc.aio.insecure_channel(
+        os.environ.get("SHUTTERSEEK_CREATIONS_WORKSPACE_ADDRESS","shutterseek:8081"),
+        options=[("grpc.max_receive_message_length",24<<20),
+                 ("grpc.max_send_message_length",24<<20)])
+    model=CreationModel(FairGate(5))
+    agent=Agent(model,Browser(FairGate(1)),channel)
+    server=grpc.aio.server(options=[("grpc.max_receive_message_length",24<<20),
+                                    ("grpc.max_send_message_length",24<<20)])
+    server.add_generic_rpc_handlers([grpc.method_handlers_generic_handler(
+        "shutterseek.creation.v1.Agent",{
+            "Execute":grpc.unary_stream_rpc_method_handler(agent.execute,
+                request_deserializer=Struct.FromString,response_serializer=Struct.SerializeToString),
+            "Cancel":grpc.unary_unary_rpc_method_handler(agent.cancel,
+                request_deserializer=Struct.FromString,response_serializer=Struct.SerializeToString),
+        })])
+    server.add_insecure_port(os.environ.get("SHUTTERSEEK_CREATIONS_AGENT_LISTEN","0.0.0.0:50051"))
+    await server.start()
+    try:
+        await server.wait_for_termination()
+    finally:
+        await server.stop(5)
+        await channel.close()
+
+
+if __name__=="__main__":
+    asyncio.run(main())
