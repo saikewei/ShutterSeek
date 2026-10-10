@@ -36,6 +36,9 @@ services:
       ALIYUN_ACCESS_KEY_ID: ${ALIYUN_ACCESS_KEY_ID:-}
       ALIYUN_ACCESS_KEY_SECRET: ${ALIYUN_ACCESS_KEY_SECRET:-}
       # 文字检索（embedding sidecar）
+      SHUTTERSEEK_CREATIONS_ENABLED: ${SHUTTERSEEK_CREATIONS_ENABLED:-false}
+      SHUTTERSEEK_AGENT_ADDRESS: agent:50051
+      SHUTTERSEEK_CREATIONS_RPC_LISTEN: 0.0.0.0:8081
       SHUTTERSEEK_EMBED_URL: ${SHUTTERSEEK_EMBED_URL:-http://embedding:8000}
       SHUTTERSEEK_EMBED_TOKEN: ${EMBED_TOKEN}
       SHUTTERSEEK_EMBED_TIMEOUT_MS: ${SHUTTERSEEK_EMBED_TIMEOUT_MS:-10000}
@@ -65,9 +68,31 @@ services:
     networks:
       - shutterseek-internal
 
+  agent:
+    image: ${IMAGE_REGISTRY:-ghcr.io/saikewei}/shutterseek-agent:latest
+    profiles: ["creations"]
+    restart: unless-stopped
+    environment:
+      SHUTTERSEEK_CREATIONS_WORKSPACE_ADDRESS: shutterseek:8081
+      SHUTTERSEEK_CREATIONS_MODEL: ${SHUTTERSEEK_CREATIONS_MODEL:-deepseek-flash}
+      SHUTTERSEEK_CREATIONS_MODEL_URL: ${SHUTTERSEEK_CREATIONS_MODEL_URL:-https://api.deepseek.com}
+      SHUTTERSEEK_CREATIONS_MODEL_KEY: ${SHUTTERSEEK_CREATIONS_MODEL_KEY:-}
+    mem_limit: 1536m
+    cpus: "2.0"
+    shm_size: 256m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - shutterseek-internal
+      - agent-egress
+
 networks:
   default:
     name: postgres-main_default
     external: true
   shutterseek-internal:
     internal: true
+  agent-egress:
+    driver: bridge
