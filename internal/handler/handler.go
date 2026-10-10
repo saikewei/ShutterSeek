@@ -21,16 +21,17 @@ var cstZone = time.FixedZone("CST", 8*3600)
 
 // Handler holds shared dependencies for all HTTP handlers.
 type Handler struct {
-	Pool      *pgxpool.Pool
-	Redis     *goredis.Client
-	DB        *gorm.DB
-	OrigSvc   *service.OriginalService
-	AlbumSvc  *service.AlbumService
-	AuthSvc   *service.AuthService
-	SearchSvc *service.SearchService
-	UploadSvc *service.UploadService
-	PhotoSvc  *service.PhotoService
-	StatsSvc  *service.StatsService
+	Pool        *pgxpool.Pool
+	Redis       *goredis.Client
+	DB          *gorm.DB
+	OrigSvc     *service.OriginalService
+	AlbumSvc    *service.AlbumService
+	AuthSvc     *service.AuthService
+	SearchSvc   *service.SearchService
+	UploadSvc   *service.UploadService
+	PhotoSvc    *service.PhotoService
+	StatsSvc    *service.StatsService
+	CreationSvc *service.CreationService
 	// ThumbnailsDir is where {id}.webp files live; Thumbnail serves them from
 	// inside the authenticated group.
 	ThumbnailsDir string

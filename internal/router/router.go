@@ -59,6 +59,21 @@ func Setup(h *handler.Handler, thumbDir, modelsDir string) *gin.Engine {
 			// not a resource of its own, and the flat group prefix would
 			// otherwise expose it as the very generic /api/v1/stats.
 			admin.GET("/admin/stats", h.AdminStats)
+			admin.GET("/creations/capabilities", h.CreationCapabilities)
+			creations := admin.Group("/creations")
+			creations.Use(h.CreationEnabled)
+			creations.GET("", h.ListCreations)
+			creations.POST("", h.CreateCreation)
+			creations.GET("/:creation", h.GetCreation)
+			creations.GET("/:creation/messages", h.CreationMessages)
+			creations.GET("/:creation/versions", h.CreationVersions)
+			creations.POST("/:creation/runs", h.StartCreationRun)
+			creations.GET("/:creation/runs/:run", h.GetCreationRun)
+			creations.POST("/:creation/runs/:run/cancel", h.CancelCreationRun)
+			creations.GET("/:creation/runs/:run/events", h.CreationEvents)
+			creations.POST("/:creation/versions/:version/restore", h.RestoreCreationVersion)
+			creations.GET("/:creation/preview", h.CreationPreview)
+			creations.GET("/:creation/screenshots/:asset", h.CreationScreenshot)
 			admin.GET("/photos/range", h.PhotoRange)
 			admin.POST("/photos/upload", h.Upload)
 			admin.POST("/photos/upload/batch", h.UploadBatch)
@@ -66,7 +81,7 @@ func Setup(h *handler.Handler, thumbDir, modelsDir string) *gin.Engine {
 	}
 	r.GET("/api/health", h.Health)
 
-	// 客户端推理模型（fp16 ONNX，1.2GB，长缓存）
+	// Client inference model with a long cache lifetime.
 	r.GET("/models/vision_encoder/model.onnx", func(c *gin.Context) {
 		p := filepath.Join(modelsDir, "vision_encoder", "model.onnx")
 		if _, err := os.Stat(p); err != nil {

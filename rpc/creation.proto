@@ -1,0 +1,11 @@
+syntax = "proto3";
+package shutterseek.creation.v1;
+import "google/protobuf/struct.proto";
+// Struct envelopes keep Go and Python wire-compatible without generated stubs.
+service Agent {
+  rpc Execute(google.protobuf.Struct) returns (stream google.protobuf.Struct);
+  rpc Cancel(google.protobuf.Struct) returns (google.protobuf.Struct);
+}
+service Workspace {
+  rpc Call(google.protobuf.Struct) returns (google.protobuf.Struct);
+}
