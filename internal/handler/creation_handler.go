@@ -71,6 +71,24 @@ func (h *Handler) GetCreation(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, out)
 }
+func (h *Handler) RenameCreation(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 2<<10)
+	var req service.CreationTitleRequest
+	if c.ShouldBindJSON(&req) != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入 1–100 个字符的作品名称"})
+		return
+	}
+	err := h.CreationSvc.Rename(c.Request.Context(), creationUser(c), c.Param("creation"), req)
+	if errors.Is(err, service.ErrCreationInvalid) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入 1–100 个字符的作品名称"})
+		return
+	}
+	if err != nil {
+		creationError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
 func (h *Handler) UpdateCreationPhotos(c *gin.Context) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 24<<10)
 	var req service.CreationPhotosRequest

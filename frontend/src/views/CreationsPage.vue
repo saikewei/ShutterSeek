@@ -3,7 +3,10 @@
     <header class="flex items-center gap-3 flex-wrap">
       <RouterLink v-if="workId" to="/creations" class="btn-ghost px-2.5 py-1.5 text-xs" aria-label="返回作品列表">← 作品</RouterLink>
       <div class="flex-1 min-w-40">
-        <h1 class="font-display text-xl truncate">{{ detail?.creation.title || 'AI 网页创作' }}</h1>
+        <div class="flex items-center gap-2">
+          <h1 class="font-display text-xl truncate min-w-0 flex-1">{{ detail?.creation.title || 'AI 网页创作' }}</h1>
+          <button v-if="detail" class="btn-ghost shrink-0 px-2 py-1 text-xs" aria-label="修改作品名称" :disabled="renaming" @click="openRename">改名</button>
+        </div>
         <p v-if="detail" class="text-xs text-ink-3 mt-1">{{ detail.creation.current_version ? '继续对话，让作品更贴近你的想法' : '聊聊照片背后的故事，再一起确认方案' }}</p>
       </div>
       <div v-if="detail" class="creation-actions flex shrink-0 items-center gap-1 sm:gap-2 ml-auto">
@@ -114,6 +117,7 @@
         </section>
       </div>
 
+      <CreationNameDialog :open="renameOpen" :initial-name="detail.creation.title" :busy="renaming" :error="renameError" @close="renameOpen = false" @save="renameWork" />
       <AppModal :open="resetOpen" title="还原作品" @close="closeReset">
         <p class="text-sm text-ink-2 leading-relaxed">回到只选好照片的起点，重新开始聊天创作。</p>
         <p class="text-xs text-ink-3 mt-3 leading-relaxed">保留当前照片、用于成品的勾选和旋转。清空对话、图片描述、补充事实、方案、全部历史版本及检查记录；清空后无法恢复这些内容。</p>
@@ -205,12 +209,13 @@ import AppModal from '@/components/AppModal.vue'
 import CreationAlbumPicker from '@/components/CreationAlbumPicker.vue'
 import CreationProgress from '@/components/CreationProgress.vue'
 import CreationPhotoPicker from '@/components/CreationPhotoPicker.vue'
+import CreationNameDialog from '@/components/CreationNameDialog.vue'
 import { THUMB_BASE } from '@/api/client'
 import { creationsEnabled } from '@/stores/creations'
 import { isMobileShell } from '@/stores/device'
 import { isScrollHostNearEnd, scrollHostToEnd } from '@/lib/scrollHost'
 import { snapshotProposal, assistantText, displayChinese, needsChinese, reportSummary, viewportText, regionText, type CreationProgress as Progress } from '@/lib/creationChat'
-import { listCreations, getCreation, startCreationRun, cancelCreationRun, restoreCreationVersion, previewURL, parseReport, type Creation, type WorkDetail, type Proposal, type PhotoSelection, updateCreationPhotos, createCreation, resetCreation } from '@/api/creations'
+import { listCreations, getCreation, startCreationRun, cancelCreationRun, restoreCreationVersion, previewURL, parseReport, type Creation, type WorkDetail, type Proposal, type PhotoSelection, updateCreationPhotos, createCreation, resetCreation, renameCreation } from '@/api/creations'
 
 const route = useRoute()
 const router = useRouter()
@@ -231,6 +236,7 @@ const photoPickerOpen = ref(false), photoPickerAlbum = ref<number>(), photoSavin
 const editOpen = ref(false)
 const versionsOpen = ref(false)
 const resetOpen = ref(false), resetError = ref('')
+const renameOpen = ref(false), renaming = ref(false), renameError = ref(''), renameBase = ref('')
 const chatScroll = ref<HTMLElement>()
 const followChat = ref(true)
 const reportOpen = ref(false)
@@ -361,6 +367,24 @@ async function restore() {
   busy.value = true; error.value = ''
   try { await restoreCreationVersion(workId.value, version.value, detail.value.creation.current_version); versionsOpen.value = false; await load() } catch (e) { failure(e) } finally { busy.value = false }
 }
+function openRename() {
+  if (!detail.value) return
+  renameBase.value = detail.value.creation.title; renameError.value = ''; renameOpen.value = true
+}
+async function renameWork(title: string) {
+  if (!detail.value || renaming.value) return
+  const requestedId = workId.value
+  renaming.value = true; renameError.value = ''
+  try {
+    await renameCreation(requestedId, title, renameBase.value)
+    if (requestedId !== workId.value) return
+    if (detail.value) detail.value.creation.title = title
+    renameOpen.value = false
+  } catch (e) {
+    const value = e as { response?: { data?: { error?: string } } }
+    renameError.value = displayChinese(value.response?.data?.error, '名称保存失败，请重试。')
+  } finally { renaming.value = false }
+}
 function closeReset() { if (!busy.value) resetOpen.value = false }
 async function resetWork() {
   if (!detail.value || busy.value || photoSaving.value || activeRun.value) return
@@ -407,7 +431,7 @@ async function savePhotos(selection: PhotoSelection) {
 function onAlbumCreated(id: string) { albumPickerOpen.value = false; void router.push('/creations/' + id) }
 watch([workId, creationsEnabled], () => {
   closeStream(); detail.value = null; proposal.value = null; version.value = ''; message.value = ''; error.value = ''
-  progress.value = { stage: 'queued' }; followChat.value = true; reportOpen.value = false; panel.value = '对话'; photosOpen.value = false; editOpen.value = false; versionsOpen.value = false; photoPickerOpen.value = false; resetOpen.value = false; resetError.value = ''
+  progress.value = { stage: 'queued' }; followChat.value = true; reportOpen.value = false; panel.value = '对话'; photosOpen.value = false; editOpen.value = false; versionsOpen.value = false; photoPickerOpen.value = false; resetOpen.value = false; resetError.value = ''; renameOpen.value = false; renameError.value = ''
   void load()
 }, { immediate: true })
 // Generated scripts must initialize in a visible frame with a real viewport.

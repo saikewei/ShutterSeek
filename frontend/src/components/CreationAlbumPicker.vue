@@ -6,7 +6,10 @@
       <p v-if="error" role="alert" class="text-sm text-danger-ink mb-3">{{ error }}</p>
       <button v-if="loadFailed" class="btn-ghost px-3 py-2" @click="loadAlbums">重新加载</button>
       <p v-else-if="albums.length === 0" class="text-sm text-ink-3 py-6 text-center">暂无相册，请先在相册页面创建相册并添加照片。</p>
-      <div v-else class="space-y-2">
+      <label v-if="!loadFailed && albums.length" class="block text-xs text-ink-2 mb-4">作品名称
+        <input v-model="title" maxlength="100" class="input mt-2" :disabled="creating" :placeholder="selected?.title || '给这份作品起个名字'" />
+      </label>
+      <div v-if="!loadFailed && albums.length" class="space-y-2">
         <div v-for="album in albums" :key="album.id">
           <button
             type="button"
@@ -52,6 +55,7 @@ const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: []; created: [id: string]; browse: [id: number] }>()
 const albums = ref<Album[]>([])
 const selectedId = ref<number | null>(null)
+const title = ref('')
 const loading = ref(false)
 const creating = ref(false)
 const error = ref('')
@@ -84,7 +88,7 @@ async function createWork() {
   creating.value = true
   error.value = ''
   try {
-    const work = await createCreation({ album_id: album.id, title: album.title })
+    const work = await createCreation({ album_id: album.id, title: title.value.trim() || album.title })
     emit('created', work.id)
   } catch (e) {
     const value = e as { response?: { data?: { error?: string } } }
@@ -94,7 +98,7 @@ async function createWork() {
 watch(() => props.open, (open) => {
   if (!open) { controller?.abort(); controller = null; return }
   albums.value = []
-  selectedId.value = null
+  selectedId.value = null; title.value = ''
   void loadAlbums()
 }, { immediate: true })
 onUnmounted(() => controller?.abort())

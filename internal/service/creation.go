@@ -128,7 +128,12 @@ func (s *CreationService) List(ctx context.Context, user int64) ([]model.Creatio
 }
 func (s *CreationService) Create(ctx context.Context, user int64, req CreationRequest) (model.Creation, error) {
 	var c model.Creation
-	if len(req.PhotoIDs) > 200 || len(req.Title) > 200 || (req.AlbumID > 0 && len(req.PhotoIDs) > 0) {
+	title, err := normalizedCreationTitle(req.Title, true)
+	if err != nil {
+		return c, err
+	}
+	req.Title = title
+	if len(req.PhotoIDs) > 200 || (req.AlbumID > 0 && len(req.PhotoIDs) > 0) {
 		return c, ErrCreationInvalid
 	}
 	ids := req.PhotoIDs
@@ -153,9 +158,6 @@ func (s *CreationService) Create(ctx context.Context, user int64, req CreationRe
 	}
 	if count != int64(len(ids)) {
 		return c, ErrCreationInvalid
-	}
-	if strings.TrimSpace(req.Title) == "" {
-		req.Title = "照片作品"
 	}
 	state := "{}"
 	if req.UsedPhotoIDs != nil || req.Rotations != nil {

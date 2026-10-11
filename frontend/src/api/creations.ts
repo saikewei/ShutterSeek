@@ -62,3 +62,6 @@ export async function updateCreationPhotos(id: string, input: PhotoSelection & {
 export async function resetCreation(id: string, input: { base_version: string; base_revision: number }) {
   await api.post('/creations/' + encodeURIComponent(id) + '/reset', input)
 }
+export async function renameCreation(id: string, title: string, baseTitle: string) {
+  await api.patch('/creations/' + encodeURIComponent(id), { title, base_title: baseTitle })
+}
