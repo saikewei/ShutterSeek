@@ -27,7 +27,7 @@ func creationError(c *gin.Context, err error) {
 	}
 	if errors.Is(err, service.ErrCreationConflict) {
 		code = http.StatusConflict
-		message = "已有任务正在执行，或作品版本已更新，请刷新"
+		message = "已有任务正在执行，或作品内容已更新，请刷新"
 	}
 	c.JSON(code, gin.H{"error": message})
 }
@@ -70,6 +70,33 @@ func (h *Handler) GetCreation(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, out)
+}
+func (h *Handler) UpdateCreationPhotos(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 24<<10)
+	var req service.CreationPhotosRequest
+	if c.ShouldBindJSON(&req) != nil {
+		creationError(c, service.ErrCreationInvalid)
+		return
+	}
+	if err := h.CreationSvc.UpdatePhotos(c.Request.Context(), creationUser(c), c.Param("creation"), req); err != nil {
+		creationError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+func (h *Handler) CreationPhotoContent(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("photo"), 10, 64)
+	if err != nil || id <= 0 {
+		creationError(c, service.ErrCreationInvalid)
+		return
+	}
+	b, mime, err := h.CreationSvc.PhotoContent(c.Request.Context(), creationUser(c), c.Param("creation"), id)
+	if err != nil {
+		creationError(c, err)
+		return
+	}
+	c.Header("Cache-Control", "private, no-store")
+	c.Data(http.StatusOK, mime, b)
 }
 func (h *Handler) StartCreationRun(c *gin.Context) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 16<<10)

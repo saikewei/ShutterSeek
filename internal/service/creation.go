@@ -51,9 +51,11 @@ type CreationService struct {
 	stop       context.CancelFunc
 }
 type CreationRequest struct {
-	Title    string  `json:"title"`
-	PhotoIDs []int64 `json:"photo_ids"`
-	AlbumID  int64   `json:"album_id"`
+	Title        string         `json:"title"`
+	PhotoIDs     []int64        `json:"photo_ids"`
+	AlbumID      int64          `json:"album_id"`
+	UsedPhotoIDs []int64        `json:"used_photo_ids,omitempty"`
+	Rotations    map[string]int `json:"rotations,omitempty"`
 }
 type CreationProposal struct {
 	Structure    string  `json:"structure"`
@@ -62,13 +64,15 @@ type CreationProposal struct {
 }
 type CreationRunView struct {
 	model.CreationRun
-	Proposal *CreationProposal `json:"proposal,omitempty"`
+	Proposal      *CreationProposal `json:"proposal,omitempty"`
+	PhotoRevision *int              `json:"photo_revision,omitempty"`
 }
 type CreationRunRequest struct {
-	Proposal    *CreationProposal `json:"proposal,omitempty"`
-	Action      string            `json:"action"`
-	Message     string            `json:"message"`
-	BaseVersion string            `json:"base_version"`
+	Proposal      *CreationProposal `json:"proposal,omitempty"`
+	Action        string            `json:"action"`
+	Message       string            `json:"message"`
+	BaseVersion   string            `json:"base_version"`
+	PhotoRevision *int              `json:"photo_revision,omitempty"`
 }
 
 func jsonText(v interface{}) string { b, _ := json.Marshal(v); return string(b) }
@@ -153,8 +157,21 @@ func (s *CreationService) Create(ctx context.Context, user int64, req CreationRe
 	if strings.TrimSpace(req.Title) == "" {
 		req.Title = "照片作品"
 	}
+	state := "{}"
+	if req.UsedPhotoIDs != nil || req.Rotations != nil {
+		selected := req.UsedPhotoIDs
+		if selected == nil {
+			selected = ids
+		}
+		settings, err := creationPhotoSettings(ids, selected, req.Rotations)
+		if err != nil {
+			return c, err
+		}
+		settings["photo_revision"] = 0
+		state = jsonText(settings)
+	}
 	now := time.Now()
-	c = model.Creation{ID: uuid.NewString(), UserID: user, Title: req.Title, PhotoIDs: jsonText(ids), State: "{}", CreatedAt: now, UpdatedAt: now}
+	c = model.Creation{ID: uuid.NewString(), UserID: user, Title: req.Title, PhotoIDs: jsonText(ids), State: state, CreatedAt: now, UpdatedAt: now}
 	return c, s.db.WithContext(ctx).Create(&c).Error
 }
 func (s *CreationService) Detail(ctx context.Context, user int64, id string) (map[string]interface{}, error) {
@@ -183,6 +200,7 @@ func (s *CreationService) Detail(ctx context.Context, user int64, id string) (ma
 			var input CreationRunRequest
 			if json.Unmarshal([]byte(run.Input), &input) == nil {
 				view.Proposal = input.Proposal
+				view.PhotoRevision = input.PhotoRevision
 			}
 		}
 		views = append(views, view)
@@ -209,6 +227,9 @@ func (s *CreationService) Run(ctx context.Context, user int64, id string, req Cr
 			return ErrCreationConflict
 		}
 		state := mapText(c.State)
+		if req.PhotoRevision != nil && *req.PhotoRevision != photoRevision(state) {
+			return ErrCreationConflict
+		}
 		if req.Action == "modify" && c.CurrentVersion == "" {
 			return ErrCreationInvalid
 		}
@@ -302,7 +323,21 @@ func (s *CreationService) Restore(ctx context.Context, user int64, id, version, 
 		if err := tx.Where("id = ? AND creation_id = ?", version, id).First(&v).Error; err != nil {
 			return err
 		}
-		return tx.Model(&c).Updates(map[string]interface{}{"current_version": version, "state": v.State, "updated_at": time.Now()}).Error
+		restored := mapText(v.State)
+		var scope []int64
+		_ = json.Unmarshal([]byte(jsonText(restored["photo_ids"])), &scope)
+		if len(scope) == 0 {
+			_ = json.Unmarshal([]byte(v.UsedPhotoIDs), &scope)
+		}
+		updates := map[string]interface{}{"current_version": version, "state": v.State, "updated_at": time.Now()}
+		if len(scope) > 0 {
+			restored["photo_ids"] = scope
+			restored["photo_revision"] = photoRevision(mapText(c.State)) + 1
+			restored["photos_changed"] = false
+			updates["photo_ids"] = jsonText(scope)
+			updates["state"] = jsonText(restored)
+		}
+		return tx.Model(&c).Updates(updates).Error
 	})
 }
 
@@ -322,7 +357,11 @@ func (s *CreationService) Preview(ctx context.Context, user int64, id, version s
 		return "", err
 	}
 	var ids []int64
-	_ = json.Unmarshal([]byte(c.PhotoIDs), &ids)
+	_ = json.Unmarshal([]byte(v.UsedPhotoIDs), &ids)
+	if len(ids) == 0 {
+		_ = json.Unmarshal([]byte(c.PhotoIDs), &ids)
+	}
+	rotations := photoRotations(mapText(v.State))
 	assets := map[string]string{}
 	wanted := map[string]bool{}
 	for _, match := range photoPlaceholder.FindAllStringSubmatch(v.HTML, -1) {
@@ -332,11 +371,11 @@ func (s *CreationService) Preview(ctx context.Context, user int64, id, version s
 		if !wanted[fmt.Sprint(id)] {
 			continue
 		}
-		b, err := s.thumbnail(id)
+		b, mime, err := s.creationPhotoBytes(id, rotations[fmt.Sprint(id)])
 		if err != nil {
 			continue
 		}
-		assets[fmt.Sprint(id)] = "data:image/webp;base64," + base64.StdEncoding.EncodeToString(b)
+		assets[fmt.Sprint(id)] = "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(b)
 	}
 	expandedSize := len(v.HTML)
 	for _, match := range photoPlaceholder.FindAllStringSubmatch(v.HTML, -1) {
@@ -578,11 +617,14 @@ func (s *CreationService) callback(ctx context.Context, r model.CreationRun, c m
 		if !allowed {
 			return nil, errors.New("photo outside work scope")
 		}
-		b, err := s.thumbnail(int64(n))
+		angle := photoRotations(mapText(c.State))[fmt.Sprint(int64(n))]
+		b, mime, err := s.creationPhotoBytes(int64(n), angle)
 		if err != nil {
 			return nil, errors.New("photo asset unavailable")
 		}
-		out["data"] = "data:image/webp;base64," + base64.StdEncoding.EncodeToString(b)
+		out["data"] = "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(b)
+		out["rotation"] = angle
+		out["width"], out["height"] = creationAssetDimensions(b)
 	case "checkpoint_get":
 		var checkpoint model.CreationCheckpoint
 		err := s.db.WithContext(ctx).Where("run_id = ?", r.ID).Order("updated_at DESC").First(&checkpoint).Error
@@ -662,6 +704,9 @@ func (s *CreationService) callback(ctx context.Context, r model.CreationRun, c m
 			if !allowedID(token[1], allowed) {
 				return nil, ErrCreationInvalid
 			}
+		}
+		if html != "" {
+			sealPhotoSnapshot(state, c, usedIDs)
 		}
 		err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			var current model.Creation

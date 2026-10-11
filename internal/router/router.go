@@ -65,6 +65,8 @@ func Setup(h *handler.Handler, thumbDir, modelsDir string) *gin.Engine {
 			creations.GET("", h.ListCreations)
 			creations.POST("", h.CreateCreation)
 			creations.GET("/:creation", h.GetCreation)
+			creations.PATCH("/:creation/photos", h.UpdateCreationPhotos)
+			creations.GET("/:creation/photos/:photo", h.CreationPhotoContent)
 			creations.GET("/:creation/messages", h.CreationMessages)
 			creations.GET("/:creation/versions", h.CreationVersions)
 			creations.POST("/:creation/runs", h.StartCreationRun)
