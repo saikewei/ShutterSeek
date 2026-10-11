@@ -9,7 +9,7 @@
     <p v-if="!creationsEnabled">AI 创作尚未启用。</p>
     <template v-else-if="!workId">
       <p class="text-sm text-ink-2">从相册或照片网格选择 1–200 张照片，创作故事页、旅行展示、时间线或画廊。补充信息仅保存在当前作品。</p>
-      <RouterLink to="/albums" class="btn-primary px-4 py-2 inline-flex">选择相册</RouterLink>
+      <button class="btn-primary px-4 py-2 inline-flex" @click="albumPickerOpen = true">选择相册</button>
       <div class="grid sm:grid-cols-2 gap-3">
         <RouterLink v-for="work in works" :key="work.id" :to="'/creations/' + work.id" class="p-4 border border-line rounded-xl bg-raised">
           <h2>{{ work.title }}</h2><p class="text-xs text-ink-3 mt-2">{{ work.current_version ? '已保存作品' : '等待创作' }}</p>
@@ -99,18 +99,26 @@
         </div>
       </details>
     </template>
+    <CreationAlbumPicker :open="albumPickerOpen" @close="albumPickerOpen = false" @created="onAlbumCreated" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import CreationAlbumPicker from '@/components/CreationAlbumPicker.vue'
 import { THUMB_BASE } from '@/api/client'
 import { creationsEnabled } from '@/stores/creations'
 import { isMobileShell } from '@/stores/device'
 import { listCreations, getCreation, startCreationRun, cancelCreationRun, restoreCreationVersion, previewURL, parseReport, type Creation, type WorkDetail, type Proposal } from '@/api/creations'
 
 const route = useRoute()
+const router = useRouter()
+const albumPickerOpen = ref(false)
+function onAlbumCreated(id: string) {
+  albumPickerOpen.value = false
+  void router.push('/creations/' + id)
+}
 const workId = computed(() => String(route.params.id || ''))
 const works = ref<Creation[]>([])
 const detail = ref<WorkDetail | null>(null)

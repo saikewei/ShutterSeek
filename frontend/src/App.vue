@@ -66,7 +66,16 @@
           <span v-if="$route.path === '/search'" class="absolute left-0 top-1.5 bottom-1.5 w-[2.5px] rounded-full bg-accent"></span>
           搜索
         </router-link>
-        <router-link v-if="isAdmin && creationsEnabled" to="/creations" class="block px-4 py-2 text-sm text-ink-2 hover:text-ink">AI 创作</router-link>
+        <router-link
+          v-if="isAdmin && creationsEnabled"
+          to="/creations"
+          class="relative block px-4 py-2 text-sm transition-colors duration-150 rounded-r-md"
+          :class="creationsActive ? 'text-ink font-semibold bg-accent-soft' : 'text-ink-2 hover:text-ink hover:bg-white/5'"
+          :aria-current="creationsActive ? 'page' : undefined"
+        >
+          <span v-if="creationsActive" class="absolute left-0 top-1.5 bottom-1.5 w-[2.5px] rounded-full bg-accent" aria-hidden="true"></span>
+          AI 创作
+        </router-link>
         <template v-if="isAdmin">
           <div class="border-t border-line my-2 mx-4"></div>
           <router-link
@@ -121,6 +130,7 @@ import MobileTabBar from '@/components/mobile/MobileTabBar.vue'
 
 const route = useRoute()
 const router = useRouter()
+const creationsActive = computed(() => route.path === '/creations' || route.path.startsWith('/creations/'))
 
 // Login / invite pages render without any app chrome.
 const chromeless = computed(() => !!route.meta.chromeless)

@@ -23,6 +23,7 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
             context=await browser.new_context(viewport={"width":width,"height":height},has_touch=touch)
             page=await context.new_page()
             requested=[];submitted=[];current="";run_state=None
+            creations=[];album_fetches=0
             def version(id):
                 return {"id":id,"verified":id=="v2","report":json.dumps({
                     "rounds":1,"issues":[],"summary":"Inspected both viewports","screenshots":[]}),
@@ -35,12 +36,32 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
                         "messages":[],"runs":([{"id":"run","status":run_state,"report":"{}"}] if run_state else []),
                         "versions":([version("v2"),version("v1")] if current else [])}
             async def route_handler(route):
-                nonlocal current,run_state
+                nonlocal current,run_state,album_fetches
                 request=route.request;path=urlparse(request.url).path
                 requested.append((request.method,path))
                 value=None
                 if path=="/api/v1/auth/me":value={"id":1,"username":"test-admin","role":"admin"}
                 elif path=="/api/v1/creations/capabilities":value={"enabled":True,"max_photos":200}
+                elif path=="/api/v1/creations":
+                    if request.method=="POST":
+                        creations.append(request.post_data_json)
+                        if len(creations)==1:
+                            await route.fulfill(status=500,content_type="application/json",
+                                                body=json.dumps({"error":"创建作品失败，请重试"},ensure_ascii=False))
+                            return
+                        value={"id":"work","title":"旅行相册","current_version":""}
+                    else:value=[]
+                elif path=="/api/v1/albums":
+                    album_fetches+=1
+                    if album_fetches==1:
+                        await route.fulfill(status=503,content_type="application/json",
+                                            body='{"error":"unavailable"}')
+                        return
+                    value={"items":[
+                        {"id":10,"title":"旅行相册","photo_count":2,"cover_url":"/api/v1/thumbnails/1.webp"},
+                        {"id":11,"title":"空相册","photo_count":0,"cover_url":""},
+                        {"id":12,"title":"大相册","photo_count":201,"cover_url":""}],
+                        "total":3}
                 elif path=="/api/v1/creations/work":value=detail()
                 elif path=="/api/v1/creations/work/runs":
                     submitted.append(request.post_data_json)
@@ -73,8 +94,53 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
                 else:
                     await route.fulfill(status=404,body="missing fixture asset")
             await page.route("http://creation-ui.test/**",route_handler)
-            await page.goto("http://creation-ui.test/#/creations/work")
+            await page.goto("http://creation-ui.test/#/creations")
+            choose=page.get_by_role("button",name="选择相册",exact=True)
+            await choose.wait_for()
+            if width>=768 and not touch:
+                nav=page.get_by_role("link",name="AI 创作",exact=True)
+                self.assertEqual(await nav.get_attribute("aria-current"),"page")
+                self.assertIn("bg-accent-soft",(await nav.get_attribute("class")).split())
+                self.assertEqual(await nav.locator("span").count(),1)
+            await choose.click()
+            dialog=page.get_by_role("dialog",name="选择创作相册",exact=True)
+            await dialog.wait_for(state="attached")
+            await dialog.get_by_role("heading",name="选择创作相册",exact=True).wait_for()
+            artifact=Path("tmp/creation-ui");artifact.mkdir(parents=True,exist_ok=True)
+            await page.screenshot(path=str(artifact/f"album-picker-{width}.png"))
+            self.assertTrue(page.url.endswith("#/creations"))
+            await dialog.get_by_role("alert").wait_for()
+            await dialog.get_by_role("button",name="重新加载",exact=True).click()
+            valid=dialog.get_by_role("button",name="选择相册：旅行相册",exact=True)
+            await valid.wait_for()
+            self.assertTrue(await dialog.get_by_role("button",name="选择相册：空相册",exact=True).is_disabled())
+            self.assertTrue(await dialog.get_by_role("button",name="选择相册：大相册",exact=True).is_disabled())
+            create=dialog.get_by_role("button",name="创建作品",exact=True)
+            self.assertTrue(await create.is_disabled())
+            await valid.click()
+            self.assertEqual(await valid.get_attribute("aria-pressed"),"true")
+            self.assertFalse(await create.is_disabled())
+            await dialog.get_by_role("button",name="取消",exact=True).click()
+            await dialog.wait_for(state="detached")
+            self.assertEqual(creations,[])
+            self.assertTrue(page.url.endswith("#/creations"))
+            await choose.click()
+            await valid.wait_for()
+            self.assertTrue(await create.is_disabled())
+            await valid.click()
+            await create.click()
+            await dialog.get_by_role("alert").wait_for()
+            self.assertTrue(page.url.endswith("#/creations"))
+            self.assertEqual(await valid.get_attribute("aria-pressed"),"true")
+            await create.click()
             await page.get_by_role("button",name="确认并生成").wait_for()
+            await dialog.wait_for(state="detached")
+            self.assertTrue(page.url.endswith("#/creations/work"))
+            self.assertEqual(creations,[{"album_id":10,"title":"旅行相册"}]*2)
+            self.assertFalse(any(path.startswith("/api/v1/albums/") for method,path in requested))
+            if width>=768 and not touch:
+                self.assertEqual(await nav.get_attribute("aria-current"),"page")
+                self.assertIn("bg-accent-soft",(await nav.get_attribute("class")).split())
             await page.get_by_label("内容结构",exact=True).fill("A confirmed journey")
             await page.get_by_label("使用照片 2",exact=True).uncheck()
             await page.get_by_role("button",name="确认并生成").click()
