@@ -5,7 +5,8 @@
         v-for="action in actions"
         :key="action.key"
         type="button"
-        class="w-full text-left px-4 py-3 rounded-xl bg-surface text-sm transition-colors duration-150"
+        class="w-full text-left px-4 py-3 rounded-xl bg-surface text-sm transition-colors duration-150 disabled:opacity-40"
+        :disabled="action.disabled"
         :class="action.danger ? 'text-danger-ink hover:bg-danger-soft' : 'text-ink-2 hover:text-ink hover:bg-line-strong'"
         @click="select(action.key)"
       >{{ action.label }}</button>
@@ -26,6 +27,7 @@ export interface SheetAction {
   key: string
   label: string
   danger?: boolean
+  disabled?: boolean
 }
 
 defineProps<{

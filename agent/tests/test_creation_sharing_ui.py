@@ -78,7 +78,8 @@ class CreationSharingUITests(unittest.IsolatedAsyncioTestCase):
                 await page.locator('button[type="submit"]').click()
             else:
                 await page.goto("http://sharing-ui.test/#/creations/work")
-                await page.get_by_role("button",name="分享",exact=True).tap()
+                await page.get_by_role("button", name="更多作品操作", exact=True).tap()
+                await page.get_by_role("dialog", name="作品操作", exact=True).get_by_role("button",name="分享",exact=True).tap()
                 modal=page.get_by_role("dialog",name="分享作品",exact=True)
                 await modal.get_by_role("button",name="开启登录后分享",exact=True).tap()
                 link=modal.get_by_role("textbox",name="分享链接",exact=True)
@@ -105,7 +106,8 @@ class CreationSharingUITests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(await page.locator("iframe").get_attribute("sandbox"),"allow-scripts")
             if owner:
                 await page.goto("http://sharing-ui.test/#/creations/work")
-                await page.get_by_role("button",name="分享",exact=True).tap()
+                await page.get_by_role("button", name="更多作品操作", exact=True).tap()
+                await page.get_by_role("dialog", name="作品操作", exact=True).get_by_role("button",name="分享",exact=True).tap()
                 await modal.get_by_role("button",name="关闭分享",exact=True).tap()
                 await modal.get_by_role("button",name="开启登录后分享",exact=True).wait_for()
                 await modal.get_by_role("button",name="关闭",exact=True).tap()

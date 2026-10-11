@@ -1,19 +1,20 @@
 <template>
-  <div class="creation-page" :class="{ 'creation-editor': !!workId }">
+  <div class="creation-page" :class="{ 'creation-editor': !!workId, 'creation-compact': isMobileShell && !!workId }">
     <header class="flex items-center gap-3 flex-wrap">
-      <RouterLink v-if="workId" to="/creations" class="btn-ghost px-2.5 py-1.5 text-xs" aria-label="返回作品列表">← 作品</RouterLink>
-      <div class="flex-1 min-w-40">
+      <RouterLink v-if="workId" to="/creations" class="btn-ghost px-2.5 py-1.5 text-xs" aria-label="返回作品列表">{{ isMobileShell ? '←' : '← 作品' }}</RouterLink>
+      <div class="creation-title flex-1 min-w-40">
         <div class="flex items-center gap-2">
           <h1 class="font-display text-xl truncate min-w-0 flex-1">{{ detail?.creation.title || 'AI 网页创作' }}</h1>
-          <button v-if="detail" class="btn-ghost shrink-0 px-2 py-1 text-xs" aria-label="修改作品名称" :disabled="renaming" @click="openRename">改名</button>
+          <button v-if="detail && !isMobileShell" class="btn-ghost shrink-0 px-2 py-1 text-xs" aria-label="修改作品名称" :disabled="renaming" @click="openRename">改名</button>
         </div>
-        <p v-if="detail" class="text-xs text-ink-3 mt-1">{{ detail.creation.current_version ? '继续对话，让作品更贴近你的想法' : '聊聊照片背后的故事，再一起确认方案' }}</p>
+        <p v-if="detail && !isMobileShell" class="text-xs text-ink-3 mt-1">{{ detail.creation.current_version ? '继续对话，让作品更贴近你的想法' : '聊聊照片背后的故事，再一起确认方案' }}</p>
       </div>
       <div v-if="detail" class="creation-actions flex shrink-0 items-center gap-1 sm:gap-2 ml-auto">
         <button class="btn-ghost px-3 py-2 text-xs" @click="photosOpen = true">照片 · {{ detail.photo_ids.length }}</button>
-        <button v-if="detail.versions.length" class="btn-ghost px-3 py-2 text-xs" @click="versionsOpen = true">版本记录</button>
-        <button v-if="version && creationSharingEnabled" class="btn-ghost px-3 py-2 text-xs" @click="shareOpen = true">分享</button>
-        <button v-if="hasContext" class="btn-ghost px-3 py-2 text-xs text-ink-3" :disabled="busy || photoSaving || !!activeRun" @click="resetError = ''; resetOpen = true">还原作品</button>
+        <button v-if="detail.versions.length && !isMobileShell" class="btn-ghost px-3 py-2 text-xs" @click="versionsOpen = true">版本记录</button>
+        <button v-if="version && creationSharingEnabled && !isMobileShell" class="btn-ghost px-3 py-2 text-xs" @click="shareOpen = true">分享</button>
+        <button v-if="hasContext && !isMobileShell" class="btn-ghost px-3 py-2 text-xs text-ink-3" :disabled="busy || photoSaving || !!activeRun" @click="resetError = ''; resetOpen = true">还原作品</button>
+        <button v-if="isMobileShell" class="btn-ghost w-10 h-10 text-lg" aria-label="更多作品操作" @click="actionsOpen = true">⋯</button>
       </div>
     </header>
     <p v-if="error || runFailure" role="alert" class="rounded-xl border border-danger-ink/30 bg-raised p-3 text-sm text-danger-ink">{{ error || runFailure }}</p>
@@ -40,7 +41,7 @@
     </template>
 
     <template v-else-if="detail">
-      <CreationProgress v-if="activeRun" class="creation-live-progress" :progress="progress" :started-at="startedAt" :reconnecting="reconnecting" @cancel="cancel" />
+      <CreationProgress v-if="activeRun" class="creation-live-progress" :progress="progress" :started-at="startedAt" :reconnecting="reconnecting" :compact="isMobileShell" @cancel="cancel" />
       <p v-else-if="busy" role="status" class="text-sm text-ink-2">正在提交，请稍候…</p>
       <div v-if="isMobileShell" class="panel-switch flex gap-1 p-1 rounded-xl bg-raised border border-line" aria-label="创作面板">
         <button v-for="item in ['对话', '预览']" :key="item" class="flex-1 py-2 rounded-lg text-sm transition-colors" :class="panel === item ? 'bg-accent-soft text-ink font-medium' : 'text-ink-3'" :aria-pressed="panel === item" @click="panel = item">{{ item }}</button>
@@ -89,9 +90,9 @@
           <div class="conversation-footer">
             <form class="composer rounded-xl border border-line p-3" @submit.prevent="send">
               <label for="creation-message" class="sr-only">给创作助手的消息</label>
-              <textarea id="creation-message" v-model="message" :rows="isMobileShell ? 2 : 3" class="w-full resize-none bg-transparent text-sm text-ink placeholder:text-ink-3 focus:outline-none" :placeholder="detail.creation.current_version ? '告诉我想修改哪里…' : currentQuestion ? '回复助手，或聊聊你想调整的地方…' : '说说你想做什么样的作品…'" :disabled="!!activeRun || busy" @keydown.enter="composerEnter" />
+              <textarea ref="composerInput" id="creation-message" v-model="message" :rows="isMobileShell ? 1 : 3" class="w-full resize-none bg-transparent text-sm text-ink placeholder:text-ink-3 focus:outline-none" :placeholder="detail.creation.current_version ? '告诉我想修改哪里…' : currentQuestion ? '回复助手，或聊聊你想调整的地方…' : '说说你想做什么样的作品…'" :disabled="!!activeRun || busy" @keydown.enter="composerEnter" />
               <div class="flex items-center gap-2 mt-2">
-                <span class="text-xs text-ink-3 flex-1">回车发送 · ⇧ + 回车换行</span>
+                <span v-if="!isMobileShell" class="text-xs text-ink-3 flex-1">回车发送 · ⇧ + 回车换行</span>
                 <button v-if="currentQuestion && !activeRun" type="button" class="btn-ghost px-3 py-2 text-xs" :disabled="busy" @click="run('skip')">先跳过</button>
                 <button type="submit" class="btn-primary px-4 py-2 text-sm" :disabled="busy || !!activeRun || !message.trim()">发送</button>
               </div>
@@ -101,10 +102,10 @@
 
         <section v-show="!isMobileShell || panel === '预览'" class="creation-preview-panel min-w-0 space-y-3" aria-label="作品预览">
           <div class="flex items-center gap-2 px-1">
-            <h2 class="text-sm font-medium flex-1">作品预览</h2>
+            <h2 v-if="!isMobileShell" class="text-sm font-medium flex-1">作品预览</h2>
             <RouterLink v-if="version" :to="{ path: '/creations/' + workId + '/preview', query: { version } }" target="_blank" rel="noopener noreferrer" class="btn-ghost px-3 py-1.5 text-xs">完整预览 ↗</RouterLink>
             <button v-if="report.rounds" class="btn-ghost px-3 py-1.5 text-xs" @click="reportOpen = true">效果检查</button>
-            <span v-if="selectedVersion" class="text-xs" :class="selectedVersion.verified ? 'text-accent-strong' : 'text-ink-3'">{{ selectedVersion.verified ? '效果检查通过' : '待完善的候选版本' }}</span>
+            <span v-if="selectedVersion && !isMobileShell" class="text-xs" :class="selectedVersion.verified ? 'text-accent-strong' : 'text-ink-3'">{{ selectedVersion.verified ? '效果检查通过' : '待完善的候选版本' }}</span>
             <button v-if="version && version !== detail.creation.current_version" class="btn-ghost px-3 py-1.5 text-xs" :disabled="busy || !!activeRun" @click="restore">恢复此版本</button>
           </div>
           <iframe v-if="version && previewReady" :key="version" :src="previewURL(workId, version)" sandbox="allow-scripts" referrerpolicy="no-referrer" title="作品沙箱预览" class="creation-preview" />
@@ -113,11 +114,12 @@
             <h3 class="font-display text-xl text-ink">{{ activeRun ? '你的作品正在成形' : '故事会在这里展开' }}</h3>
             <p class="text-sm text-ink-3 mt-3 max-w-xs leading-relaxed">{{ activeRun ? '当前阶段会在上方实时更新，完成后自动显示预览。' : '先聊聊想法，确认内容、风格和照片后，就可以生成作品。' }}</p>
           </div>
-          <p v-if="version" class="text-xs text-ink-3 px-1">已自动保存。继续在对话中提出修改，会保留当前版本。</p>
+          <p v-if="version && !isMobileShell" class="text-xs text-ink-3 px-1">已自动保存。继续在对话中提出修改，会保留当前版本。</p>
 
         </section>
       </div>
 
+      <ActionSheet :open="actionsOpen" title="作品操作" :actions="workActions" @close="actionsOpen = false" @select="selectWorkAction" />
       <CreationShareDialog :open="shareOpen" :work-id="workId" :version="version" :base-version="detail.creation.current_version" @close="shareOpen = false" />
       <CreationNameDialog :open="renameOpen" :initial-name="detail.creation.title" :busy="renaming" :error="renameError" @close="renameOpen = false" @save="renameWork" />
       <AppModal :open="resetOpen" title="还原作品" @close="closeReset">
@@ -208,6 +210,7 @@
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppModal from '@/components/AppModal.vue'
+import ActionSheet, { type SheetAction } from '@/components/ActionSheet.vue'
 import CreationAlbumPicker from '@/components/CreationAlbumPicker.vue'
 import CreationProgress from '@/components/CreationProgress.vue'
 import CreationPhotoPicker from '@/components/CreationPhotoPicker.vue'
@@ -229,7 +232,8 @@ const proposal = ref<Proposal | null>(null)
 const message = ref('')
 const version = ref('')
 const previewReady = ref(false)
-const shareOpen = ref(false)
+const shareOpen = ref(false), actionsOpen = ref(false)
+const composerInput = ref<HTMLTextAreaElement>()
 const error = ref('')
 const busy = ref(false)
 const panel = ref('对话')
@@ -267,6 +271,32 @@ const runFailure = computed(() => {
   if (busy.value || activeRun.value || detail.value?.runs[0]?.status !== 'failed') return ''
   return displayChinese(parseReport(detail.value.runs[0].report).error, '创作任务失败，请重试；已保存的方案和作品会保留。')
 })
+const workActions = computed<SheetAction[]>(() => {
+  const actions: SheetAction[] = [{ key: 'rename', label: '修改作品名称', disabled: renaming.value }]
+  if (detail.value?.versions.length) actions.push({ key: 'versions', label: '版本记录' })
+  if (version.value && creationSharingEnabled.value) actions.push({ key: 'share', label: '分享' })
+  if (hasContext.value) actions.push({ key: 'reset', label: '还原作品', danger: true, disabled: busy.value || photoSaving.value || !!activeRun.value })
+  return actions
+})
+async function selectWorkAction(key: string) {
+  actionsOpen.value = false
+  await nextTick()
+  if (key === 'rename') openRename()
+  if (key === 'versions') versionsOpen.value = true
+  if (key === 'share') shareOpen.value = true
+  if (key === 'reset') { resetError.value = ''; resetOpen.value = true }
+}
+// Grow a compact composer to fit a few lines without taking over the transcript.
+watch([message, isMobileShell, composerInput], async () => {
+  await nextTick()
+  const input = composerInput.value
+  if (!input) return
+  input.style.height = ''
+  if (isMobileShell.value) {
+    input.style.height = '0px'
+    input.style.height = Math.min(96, input.scrollHeight) + 'px'
+  }
+}, { flush: 'post' })
 function versionDate(value: string) { return new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) }
 function screenshotURL(id: string) { return '/api/v1/creations/' + workId.value + '/screenshots/' + id }
 function failure(e: unknown) {
@@ -406,7 +436,7 @@ async function resetWork() {
     }
     proposal.value = null; message.value = ''; version.value = ''; error.value = ''
     progress.value = { stage: 'queued' }; followChat.value = true; panel.value = '对话'
-    shareOpen.value = false; resetOpen.value = false; reportOpen.value = false; photosOpen.value = false; editOpen.value = false; versionsOpen.value = false
+    actionsOpen.value = false; shareOpen.value = false; resetOpen.value = false; reportOpen.value = false; photosOpen.value = false; editOpen.value = false; versionsOpen.value = false
     await load()
   } catch (e) {
     const value = e as { response?: { data?: { error?: string } } }
@@ -435,7 +465,7 @@ async function savePhotos(selection: PhotoSelection) {
 function onAlbumCreated(id: string) { albumPickerOpen.value = false; void router.push('/creations/' + id) }
 watch([workId, creationsEnabled], () => {
   closeStream(); detail.value = null; proposal.value = null; version.value = ''; message.value = ''; error.value = ''
-  progress.value = { stage: 'queued' }; followChat.value = true; reportOpen.value = false; panel.value = '对话'; photosOpen.value = false; editOpen.value = false; versionsOpen.value = false; photoPickerOpen.value = false; resetOpen.value = false; resetError.value = ''; renameOpen.value = false; renameError.value = ''; shareOpen.value = false
+  progress.value = { stage: 'queued' }; followChat.value = true; reportOpen.value = false; panel.value = '对话'; photosOpen.value = false; editOpen.value = false; versionsOpen.value = false; photoPickerOpen.value = false; resetOpen.value = false; resetError.value = ''; renameOpen.value = false; renameError.value = ''; shareOpen.value = false; actionsOpen.value = false
   void load()
 }, { immediate: true })
 // Generated scripts must initialize in a visible frame with a real viewport.
@@ -474,11 +504,27 @@ onUnmounted(closeStream)
 .creation-preview-panel > :first-child, .creation-preview-panel > p { flex-shrink: 0; }
 .creation-preview { flex: 1; width: 100%; height: 0; min-height: 0; border: 1px solid var(--color-line); border-radius: 1rem; background: white; }
 .preview-empty { flex: 1; min-height: 0; }
-.creation-mobile .conversation-heading { padding: .75rem 1rem; }
+.creation-mobile .conversation-heading { display: none; }
 .creation-mobile .conversation-heading > p { display: none; }
 @media (min-width: 768px) {
   .creation-page { padding: 1.5rem; gap: 1.25rem; }
   .creation-workspace { grid-template-columns: minmax(320px, 0.85fr) minmax(0, 1.6fr); }
 }
 .creation-workspace.creation-mobile { grid-template-columns: minmax(0, 1fr); }
+.creation-editor.creation-compact { padding: .5rem .75rem; gap: .5rem; }
+.creation-compact > header { flex-wrap: nowrap; gap: .375rem; }
+.creation-compact .creation-title { min-width: 0; }
+.creation-compact h1 { font-size: .875rem; }
+.creation-compact .creation-actions { gap: 0; }
+.creation-compact .creation-actions > button { padding-inline: .5rem; }
+.creation-compact .panel-switch { padding: .125rem; border-radius: .75rem; }
+.creation-compact .panel-switch > button { padding-block: .375rem; font-size: .8125rem; }
+.creation-compact .conversation-scroll { padding: .75rem; }
+.creation-compact .conversation-footer { padding: .5rem; }
+.creation-compact .composer { display: flex; align-items: flex-end; gap: .5rem; padding: .375rem .5rem; }
+.creation-compact .composer textarea { min-width: 0; flex: 1; font-size: 1rem; line-height: 1.5rem; min-height: 2.5rem; }
+.creation-compact .composer > div { margin-top: 0; flex-shrink: 0; gap: .25rem; }
+.creation-compact .composer button { padding: .5rem .625rem; }
+.creation-compact .creation-preview-panel { gap: .5rem; }
+.creation-compact .creation-preview-panel > * { margin-block: 0; }
 </style>

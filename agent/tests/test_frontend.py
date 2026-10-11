@@ -173,6 +173,12 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
                     await route.fulfill(content_type=mimetypes.guess_type(str(file))[0] or "application/octet-stream",body=file.read_bytes())
                 else:
                     await route.fulfill(status=404,body="missing fixture asset")
+            async def work_action(name):
+                if width < 768 or touch:
+                    await page.get_by_role("button", name="更多作品操作", exact=True).click()
+                    await page.get_by_role("dialog", name="作品操作", exact=True).get_by_role("button", name=name, exact=True).click()
+                else:
+                    await page.get_by_role("button", name=name, exact=True).click()
             await context.route("http://creation-ui.test/**",route_handler)
             await page.goto("http://creation-ui.test/#/creations")
             choose=page.get_by_role("button",name="选择相册",exact=True)
@@ -248,7 +254,7 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await paragraph.evaluate("el => getComputedStyle(el).webkitUserSelect"),"text")
             self.assertEqual(await log.locator(".proposal-card p").first.evaluate("el => getComputedStyle(el).userSelect"),"text")
             self.assertEqual(await header.evaluate("el => getComputedStyle(el).userSelect"),"none")
-            self.assertEqual(await page.locator(".creation-preview-panel h2").evaluate("el => getComputedStyle(el).userSelect"),"none")
+            self.assertEqual(await page.locator(".creation-preview-panel").evaluate("el => getComputedStyle(el).userSelect"),"none")
             await paragraph.scroll_into_view_if_needed()
             # Read glyph coordinates, then select with native pointer events.
             glyphs=await paragraph.evaluate("""el => {
@@ -360,7 +366,13 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
             status=page.get_by_role("status")
             await status.get_by_text("正在生成网页",exact=True).wait_for()
             self.assertTrue(await page.get_by_role("button",name="取消任务",exact=True).is_visible())
-            self.assertTrue(await page.get_by_role("button",name="还原作品",exact=True).is_disabled())
+            if width < 768 or touch:
+                await page.get_by_role("button", name="更多作品操作", exact=True).click()
+                menu = page.get_by_role("dialog", name="作品操作", exact=True)
+                self.assertTrue(await menu.get_by_role("button", name="还原作品", exact=True).is_disabled())
+                await menu.get_by_role("button", name="取消", exact=True).click()
+            else:
+                self.assertTrue(await page.get_by_role("button",name="还原作品",exact=True).is_disabled())
             bounds=await status.bounding_box()
             self.assertGreaterEqual(bounds["y"],0)
             self.assertLessEqual(bounds["y"]+bounds["height"],height)
@@ -460,7 +472,7 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(photo_changes[-1]["rotations"],{"3":90})
             await page.get_by_text("照片已更新，下次生成或修改时应用。当前预览保留已保存的版本。",exact=True).wait_for()
             if width<768 or touch:await page.get_by_role("button",name="预览",exact=True).click()
-            await page.get_by_role("button",name="版本记录",exact=True).click()
+            await work_action("版本记录")
             await page.get_by_role("combobox",name="查看版本",exact=True).select_option("v1")
             await page.get_by_role("button",name="恢复此版本").click()
             self.assertEqual(submitted[-1]["base_version"],"v2")
@@ -480,13 +492,13 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
                 await page.get_by_role("button",name="预览",exact=True).tap()
             await page.locator('iframe[title="作品沙箱预览"]').wait_for()
             self.assertEqual(await page.locator('iframe[title="作品沙箱预览"]').count(),1)
-            await page.get_by_role("button",name="还原作品",exact=True).click()
+            await work_action("还原作品")
             reset_dialog=page.get_by_role("dialog",name="还原作品",exact=True)
             await reset_dialog.get_by_text("清空后无法恢复这些内容",exact=False).wait_for()
             await reset_dialog.get_by_role("button",name="取消",exact=True).click()
             await reset_dialog.wait_for(state="detached")
             self.assertEqual(resets,[])
-            await page.get_by_role("button",name="还原作品",exact=True).click()
+            await work_action("还原作品")
             await reset_dialog.get_by_role("button",name="确认还原",exact=True).click()
             await reset_dialog.get_by_role("alert").get_by_text("还原暂时失败，请重试",exact=True).wait_for()
             self.assertEqual(current,"v1")
@@ -519,7 +531,7 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
             await page.get_by_text("了解了，我记下了你刚才的回答。",exact=False).wait_for()
             self.assertEqual(submitted[-1],{"action":"answer","message":"重新创作，做一个生活画廊","base_version":"","photo_revision":photo_revision})
             state_before_rename=json.loads(json.dumps(detail()))
-            await page.get_by_role("button",name="修改作品名称",exact=True).click()
+            await work_action("修改作品名称")
             naming=page.get_by_role("dialog",name="修改作品名称",exact=True)
             name_field=naming.get_by_role("textbox",name="作品名称",exact=True)
             self.assertEqual(await name_field.input_value(),"旅行故事")

@@ -9,7 +9,7 @@
     :class="{ 'creation-mobile-shell': creationWorkspaceActive }"
     :style="creationWorkspaceActive ? { height: editorViewport.height + 'px', top: editorViewport.top + 'px' } : undefined"
     :data-editor-keyboard="creationWorkspaceActive && editorKeyboardOpen ? 'true' : undefined">
-    <MobileTopBar ref="topBar" />
+    <MobileTopBar v-show="!creationWorkspaceActive || !editorKeyboardOpen" ref="topBar" />
 
     <main :class="{ 'creation-mobile-main': creationWorkspaceActive }"
       :style="{ paddingBottom: creationWorkspaceActive && editorKeyboardOpen ? '0px' : 'calc(var(--ss-tabbar-h) + env(safe-area-inset-bottom))' }">
@@ -135,18 +135,47 @@ const router = useRouter()
 const creationsActive = computed(() => route.path === '/creations' || route.path.startsWith('/creations/'))
 const creationWorkspaceActive = computed(() => creationsActive.value && !!route.params.id)
 const editorViewport = ref({ height: window.innerHeight, top: 0 })
-const editorKeyboardOpen = computed(() => editorViewport.value.height < window.innerHeight * 0.8)
+const editorInputFocused = ref(false)
+const editorFocusHeight = ref(window.innerHeight)
+const editorKeyboardResized = ref(false)
+// Some browsers resize both viewports for the keyboard, making a height ratio insufficient.
+const editorKeyboardOpen = computed(() =>
+  editorInputFocused.value && (!editorKeyboardResized.value || editorViewport.value.height < editorFocusHeight.value * 0.8) ||
+  editorViewport.value.height < window.innerHeight * 0.8
+)
+function updateEditorFocus() {
+  const element = document.activeElement
+  const focused = element instanceof HTMLElement && (
+    element.isContentEditable ||
+    element instanceof HTMLTextAreaElement && !element.disabled && !element.readOnly ||
+    element instanceof HTMLInputElement && !element.disabled && !element.readOnly &&
+      ['text', 'search', 'email', 'url', 'tel', 'number', 'password'].includes(element.type)
+  )
+  if (focused && !editorInputFocused.value) {
+    editorFocusHeight.value = Math.max(window.innerHeight, editorViewport.value.height)
+    editorKeyboardResized.value = false
+  }
+  editorInputFocused.value = focused
+}
+function onEditorFocusOut() { queueMicrotask(updateEditorFocus) }
 function updateEditorViewport() {
   const viewport = window.visualViewport
   editorViewport.value = { height: viewport?.height || window.innerHeight, top: viewport?.offsetTop || 0 }
+  if (editorInputFocused.value && editorViewport.value.height < editorFocusHeight.value * 0.8) {
+    editorKeyboardResized.value = true
+  }
 }
 onMounted(() => {
   updateEditorViewport()
+  document.addEventListener('focusin', updateEditorFocus)
+  document.addEventListener('focusout', onEditorFocusOut)
   window.addEventListener('resize', updateEditorViewport)
   window.visualViewport?.addEventListener('resize', updateEditorViewport)
   window.visualViewport?.addEventListener('scroll', updateEditorViewport)
 })
 onUnmounted(() => {
+  document.removeEventListener('focusin', updateEditorFocus)
+  document.removeEventListener('focusout', onEditorFocusOut)
   window.removeEventListener('resize', updateEditorViewport)
   window.visualViewport?.removeEventListener('resize', updateEditorViewport)
   window.visualViewport?.removeEventListener('scroll', updateEditorViewport)
