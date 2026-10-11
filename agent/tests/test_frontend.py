@@ -18,7 +18,7 @@ DIST=Path(__file__).resolve().parents[2]/"frontend"/"dist"
 
 @unittest.skipUnless((DIST/"index.html").exists(),"build frontend before browser UI acceptance")
 class FrontendTests(unittest.IsolatedAsyncioTestCase):
-    async def exercise(self,width,height,touch=False):
+    async def exercise(self,width,height,touch=False,role="admin"):
         async with async_playwright() as pw:
             browser=await pw.chromium.launch(headless=True,args=["--disable-dev-shm-usage"])
             context=await browser.new_context(viewport={"width":width,"height":height},has_touch=touch or width<768,is_mobile=touch or width<768)
@@ -56,7 +56,7 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
                 request=route.request;path=urlparse(request.url).path
                 requested.append((request.method,path))
                 value=None
-                if path=="/api/v1/auth/me":value={"id":1,"username":"test-admin","role":"admin"}
+                if path=="/api/v1/auth/me":value={"id":1,"username":"test-user","role":role}
                 elif path=="/api/v1/creations/capabilities":value={"enabled":True,"max_photos":200}
                 elif path=="/api/v1/creations":
                     if request.method=="POST":
@@ -182,6 +182,14 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(await nav.get_attribute("aria-current"),"page")
                 self.assertIn("bg-accent-soft",(await nav.get_attribute("class")).split())
                 self.assertEqual(await nav.locator("span").count(),1)
+            if width<768 or touch:
+                navigation=page.get_by_role("navigation",name="主导航",exact=True)
+                if role=="guest":
+                    self.assertEqual(await navigation.get_by_role("link",name="AI 创作",exact=True).get_attribute("aria-current"),"page")
+                    self.assertEqual(await navigation.get_by_role("link",name="管理",exact=True).count(),0)
+                else:
+                    self.assertEqual(await navigation.get_by_role("link",name="AI 创作",exact=True).count(),0)
+                    self.assertEqual(await navigation.get_by_role("link",name="管理",exact=True).count(),1)
             await choose.click()
             dialog=page.get_by_role("dialog",name="选择创作相册",exact=True)
             await dialog.wait_for(state="attached")
@@ -561,3 +569,9 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_mobile_panel_confirm_interact_restore(self):
         await self.exercise(390,844)
+
+    async def test_guest_mobile_creation_flow(self):
+        await self.exercise(390,844,role="guest")
+
+    async def test_guest_desktop_creation_flow(self):
+        await self.exercise(1440,900,role="guest")

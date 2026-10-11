@@ -29,7 +29,7 @@
           >月份</button>
 
           <button
-            v-if="isAdmin && !selectMode"
+            v-if="(isAdmin || creationsEnabled) && !selectMode"
             @click="enterSelectMode"
             class="shrink-0 px-3.5 py-1.5 text-xs rounded-full bg-surface text-ink-2 hover:bg-line-strong hover:text-ink transition-colors"
           >选择</button>
@@ -46,7 +46,7 @@
               <span v-if="rangeLoading"> · 选择中...</span>
             </span>
             <button
-              v-if="rangeFn"
+              v-if="isAdmin && rangeFn"
               @click="rangeMode = !rangeMode"
               class="shrink-0 px-3.5 py-1.5 text-xs rounded-full transition-colors"
               :class="rangeMode ? 'bg-accent text-[#1C1208] font-semibold' : 'bg-surface text-ink-2 hover:text-ink'"
@@ -72,7 +72,7 @@
       </div>
 
       <div v-if="selectMode" class="flex flex-wrap items-center gap-1.5 px-2 pb-1.5">
-        <button v-if="isAdmin && creationsEnabled" @click="openCreationName" :disabled="creatingWork || selected.size === 0 || selected.size > 200" class="btn-ghost px-3 py-1.5 text-xs">
+        <button v-if="creationsEnabled" @click="openCreationName" :disabled="creatingWork || selected.size === 0 || selected.size > 200" class="btn-ghost px-3 py-1.5 text-xs">
           {{ selected.size > 200 ? '创作最多 200 张' : creatingWork ? '创建中…' : 'AI 创作' }}
         </button>
         <button v-if="isAdmin && removeFromAlbumId !== undefined" @click="confirmRemoveOpen = true" class="btn-danger-soft px-3 py-1.5 text-xs">
@@ -785,7 +785,7 @@ function exitSelectMode() { selectMode.value = false; selected.value = new Set()
 
 function onPhotoClick(photo: Photo, e: MouseEvent) {
   if (selectMode.value) {
-    if ((e.shiftKey || rangeMode.value) && anchorId.value !== null && props.rangeFn) {
+    if (isAdmin.value && (e.shiftKey || rangeMode.value) && anchorId.value !== null && props.rangeFn) {
       doRangeSelect(anchorId.value, photo.id)
       return
     }

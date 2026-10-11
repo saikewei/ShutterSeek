@@ -65,11 +65,13 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { login } from '@/api/auth'
 import { setUser } from '@/stores/auth'
+import { sharedLoginTarget } from '@/lib/creationShare'
 
 const router = useRouter()
+const route = useRoute()
 const username = ref('')
 const password = ref('')
 const error = ref('')
@@ -81,7 +83,7 @@ async function doLogin() {
   try {
     const user = await login(username.value, password.value)
     setUser(user)
-    router.push('/')
+    router.push(sharedLoginTarget(route.query.redirect))
   } catch (e: any) {
     error.value = e?.response?.data?.error || '登录失败'
   } finally {

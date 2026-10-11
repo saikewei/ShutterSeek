@@ -69,7 +69,7 @@
           搜索
         </router-link>
         <router-link
-          v-if="isAdmin && creationsEnabled"
+          v-if="creationsEnabled"
           to="/creations"
           class="relative block px-4 py-2 text-sm transition-colors duration-150 rounded-r-md"
           :class="creationsActive ? 'text-ink font-semibold bg-accent-soft' : 'text-ink-2 hover:text-ink hover:bg-white/5'"

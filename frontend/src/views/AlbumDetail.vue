@@ -6,7 +6,7 @@
         <h1 class="text-sm font-medium font-display text-ink truncate">{{ album?.title || 'Album' }}</h1>
         <p class="text-xs text-ink-3 tabular-nums">{{ album?.photo_count?.toLocaleString() || 0 }} photos</p>
       </div>
-      <button v-if="isAdmin && creationsEnabled" @click="createFromAlbum" :disabled="creatingWork || !album?.photo_count || album.photo_count > 200" class="btn-ghost px-3 py-1.5 text-xs">
+      <button v-if="creationsEnabled" @click="createFromAlbum" :disabled="creatingWork || !album?.photo_count || album.photo_count > 200" class="btn-ghost px-3 py-1.5 text-xs">
         {{ album?.photo_count > 200 ? '请先选图' : 'AI 创作' }}
       </button>
       <!-- Upload is not part of the mobile flow, so only the more useful

@@ -65,3 +65,21 @@ export async function resetCreation(id: string, input: { base_version: string; b
 export async function renameCreation(id: string, title: string, baseTitle: string) {
   await api.patch('/creations/' + encodeURIComponent(id), { title, base_title: baseTitle })
 }
+
+export interface CreationShare { id: string; version_id: string; enabled: boolean }
+export interface SharedCreation { id: string; title: string; version_id: string; verified: boolean; created_at: string }
+export async function getCreationShare(id: string): Promise<CreationShare | null> {
+  return (await api.get('/creations/' + encodeURIComponent(id) + '/share')).data
+}
+export async function enableCreationShare(id: string, version: string, base: string): Promise<CreationShare> {
+  return (await api.post('/creations/' + encodeURIComponent(id) + '/share', { version_id: version, base_version: base })).data
+}
+export async function revokeCreationShare(id: string) {
+  await api.delete('/creations/' + encodeURIComponent(id) + '/share')
+}
+export async function getSharedCreation(id: string): Promise<SharedCreation> {
+  return (await api.get('/creations/shared/' + encodeURIComponent(id))).data
+}
+export function sharedPreviewURL(id: string): string {
+  return '/api/v1/creations/shared/' + encodeURIComponent(id) + '/preview'
+}

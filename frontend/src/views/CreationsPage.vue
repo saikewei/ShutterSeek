@@ -12,6 +12,7 @@
       <div v-if="detail" class="creation-actions flex shrink-0 items-center gap-1 sm:gap-2 ml-auto">
         <button class="btn-ghost px-3 py-2 text-xs" @click="photosOpen = true">照片 · {{ detail.photo_ids.length }}</button>
         <button v-if="detail.versions.length" class="btn-ghost px-3 py-2 text-xs" @click="versionsOpen = true">版本记录</button>
+        <button v-if="version && creationSharingEnabled" class="btn-ghost px-3 py-2 text-xs" @click="shareOpen = true">分享</button>
         <button v-if="hasContext" class="btn-ghost px-3 py-2 text-xs text-ink-3" :disabled="busy || photoSaving || !!activeRun" @click="resetError = ''; resetOpen = true">还原作品</button>
       </div>
     </header>
@@ -117,6 +118,7 @@
         </section>
       </div>
 
+      <CreationShareDialog :open="shareOpen" :work-id="workId" :version="version" :base-version="detail.creation.current_version" @close="shareOpen = false" />
       <CreationNameDialog :open="renameOpen" :initial-name="detail.creation.title" :busy="renaming" :error="renameError" @close="renameOpen = false" @save="renameWork" />
       <AppModal :open="resetOpen" title="还原作品" @close="closeReset">
         <p class="text-sm text-ink-2 leading-relaxed">回到只选好照片的起点，重新开始聊天创作。</p>
@@ -210,8 +212,9 @@ import CreationAlbumPicker from '@/components/CreationAlbumPicker.vue'
 import CreationProgress from '@/components/CreationProgress.vue'
 import CreationPhotoPicker from '@/components/CreationPhotoPicker.vue'
 import CreationNameDialog from '@/components/CreationNameDialog.vue'
+import CreationShareDialog from '@/components/CreationShareDialog.vue'
 import { THUMB_BASE } from '@/api/client'
-import { creationsEnabled } from '@/stores/creations'
+import { creationsEnabled, creationSharingEnabled } from '@/stores/creations'
 import { isMobileShell } from '@/stores/device'
 import { isScrollHostNearEnd, scrollHostToEnd } from '@/lib/scrollHost'
 import { snapshotProposal, assistantText, displayChinese, needsChinese, reportSummary, viewportText, regionText, type CreationProgress as Progress } from '@/lib/creationChat'
@@ -226,6 +229,7 @@ const proposal = ref<Proposal | null>(null)
 const message = ref('')
 const version = ref('')
 const previewReady = ref(false)
+const shareOpen = ref(false)
 const error = ref('')
 const busy = ref(false)
 const panel = ref('对话')
@@ -402,7 +406,7 @@ async function resetWork() {
     }
     proposal.value = null; message.value = ''; version.value = ''; error.value = ''
     progress.value = { stage: 'queued' }; followChat.value = true; panel.value = '对话'
-    resetOpen.value = false; reportOpen.value = false; photosOpen.value = false; editOpen.value = false; versionsOpen.value = false
+    shareOpen.value = false; resetOpen.value = false; reportOpen.value = false; photosOpen.value = false; editOpen.value = false; versionsOpen.value = false
     await load()
   } catch (e) {
     const value = e as { response?: { data?: { error?: string } } }
@@ -431,7 +435,7 @@ async function savePhotos(selection: PhotoSelection) {
 function onAlbumCreated(id: string) { albumPickerOpen.value = false; void router.push('/creations/' + id) }
 watch([workId, creationsEnabled], () => {
   closeStream(); detail.value = null; proposal.value = null; version.value = ''; message.value = ''; error.value = ''
-  progress.value = { stage: 'queued' }; followChat.value = true; reportOpen.value = false; panel.value = '对话'; photosOpen.value = false; editOpen.value = false; versionsOpen.value = false; photoPickerOpen.value = false; resetOpen.value = false; resetError.value = ''; renameOpen.value = false; renameError.value = ''
+  progress.value = { stage: 'queued' }; followChat.value = true; reportOpen.value = false; panel.value = '对话'; photosOpen.value = false; editOpen.value = false; versionsOpen.value = false; photoPickerOpen.value = false; resetOpen.value = false; resetError.value = ''; renameOpen.value = false; renameError.value = ''; shareOpen.value = false
   void load()
 }, { immediate: true })
 // Generated scripts must initialize in a visible frame with a real viewport.
