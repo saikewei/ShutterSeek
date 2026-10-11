@@ -6,6 +6,7 @@ import copy
 import re
 from langgraph.graph import StateGraph, START, END
 from checkpoint import GoCheckpointer
+from interaction import validate_interaction
 from localization import TRANSLATE, display_slots, needs_chinese
 
 OBSERVE = """Observe these photos in the given order. Return
@@ -43,8 +44,17 @@ Omitting a detail is required when it is uncertain; never invent a replacement.
 Keep alt text brief and factual. Preserve all confirmed photos without requiring captions.
 When editing an existing page, remove legacy analysis dumps and uncertainty placeholders;
 retain approved narrative and photo selection rather than preserving working notes.
-Give each important interactive control a stable CSS selector and describe
-one key interaction to inspect. Include useful alt text. Keep HTML under 512 KiB.
+Give a genuine clickable control and its expected result stable ASCII element IDs.
+Return at most ONE key interaction to inspect. Both selector and expect_visible
+MUST be simple CSS ID selectors, such as "#show-details" and "#details-panel".
+Example: {"selector":"#show-details","expect_visible":"#details-panel"}.
+expect_visible is an executable selector, NEVER a natural-language description,
+an instruction, a sentence, or a description of animation or visual changes.
+The selector identifies the control to click; expect_visible identifies the element
+that must be visible after clicking. Omit expect_visible when no separate visible
+result is appropriate. Do not invent click tests for static headings or decorations.
+Return interactions:[] when the page has no genuine click interaction.
+Include useful alt text. Keep HTML under 512 KiB.
 When locked_photo_ids is present, include EVERY locked photo in the HTML,
 include no other photo, and return exactly that list in used_photo_ids.
 You may change the layout, but never add, omit or replace confirmed photos."""
@@ -59,7 +69,10 @@ Also inspect editorial quality: the page should be photo-led and composed for th
 confirmed purpose, not a dump of internal visual descriptions. Treat visible analysis notes,
 missing-information placeholders and uncertainty badges as blocking issues.
 Do not penalize a deliberately minimal style just for being simple.
-Do not claim unseen page regions or untested interactions passed."""
+Do not claim unseen page regions or untested interactions passed.
+A browser check_configuration issue means the interaction test specification is invalid.
+Do not infer that page content is invisible or broken from that configuration error;
+use screenshot evidence for visual claims and fix the test specification separately."""
 REPAIR = """Repair the HTML using the visual issues and browser diagnostics.
 Preserve confirmed content, user facts, photo selection and useful interactions.
 """ + GENERATE
@@ -69,7 +82,7 @@ CANDIDATE_ERRORS = {
     "photo_selection_invalid": "photo selection is invalid or outside the work scope",
     "photo_references_mismatch": "used photo list does not match HTML references",
     "confirmed_photos_changed": "generation changed confirmed photo selection",
-    "interaction_manifest_invalid": "interaction manifest is invalid",
+    "interaction_manifest_invalid": "interaction manifest requires objects with simple CSS #id selectors; expect_visible must be a selector, never prose",
 }
 
 
@@ -251,6 +264,11 @@ class Workflow:
         interactions = result.get("interactions",[])
         if not isinstance(interactions,list):
             raise CandidateError("interaction_manifest_invalid")
+        try:
+            for item in interactions[:1]:
+                validate_interaction(item)
+        except ValueError:
+            raise CandidateError("interaction_manifest_invalid") from None
         return {**state,"html":source,"used_photo_ids":selected,
                 "interactions":interactions[:1],"repairs":repairs,"phase":"rendering"}
 

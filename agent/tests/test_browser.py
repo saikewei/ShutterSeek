@@ -50,6 +50,20 @@ class BrowserTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any("交互操作未能正常完成" in x for x in descriptions))
         self.assertTrue(all(x["severity"]=="blocking" for x in result["diagnostics"]))
 
+    async def test_invalid_interaction_expectation_is_reported_as_check_configuration(self):
+        result=await Browser(FairGate(1)).render(
+            '<button id="show" onclick="document.getElementById(\'detail\').hidden=false">展开</button>'
+            '<p id="detail" hidden>说明</p>',{},
+            [{"selector":"#show","expect_visible":"点击后显示说明 credential=private-key"}])
+        self.assertEqual(len(result["screenshots"]),2)
+        issues=result["diagnostics"]
+        self.assertEqual(len(issues),2)
+        for issue in issues:
+            self.assertEqual(issue["operation"],"check_configuration")
+            self.assertEqual(issue["description"],"交互检查配置无效")
+        self.assertEqual(clean(issues),issues)
+        self.assertNotIn("private-key",json.dumps(issues))
+
     async def test_failed_photo_click_diagnostics_do_not_copy_expanded_image_bytes(self):
         result=await Browser(FairGate(1)).render(
             '<img id="photo" src="ss-photo:1">'

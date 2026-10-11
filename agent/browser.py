@@ -3,6 +3,7 @@ import asyncio
 import html as html_module
 import re
 import time
+from interaction import validate_interaction
 
 CSP = ("default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
        "img-src data:; font-src data:; connect-src 'none'; media-src 'none'; "
@@ -198,9 +199,15 @@ class Browser:
         for item in list(interactions)[:1]:
             if len(images) >= remaining:
                 break
-            selector = item.get("selector", "")[:300]
-            if not selector:
+            try:
+                validate_interaction(item)
+            except ValueError:
+                issues.append({"severity":"blocking","viewport":name,"region":"interaction",
+                               "element":"interaction manifest","operation":"check_configuration",
+                               "description":"交互检查配置无效",
+                               "suggestion":"为点击目标和结果元素设置稳定 ID；检查字段应填写 #元素ID 选择器，不能填写文字说明"})
                 continue
+            selector = item["selector"]
             operation = "click"
             try:
                 await frame.locator(selector).first.click(timeout=1000)

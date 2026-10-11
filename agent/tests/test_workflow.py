@@ -169,6 +169,51 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("地点未确认",json.dumps(data,ensure_ascii=False))
         self.assertEqual(result["used_photo_ids"],[1])
 
+    async def test_natural_language_interaction_expectation_is_corrected_before_browser_check(self):
+        workspace=MemoryWorkspace(1)
+        model=FakeModel(FairGate(5))
+        original=model.invoke
+        generated=[]
+        async def invoke(instruction,data,images=()):
+            result,metric=await original(instruction,data,images)
+            if "Produce a complete responsive" in instruction and "Repair the HTML" not in instruction:
+                generated.append(data)
+                result["html"]+='<button id="show">展开</button><p id="detail" hidden>说明</p>'
+                result["interactions"]=[{"selector":"#show",
+                    "expect_visible":"点击后说明展开且按钮文字变为收起" if len(generated)==1 else "#detail"}]
+            return result,metric
+        model.invoke=invoke
+        browser=FakeBrowser(FairGate(1))
+        events=[]
+        async def capture(event):events.append(event)
+        await Workflow(workspace,model,browser,capture).execute()
+        self.assertEqual(len(generated),2)
+        self.assertIn("never prose",generated[1]["validation_error"])
+        self.assertEqual(browser.renders,1)
+        self.assertEqual(workspace.saved["checkpoint"]["channel_values"]["__root__"]["interactions"],
+                         [{"selector":"#show","expect_visible":"#detail"}])
+        self.assertTrue(workspace.finished["verified"])
+        self.assertIn("correcting",[x["stage"] for x in events])
+
+    async def test_invalid_interaction_contract_correction_is_bounded(self):
+        workspace=MemoryWorkspace(1)
+        model=FakeModel(FairGate(5))
+        calls=0
+        async def invoke(*args,**kwargs):
+            nonlocal calls
+            calls+=1
+            return {"html":'<img src="ss-photo:1"><h1 id="title">标题</h1>',
+                    "used_photo_ids":[1],
+                    "interactions":[{"selector":"#title","expect_visible":"标题完整可见"}]},{}
+        model.invoke=invoke
+        browser=FakeBrowser(FairGate(1))
+        with self.assertRaises(CandidateError) as error:
+            await Workflow(workspace,model,browser,emit).execute()
+        self.assertEqual(error.exception.code,"interaction_manifest_invalid")
+        self.assertEqual(calls,2)
+        self.assertEqual(browser.renders,0)
+        self.assertIsNone(workspace.finished)
+
     async def test_generation_contract_correction_is_bounded_and_never_renders_bad_selection(self):
         workspace = MemoryWorkspace(1)
         workspace.context["photo_ids"] = [1, 2]
