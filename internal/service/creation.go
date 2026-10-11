@@ -368,9 +368,34 @@ func (s *CreationService) Screenshot(ctx context.Context, user int64, id, assetI
 	err := s.db.WithContext(ctx).Joins("JOIN creation_runs ON creation_runs.id = creation_assets.run_id").Where("creation_assets.id = ? AND creation_runs.creation_id = ?", assetID, id).First(&a).Error
 	return a.Data, err
 }
+
+// Empty workspaces must remain read-only during startup and idle cleanup.
+func (s *CreationService) recoverCreationRuns(ctx context.Context) error {
+	var ids []string
+	if err := s.db.WithContext(ctx).Model(&model.CreationRun{}).Where("status = ?", "running").Pluck("id", &ids).Error; err != nil {
+		return err
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	return s.db.WithContext(ctx).Model(&model.CreationRun{}).Where("id IN ? AND status = ?", ids, "running").Updates(map[string]interface{}{"status": "queued", "credential_hash": ""}).Error
+}
+func (s *CreationService) cleanupCreationAssets(ctx context.Context) error {
+	var ids []string
+	if err := s.db.WithContext(ctx).Model(&model.CreationAsset{}).
+		Joins("JOIN creation_runs ON creation_runs.id = creation_assets.run_id").
+		Where("creation_runs.status IN ?", []string{"failed", "cancelled"}).
+		Limit(256).Pluck("creation_assets.id", &ids).Error; err != nil {
+		return err
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	return s.db.WithContext(ctx).Where("id IN ?", ids).Delete(&model.CreationAsset{}).Error
+}
 func (s *CreationService) worker(ctx context.Context) {
 	// Restarted runs keep their checkpoints; credentials are reissued, never restored.
-	s.db.WithContext(ctx).Model(&model.CreationRun{}).Where("status = ?", "running").Updates(map[string]interface{}{"status": "queued", "credential_hash": ""})
+	_ = s.recoverCreationRuns(ctx)
 	cleanupAt := time.Now()
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
@@ -381,7 +406,7 @@ func (s *CreationService) worker(ctx context.Context) {
 		case <-ticker.C:
 		}
 		if time.Since(cleanupAt) > time.Minute {
-			s.db.WithContext(ctx).Where("run_id IN (SELECT id FROM creation_runs WHERE status IN ('failed','cancelled'))").Delete(&model.CreationAsset{})
+			_ = s.cleanupCreationAssets(ctx)
 			cleanupAt = time.Now()
 		}
 		var runs []model.CreationRun

@@ -32,4 +32,15 @@ CREATE TABLE creation_assets (
 CREATE TABLE creation_checkpoints (
  id text PRIMARY KEY, run_id text NOT NULL REFERENCES creation_runs(id), payload text NOT NULL, updated_at timestamptz NOT NULL
 );
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
+ public.creations,
+ public.creation_messages,
+ public.creation_runs,
+ public.creation_versions,
+ public.creation_events,
+ public.creation_assets,
+ public.creation_checkpoints
+TO photo_user;
+GRANT USAGE, SELECT ON SEQUENCE public.creation_events_id_seq TO photo_user;
 COMMIT;

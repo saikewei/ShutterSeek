@@ -205,3 +205,18 @@ func TestCreationRestoreChecksBaseAndRestoresSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestCreationEmptyStartupAndCleanupDoNotWrite(t *testing.T) {
+	s, mock := mockCreations(t)
+	mock.ExpectQuery(`SELECT "id" FROM "creation_runs" WHERE status = \$1`).WithArgs("running").WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	if err := s.recoverCreationRuns(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	mock.ExpectQuery(`SELECT "creation_assets"\."id" FROM "creation_assets" JOIN creation_runs`).WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	if err := s.cleanupCreationAssets(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}

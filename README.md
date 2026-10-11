@@ -106,7 +106,7 @@ go run ./tools/embimport/
 未通过时仍保存候选版本，页面显示问题、截图和实际检查范围。
 
 数据库迁移见 [scripts/sql/creations-v1.sql](scripts/sql/creations-v1.sql)，必须由用户手动执行。
-应用不会自动建表。生产数据库与文件仍遵循 AGENTS.md 的只读约定。
+应用不会自动建表。迁移包含 photo_user 的表和事件序列授权；已执行旧版 SQL 的环境需另外手动执行 [creations-v1-grants.sql](scripts/sql/creations-v1-grants.sql)。生产数据库与文件仍遵循 AGENTS.md 的只读约定。
 
 开发环境在开发容器中使用：
 ```sh
