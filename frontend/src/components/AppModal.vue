@@ -8,7 +8,8 @@
       @click.self="close"
     >
       <DialogPanel
-        class="relative w-full sm:max-w-md flex flex-col bg-raised border border-line
+         :class="wide ? 'sm:max-w-3xl' : 'sm:max-w-md'"
+        class="relative w-full flex flex-col bg-raised border border-line
                shadow-2xl shadow-black/50
                rounded-t-2xl border-b-0
                sm:rounded-xl sm:border-b
@@ -42,7 +43,7 @@
 <script setup lang="ts">
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/vue'
 
-defineProps<{ open: boolean; title?: string }>()
+defineProps<{ open: boolean; title?: string; wide?: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 
 function close() {

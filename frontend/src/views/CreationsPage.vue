@@ -20,7 +20,7 @@
         <h2 class="font-display text-2xl sm:text-3xl text-ink">把照片，讲成故事。</h2>
         <p class="text-sm text-ink-2 leading-relaxed mt-3 max-w-lg">选一个相册，聊聊你想表达的故事。助手会一步步和你完善想法，制作可以浏览和互动的网页。</p>
         <div class="flex gap-2 flex-wrap mt-5 text-xs text-ink-3"><span>旅行游记</span><span aria-hidden="true">·</span><span>生活故事</span><span aria-hidden="true">·</span><span>照片画廊</span></div>
-        <button class="btn-primary px-5 py-2.5 mt-6 text-sm" @click="albumPickerOpen = true">选择相册</button>
+        <div class="flex gap-2 mt-6 flex-wrap"><button class="btn-primary px-5 py-2.5 text-sm" @click="albumPickerOpen = true">选择相册</button><button class="btn-ghost px-5 py-2.5 text-sm" @click="openPhotoPicker">搜索选照片</button></div>
         <p class="text-xs text-ink-3 mt-3">每份作品可使用 1–200 张照片，补充的信息仅用于当前作品。</p>
       </section>
       <section v-if="works.length" class="space-y-3">
@@ -41,6 +41,7 @@
         <button v-for="item in ['对话', '预览']" :key="item" class="flex-1 py-2 rounded-lg text-sm transition-colors" :class="panel === item ? 'bg-accent-soft text-ink font-medium' : 'text-ink-3'" :aria-pressed="panel === item" @click="panel = item">{{ item }}</button>
       </div>
 
+      <p v-if="detail.state.photos_changed && !activeRun" class="text-xs text-accent-strong">照片已更新，下次生成或修改时应用。当前预览保留已保存的版本。</p>
       <div class="creation-workspace" :class="{ 'creation-mobile': isMobileShell }">
         <section v-show="!isMobileShell || panel === '对话'" class="creation-conversation min-w-0 rounded-2xl border border-line bg-raised" aria-label="创作对话">
           <div class="conversation-heading px-4 sm:px-5 py-4 border-b border-line">
@@ -96,6 +97,7 @@
         <section v-show="!isMobileShell || panel === '预览'" class="creation-preview-panel min-w-0 space-y-3" aria-label="作品预览">
           <div class="flex items-center gap-2 px-1">
             <h2 class="text-sm font-medium flex-1">作品预览</h2>
+            <RouterLink v-if="version" :to="{ path: '/creations/' + workId + '/preview', query: { version } }" target="_blank" rel="noopener noreferrer" class="btn-ghost px-3 py-1.5 text-xs">完整预览 ↗</RouterLink>
             <button v-if="report.rounds" class="btn-ghost px-3 py-1.5 text-xs" @click="reportOpen = true">效果检查</button>
             <span v-if="selectedVersion" class="text-xs" :class="selectedVersion.verified ? 'text-accent-strong' : 'text-ink-3'">{{ selectedVersion.verified ? '效果检查通过' : '待完善的候选版本' }}</span>
             <button v-if="version && version !== detail.creation.current_version" class="btn-ghost px-3 py-1.5 text-xs" :disabled="busy || !!activeRun" @click="restore">恢复此版本</button>
@@ -134,15 +136,9 @@
           <button v-for="item in ['选图', '照片信息']" :key="item" class="btn-ghost px-3 py-2 text-xs" :aria-pressed="photoPanel === item" :class="{ 'bg-accent-soft': photoPanel === item }" @click="photoPanel = item">{{ item }}</button>
         </div>
         <template v-if="photoPanel === '选图'">
-          <p class="text-sm text-ink-2 mb-3">使用 {{ usedIDs.length }} 张 · 未使用 {{ detail.photo_ids.length - usedIDs.length }} 张</p>
-          <p v-if="!detail.creation.current_version" class="text-xs text-ink-3 mb-3">{{ proposal ? '勾选要放进作品的照片，确认后会保留你的选择。' : '先聊聊想法，助手整理方案后即可调整选图。' }}</p>
-          <div class="grid grid-cols-3 sm:grid-cols-4 gap-3">
-            <label v-for="id in detail.photo_ids" :key="id" class="relative text-xs">
-              <img :src="THUMB_BASE + '/' + id + '.webp'" :alt="'照片 ' + id" loading="lazy" class="w-full aspect-square object-cover rounded-lg" :class="{ 'opacity-40': !usedIDs.includes(id) }" />
-              <input v-if="proposal && !activeRun && !detail.creation.current_version" v-model="proposal.used_photo_ids" type="checkbox" :value="id" class="absolute top-2 left-2" :aria-label="'使用照片 ' + id" />
-              <span class="block text-ink-3 mt-1">{{ usedIDs.includes(id) ? '已选择' : '未使用' }} · {{ id }}</span>
-            </label>
-          </div>
+          <p class="text-sm text-ink-2 mb-3">作品内 {{ detail.photo_ids.length }} 张照片</p>
+          <button class="btn-primary px-4 py-2 text-sm" :disabled="!!activeRun || busy" @click="openPhotoPicker">搜索、增删与旋转</button>
+          <p class="text-xs text-ink-3 mt-3">照片编辑仅用于当前作品，保存后可继续对话生成。</p>
         </template>
         <template v-else>
           <div v-if="hasEnglish" class="rounded-lg border border-line p-3 mb-4">
@@ -178,14 +174,15 @@
             <option v-for="item in detail.versions" :key="item.id" :value="item.id">{{ versionDate(item.created_at) }} · {{ item.verified ? '检查通过' : '待完善' }}</option>
           </select>
         </label>
-        <p class="text-xs text-ink-3 mt-3">每次生成和修改都会保存版本，你可以查看或恢复。</p>
+        <p class="text-xs text-ink-3 mt-3">每次生成和修改都会保存版本。恢复会同时还原当时的选图和旋转。</p>
         <template #footer>
           <button v-if="version !== detail.creation.current_version" class="btn-primary w-full py-2 text-sm" :disabled="busy || !!activeRun" @click="restore">恢复此版本</button>
           <button v-else class="btn-ghost w-full py-2 text-sm" @click="versionsOpen = false">返回预览</button>
         </template>
       </AppModal>
     </template>
-    <CreationAlbumPicker :open="albumPickerOpen" @close="albumPickerOpen = false" @created="onAlbumCreated" />
+    <CreationAlbumPicker :open="albumPickerOpen" @close="albumPickerOpen = false" @created="onAlbumCreated" @browse="browseAlbum" />
+    <CreationPhotoPicker :open="photoPickerOpen" :creating="!workId" :photo-ids="detail?.photo_ids" :used-photo-ids="detail?.state.selected_photo_ids || proposal?.used_photo_ids || detail?.photo_ids" :photo-edits="detail?.state.photo_edits" :initial-album="photoPickerAlbum" :busy="photoSaving" :save-error="photoSaveError" @close="photoPickerOpen = false" @save="savePhotos" />
   </div>
 </template>
 
@@ -195,12 +192,13 @@ import { useRoute, useRouter } from 'vue-router'
 import AppModal from '@/components/AppModal.vue'
 import CreationAlbumPicker from '@/components/CreationAlbumPicker.vue'
 import CreationProgress from '@/components/CreationProgress.vue'
+import CreationPhotoPicker from '@/components/CreationPhotoPicker.vue'
 import { THUMB_BASE } from '@/api/client'
 import { creationsEnabled } from '@/stores/creations'
 import { isMobileShell } from '@/stores/device'
 import { isScrollHostNearEnd, scrollHostToEnd } from '@/lib/scrollHost'
 import { snapshotProposal, assistantText, displayChinese, needsChinese, reportSummary, viewportText, regionText, type CreationProgress as Progress } from '@/lib/creationChat'
-import { listCreations, getCreation, startCreationRun, cancelCreationRun, restoreCreationVersion, previewURL, parseReport, type Creation, type WorkDetail, type Proposal } from '@/api/creations'
+import { listCreations, getCreation, startCreationRun, cancelCreationRun, restoreCreationVersion, previewURL, parseReport, type Creation, type WorkDetail, type Proposal, type PhotoSelection, updateCreationPhotos, createCreation } from '@/api/creations'
 
 const route = useRoute()
 const router = useRouter()
@@ -216,6 +214,7 @@ const panel = ref('对话')
 const albumPickerOpen = ref(false)
 const photosOpen = ref(false)
 const photoPanel = ref('选图')
+const photoPickerOpen = ref(false), photoPickerAlbum = ref<number>(), photoSaving = ref(false), photoSaveError = ref('')
 const editOpen = ref(false)
 const versionsOpen = ref(false)
 const chatScroll = ref<HTMLElement>()
@@ -259,7 +258,8 @@ async function load() {
     if (requestedId !== workId.value) return
     detail.value = data
     const latest = data.runs[0]
-    const draft = !data.creation.current_version && latest?.action === 'confirm' && latest.proposal ? latest.proposal : data.state.proposal
+    const samePhotos = (latest?.photo_revision || 0) === (data.state.photo_revision || 0)
+    const draft = !data.creation.current_version && samePhotos && latest?.action === 'confirm' && latest.proposal ? latest.proposal : data.state.proposal
     proposal.value = draft ? structuredClone(draft) : null
     if (!version.value || !data.versions.some(v => v.id === version.value)) version.value = data.creation.current_version
     if (activeRun.value) {
@@ -316,6 +316,7 @@ async function run(action: string, text = '') {
     await startCreationRun(requestedId, {
       action, message: action === 'skip' ? '这个问题先跳过，按已提供的信息继续。' : text,
       base_version: detail.value.creation.current_version,
+      photo_revision: detail.value.state.photo_revision || 0,
       ...(action === 'confirm' && proposal.value ? { proposal: snapshotProposal(proposal.value) } : {}),
     })
     if (requestedId !== workId.value) return
@@ -345,10 +346,29 @@ async function restore() {
   busy.value = true; error.value = ''
   try { await restoreCreationVersion(workId.value, version.value, detail.value.creation.current_version); versionsOpen.value = false; await load() } catch (e) { failure(e) } finally { busy.value = false }
 }
+function openPhotoPicker() { photosOpen.value = false; photoPickerAlbum.value = undefined; photoSaveError.value = ''; photoPickerOpen.value = true }
+function browseAlbum(id: number) { albumPickerOpen.value = false; photoPickerAlbum.value = id; photoSaveError.value = ''; photoPickerOpen.value = true }
+async function savePhotos(selection: PhotoSelection) {
+  if (photoSaving.value || activeRun.value) return
+  photoSaving.value = true; photoSaveError.value = ''
+  try {
+    if (!workId.value) {
+      const work = await createCreation(selection)
+      photoPickerOpen.value = false
+      await router.push('/creations/' + work.id)
+    } else if (detail.value) {
+      await updateCreationPhotos(workId.value, { ...selection, base_version: detail.value.creation.current_version, base_revision: detail.value.state.photo_revision || 0, ...(proposal.value ? { proposal: { ...snapshotProposal(proposal.value), used_photo_ids: selection.used_photo_ids } } : {}) })
+      photoPickerOpen.value = false; await load()
+    }
+  } catch (e) {
+    const value = e as { response?: { data?: { error?: string } } }
+    photoSaveError.value = value.response?.data?.error || '选图保存失败，请重试。'
+  } finally { photoSaving.value = false }
+}
 function onAlbumCreated(id: string) { albumPickerOpen.value = false; void router.push('/creations/' + id) }
 watch([workId, creationsEnabled], () => {
   closeStream(); detail.value = null; proposal.value = null; version.value = ''; message.value = ''; error.value = ''
-  progress.value = { stage: 'queued' }; followChat.value = true; reportOpen.value = false; panel.value = '对话'; photosOpen.value = false; editOpen.value = false; versionsOpen.value = false
+  progress.value = { stage: 'queued' }; followChat.value = true; reportOpen.value = false; panel.value = '对话'; photosOpen.value = false; editOpen.value = false; versionsOpen.value = false; photoPickerOpen.value = false
   void load()
 }, { immediate: true })
 watch(panel, () => { if (panel.value === '对话') void revealComposer() })

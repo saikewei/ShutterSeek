@@ -14,6 +14,7 @@ import AdminHome from './views/admin/AdminHome.vue'
 import AdminStatus from './views/admin/AdminStatus.vue'
 import UploadPage from './views/UploadPage.vue'
 import CreationsPage from './views/CreationsPage.vue'
+import CreationPreviewPage from './views/CreationPreviewPage.vue'
 import { authState, checkAuth, isAdmin } from './stores/auth'
 import { scrollHostToTop } from './lib/scrollHost'
 
@@ -28,6 +29,7 @@ const routes = [
   // Admin-only pages. The APIs behind them carry AdminOnly() as well; this
   // guard is what keeps the pages themselves unreachable for guests.
   { path: '/upload', component: UploadPage, meta: { adminOnly: true } },
+  { path: '/creations/:id/preview', component: CreationPreviewPage, meta: { adminOnly: true, chromeless: true } },
   { path: '/creations/:id?', component: CreationsPage, meta: { adminOnly: true } },
   { path: '/admin', component: AdminHome, meta: { adminOnly: true } },
   { path: '/admin/status', component: AdminStatus, meta: { adminOnly: true } },

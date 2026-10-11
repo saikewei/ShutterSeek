@@ -27,7 +27,7 @@
             </span>
             <span v-if="selectedId === album.id" class="text-accent-strong shrink-0" aria-hidden="true">✓</span>
           </button>
-          <RouterLink v-if="album.photo_count > 200 && !creating" :to="'/albums/' + album.id" class="inline-block text-xs text-accent-strong px-3 py-2" @click="close">到此相册选图 →</RouterLink>
+          <button v-if="album.photo_count > 0 && !creating" class="inline-block text-xs text-accent-strong px-3 py-2" @click="emit('browse', album.id)">从此相册挑选照片</button>
         </div>
       </div>
     </template>
@@ -49,7 +49,7 @@ import { fetchAlbums, type Album } from '@/api/albums'
 import { createCreation } from '@/api/creations'
 
 const props = defineProps<{ open: boolean }>()
-const emit = defineEmits<{ close: []; created: [id: string] }>()
+const emit = defineEmits<{ close: []; created: [id: string]; browse: [id: number] }>()
 const albums = ref<Album[]>([])
 const selectedId = ref<number | null>(null)
 const loading = ref(false)

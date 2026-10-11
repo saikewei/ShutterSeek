@@ -32,7 +32,7 @@ export const progressSteps = ['理解照片', '整理方案', '生成网页', '�
 export function progressStep(stage?: string): number {
   if (stage === 'observing' || stage === 'localizing') return 0
   if (stage === 'planning' || stage === 'waiting') return 1
-  if (stage === 'generating' || stage === 'correcting') return 2
+  if (stage === 'designing' || stage === 'generating' || stage === 'correcting') return 2
   if (['rendering', 'rendered', 'reviewing', 'reviewed', 'repairing'].includes(stage || '')) return 3
   if (stage === 'saving' || stage === 'completed') return 4
   return -1
@@ -46,6 +46,7 @@ export function progressText(progress: CreationProgress): { title: string; detai
     localizing: { title: '正在整理中文描述', detail: '把图片描述和方案转换为中文，保留原有事实。' },
     observing: { title: '正在理解照片', detail: progress.total ? '已理解 ' + (progress.completed || 0) + ' / ' + progress.total + ' 张，继续查看下一批。' : '逐批查看照片，整理画面中能够确认的内容。' },
     planning: { title: '正在整理你的想法', detail: '根据照片和刚才的回复，完善内容与风格。' },
+    designing: { title: '正在设计版式与互动', detail: '结合照片挑选视觉语言和互动方式，让作品更有自己的风格。' },
     generating: { title: '正在生成网页', detail: '按照已确认的方案和选图，编排内容与交互。' },
     correcting: { title: '正在校对生成结果', detail: '校对照片和页面内容，让结果符合已确认的方案。' },
     rendering: { title: '正在检查页面效果', detail: '准备桌面和手机页面，查看图片与交互是否正常。' },
