@@ -13,17 +13,18 @@ compose() {
 docker compose up --help | grep -q -- --wait-timeout || {
   echo "Docker Compose with health waiting is required" >&2; exit 1;
 }
-environment=$(compose config --environment)
-enabled=$(printf '%s\n' "$environment" | awk -F= '$1=="SHUTTERSEEK_CREATIONS_ENABLED" {print $2}')
+configuration=$(compose --profile creations config)
+enabled=$(printf '%s\n' "$configuration" | awk '$1=="SHUTTERSEEK_CREATIONS_ENABLED:" {value=$2; gsub(/["\047]/,"",value); print value; exit}')
+case "$enabled" in true|false) ;; *) echo "Cannot resolve production creation switch" >&2; exit 1;; esac
 if [ "$enabled" = true ]; then
-  configured=$(printf '%s\n' "$environment" | awk -F= '$1=="SHUTTERSEEK_CREATIONS_MODEL_KEY" && length($0)>length($1)+1 {print "yes"}')
+  configured=$(printf '%s\n' "$configuration" | awk '$1=="SHUTTERSEEK_CREATIONS_MODEL_KEY:" {value=$0; sub(/^[^:]*:[[:space:]]*/,"",value); gsub(/["\047]/,"",value); if (length(value)>0 && value!="null") print "yes"; exit}')
   [ "$configured" = yes ] || { echo "Production creation model configuration is missing" >&2; exit 1; }
   export COMPOSE_PROFILES=creations
   services="shutterseek embedding agent"
 else
   services="shutterseek embedding"
 fi
-unset environment
+unset configuration
 compose config --quiet
 # Explicit services activate the Agent profile whenever the Go feature is enabled.
 compose pull $services

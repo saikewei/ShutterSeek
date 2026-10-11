@@ -120,7 +120,7 @@ jobs:
       - name: Test packaged runtime images
         timeout-minutes: 5
         run: |
-          docker run --rm --network none --entrypoint sh "$GHCR_PREFIX/shutterseek:$DEPLOY_SHA" -c 'test -x /app/server && test -s /app/frontend/dist/index.html && command -v cwebp'
+          docker run --rm --network none --entrypoint sh "$GHCR_PREFIX/shutterseek:$DEPLOY_SHA" -c 'test -x /app/server && test -s /app/frontend/dist/index.html && command -v cwebp && command -v curl'
           docker run --rm --network none --entrypoint python "$GHCR_PREFIX/shutterseek-embedding:$DEPLOY_SHA" -c 'import onnxruntime; import engine; print("Embedding runtime imports passed")'
           docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges:true --memory 1536m --cpus 2 --shm-size 256m --entrypoint python "$GHCR_PREFIX/shutterseek-agent:$DEPLOY_SHA" -c 'import os, asyncio, image_smoke; assert os.geteuid() == 10001; asyncio.run(image_smoke.main())'
 
