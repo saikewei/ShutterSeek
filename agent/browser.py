@@ -106,10 +106,12 @@ class Browser:
             await route.abort()
         await context.route("**/*", deny)
         page = await context.new_page()
+        # Exception text can include expanded image bytes or script-supplied secrets.
+        # Persist only structured locations and error types for review and recovery.
         page.on("pageerror", lambda error: issues.append({
             "severity": "blocking", "viewport": name, "region": "interaction",
             "element": "script", "description": "页面脚本运行出错",
-            "technical_detail": str(error)[:500],
+            "technical_detail": type(error).__name__,
             "suggestion": "修复页面脚本错误"}))
         content = prepare_html(source, assets)
         await page.set_content('<meta http-equiv="Content-Security-Policy" content="'+CSP.replace("frame-src 'none'","frame-src about:")+'"><iframe sandbox="allow-scripts" style="border:0;width:100%;height:100vh" '
@@ -199,19 +201,20 @@ class Browser:
             selector = item.get("selector", "")[:300]
             if not selector:
                 continue
+            operation = "click"
             try:
                 await frame.locator(selector).first.click(timeout=1000)
                 expected = item.get("expect_visible")
                 if expected:
-                    try:
-                        await frame.locator(expected[:300]).first.wait_for(state="visible",timeout=1000)
-                    except Exception as error:
-                        raise ValueError("操作后的预期内容未显示") from error
+                    operation = "expected_visible"
+                    await frame.locator(expected[:300]).first.wait_for(state="visible",timeout=1000)
             except Exception as error:
                 issues.append({"severity":"blocking","viewport":name,"region":"interaction",
                                "element":selector,"description":"交互操作未能正常完成",
-                               "technical_detail":str(error)[:500],
-                               "suggestion":"修复此交互操作"})
+                               "technical_detail":type(error).__name__,
+                               "operation":operation,
+                               "suggestion":("让此元素可见且可点击" if operation=="click"
+                                            else "让操作后的预期内容正常显示")})
             position=await frame.evaluate("() => ({x:scrollX,y:scrollY})")
             region = {"viewport":name,"kind":"interaction","selector":selector,
                       **position,"width":width,"height":height}

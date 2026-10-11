@@ -1,11 +1,13 @@
 import asyncio
 import base64
+import json
 import sys
 import unittest
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from browser import Browser
 from concurrency import FairGate
+from checkpoint import clean
 
 PNG="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGP4DwQACfsD/fteaysAAAAASUVORK5CYII="
 
@@ -47,6 +49,34 @@ class BrowserTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("部分图片缺失或无法显示",descriptions)
         self.assertTrue(any("交互操作未能正常完成" in x for x in descriptions))
         self.assertTrue(all(x["severity"]=="blocking" for x in result["diagnostics"]))
+
+    async def test_failed_photo_click_diagnostics_do_not_copy_expanded_image_bytes(self):
+        result=await Browser(FairGate(1)).render(
+            '<img id="photo" src="ss-photo:1">'
+            '<div style="position:fixed;inset:0;z-index:10">遮挡层</div>',
+            {"1":PNG},[{"selector":"#photo"}])
+        issues=result["diagnostics"]
+        self.assertEqual(len(issues),2)
+        self.assertEqual({x["viewport"] for x in issues},{"desktop","mobile"})
+        for issue in issues:
+            self.assertEqual(issue["element"],"#photo")
+            self.assertEqual(issue["operation"],"click")
+            self.assertEqual(issue["technical_detail"],"TimeoutError")
+        self.assertNotIn("data:image/",json.dumps(issues))
+        self.assertEqual(clean(issues),issues)
+
+    async def test_script_error_diagnostics_do_not_copy_untrusted_exception_text(self):
+        result=await Browser(FairGate(1)).render(
+            "<script>throw new Error('credential=private-key data:image/png;base64,private-bytes')</script>",{})
+        issues=result["diagnostics"]
+        self.assertEqual(len(issues),2)
+        for issue in issues:
+            self.assertEqual(issue["element"],"script")
+            self.assertEqual(issue["description"],"页面脚本运行出错")
+            self.assertEqual(issue["technical_detail"],"Error")
+        for marker in ("credential","private-key","data:image/","private-bytes"):
+            self.assertNotIn(marker,json.dumps(issues))
+        self.assertEqual(clean(issues),issues)
 
     async def test_sandbox_blocks_host_session_and_network(self):
         result=await Browser(FairGate(1)).render("""

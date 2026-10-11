@@ -1,4 +1,5 @@
 import hashlib
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -37,3 +38,31 @@ class VisualLoopTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(workspace.assets),4)
         self.assertNotEqual(workspace.assets["0"]["data"],workspace.assets["2"]["data"])
         self.assertEqual([x["id"] for x in workspace.finished["report"]["screenshots"]],["2","3"])
+
+
+    async def test_failed_photo_interaction_reaches_visual_repair_without_checkpoint_failure(self):
+        workspace=RealPhotoWorkspace(1)
+        workspace.context["input"]["action"]="modify"
+        model=FakeModel(FairGate(5))
+        original=model.invoke
+        reviewed=[]
+        async def invoke(instruction,data,images=()):
+            if "visually inspect EVERY" in instruction:
+                reviewed.append(data)
+                self.assertTrue(images)
+                self.assertTrue(all(x.startswith("data:image/png;base64,") for x in images))
+                return {"issues":[],"summary":"已检查桌面和手机截图"},{}
+            result,metric=await original(instruction,data,images)
+            if "html" in result and "Repair the HTML" not in instruction:
+                result["html"]='<img id="photo" src="ss-photo:1"><div style="position:fixed;inset:0;z-index:10">遮挡层</div>'
+                result["interactions"]=[{"selector":"#photo"}]
+            return result,metric
+        model.invoke=invoke
+        await Workflow(workspace,model,Browser(FairGate(1)),emit).execute()
+        self.assertTrue(workspace.finished["verified"])
+        self.assertEqual(workspace.finished["report"]["rounds"],2)
+        self.assertEqual(len(reviewed),2)
+        self.assertTrue(all(issue["operation"]=="click" for issue in reviewed[0]["diagnostics"]))
+        self.assertEqual(reviewed[1]["diagnostics"],[])
+        self.assertNotIn("data:image/",json.dumps(workspace.saved))
+        self.assertEqual(len(workspace.assets),6)
