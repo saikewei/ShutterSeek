@@ -74,7 +74,7 @@ class BrowserTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual({x["viewport"] for x in issues},{"desktop","mobile"})
         for issue in issues:
             self.assertEqual(issue["element"],"#photo")
-            self.assertEqual(issue["operation"],"click")
+            self.assertEqual(issue["operation"],"tap" if issue["viewport"] == "mobile" else "click")
             self.assertEqual(issue["technical_detail"],"TimeoutError")
         self.assertNotIn("data:image/",json.dumps(issues))
         self.assertEqual(clean(issues),issues)
@@ -91,6 +91,20 @@ class BrowserTests(unittest.IsolatedAsyncioTestCase):
         for marker in ("credential","private-key","data:image/","private-bytes"):
             self.assertNotIn(marker,json.dumps(issues))
         self.assertEqual(clean(issues),issues)
+
+    async def test_mobile_review_uses_real_touch_and_mobile_viewport(self):
+        result=await Browser(FairGate(1)).render("""
+            <button id="show" onclick="if(innerWidth>500)document.getElementById('extra').hidden=false">展开</button>
+            <p id="extra" hidden>可交互内容</p>
+            <script>
+            document.getElementById('show').addEventListener('touchend',()=>{
+              if(innerWidth===390 && navigator.maxTouchPoints>0)
+                document.getElementById('extra').hidden=false;
+            });
+            </script>""",{},[{"selector":"#show","expect_visible":"#extra"}])
+        self.assertEqual(result["diagnostics"],[])
+        self.assertEqual({x["viewport"] for x in result["coverage"] if x["kind"]=="interaction"},
+                         {"desktop","mobile"})
 
     async def test_sandbox_blocks_host_session_and_network(self):
         result=await Browser(FairGate(1)).render("""

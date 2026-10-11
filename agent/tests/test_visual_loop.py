@@ -62,7 +62,7 @@ class VisualLoopTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(workspace.finished["verified"])
         self.assertEqual(workspace.finished["report"]["rounds"],2)
         self.assertEqual(len(reviewed),2)
-        self.assertTrue(all(issue["operation"]=="click" for issue in reviewed[0]["diagnostics"]))
+        self.assertTrue(all(issue["operation"] == ("tap" if issue["viewport"] == "mobile" else "click") for issue in reviewed[0]["diagnostics"]))
         self.assertEqual(reviewed[1]["diagnostics"],[])
         self.assertNotIn("data:image/",json.dumps(workspace.saved))
         self.assertEqual(len(workspace.assets),6)

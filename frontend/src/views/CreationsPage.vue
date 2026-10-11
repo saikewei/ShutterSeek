@@ -103,7 +103,7 @@
             <span v-if="selectedVersion" class="text-xs" :class="selectedVersion.verified ? 'text-accent-strong' : 'text-ink-3'">{{ selectedVersion.verified ? '效果检查通过' : '待完善的候选版本' }}</span>
             <button v-if="version && version !== detail.creation.current_version" class="btn-ghost px-3 py-1.5 text-xs" :disabled="busy || !!activeRun" @click="restore">恢复此版本</button>
           </div>
-          <iframe v-if="version" :key="version" :src="previewURL(workId, version)" sandbox="allow-scripts" referrerpolicy="no-referrer" title="作品沙箱预览" class="creation-preview" />
+          <iframe v-if="version && previewReady" :key="version" :src="previewURL(workId, version)" sandbox="allow-scripts" referrerpolicy="no-referrer" title="作品沙箱预览" class="creation-preview" />
           <div v-else class="preview-empty rounded-2xl border border-dashed border-line bg-raised flex flex-col items-center justify-center text-center p-6">
             <span class="text-3xl text-accent-strong mb-5" aria-hidden="true">✦</span>
             <h3 class="font-display text-xl text-ink">{{ activeRun ? '你的作品正在成形' : '故事会在这里展开' }}</h3>
@@ -220,6 +220,7 @@ const detail = ref<WorkDetail | null>(null)
 const proposal = ref<Proposal | null>(null)
 const message = ref('')
 const version = ref('')
+const previewReady = ref(false)
 const error = ref('')
 const busy = ref(false)
 const panel = ref('对话')
@@ -409,7 +410,14 @@ watch([workId, creationsEnabled], () => {
   progress.value = { stage: 'queued' }; followChat.value = true; reportOpen.value = false; panel.value = '对话'; photosOpen.value = false; editOpen.value = false; versionsOpen.value = false; photoPickerOpen.value = false; resetOpen.value = false; resetError.value = ''
   void load()
 }, { immediate: true })
-watch(panel, () => { if (panel.value === '对话') void revealComposer() })
+// Generated scripts must initialize in a visible frame with a real viewport.
+watch([version, isMobileShell], () => {
+  previewReady.value = !!version.value && (!isMobileShell.value || panel.value === '预览')
+})
+watch(panel, () => {
+  if (panel.value === '对话') void revealComposer()
+  else if (version.value) previewReady.value = true
+})
 onUnmounted(closeStream)
 </script>
 

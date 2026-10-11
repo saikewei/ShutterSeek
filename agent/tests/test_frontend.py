@@ -21,7 +21,7 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
     async def exercise(self,width,height,touch=False):
         async with async_playwright() as pw:
             browser=await pw.chromium.launch(headless=True,args=["--disable-dev-shm-usage"])
-            context=await browser.new_context(viewport={"width":width,"height":height},has_touch=touch)
+            context=await browser.new_context(viewport={"width":width,"height":height},has_touch=touch or width<768,is_mobile=touch or width<768)
             page=await context.new_page()
             page.set_default_timeout(8000)
             requested=[];submitted=[];current="";run_state=None
@@ -363,7 +363,8 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
                 await page.get_by_role("button",name="预览",exact=True).click()
             frame=page.frame_locator('iframe[title="作品沙箱预览"]').frame_locator('iframe[title="作品内容"]')
             await frame.get_by_role("heading",name="故事已保存").wait_for()
-            await frame.get_by_role("button",name="展开",exact=True).click()
+            if width<768 or touch:await frame.get_by_role("button",name="展开",exact=True).tap()
+            else:await frame.get_by_role("button",name="展开",exact=True).click()
             await frame.get_by_text("可交互内容").wait_for(state="visible")
             confirmed=[item for item in submitted if item.get("action")=="confirm"]
             self.assertEqual(confirmed[0]["proposal"]["used_photo_ids"],[1])
@@ -457,6 +458,10 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
             run_state="failed";run_report=json.dumps({"error":failure_text})
             await page.reload()
             await page.get_by_role("alert").get_by_text(failure_text,exact=True).wait_for()
+            if width<768 or touch:
+                self.assertEqual(await page.locator('iframe[title="作品沙箱预览"]').count(),0)
+                await page.get_by_role("button",name="预览",exact=True).tap()
+            await page.locator('iframe[title="作品沙箱预览"]').wait_for()
             self.assertEqual(await page.locator('iframe[title="作品沙箱预览"]').count(),1)
             await page.get_by_role("button",name="还原作品",exact=True).click()
             reset_dialog=page.get_by_role("dialog",name="还原作品",exact=True)

@@ -56,6 +56,7 @@ class Browser:
                             async with asyncio.timeout(self.viewport_timeout):
                                 context = await browser.new_context(
                                     viewport={"width": width, "height": height},
+                                    is_mobile=name == "mobile", has_touch=name == "mobile",
                                     reduced_motion="reduce", service_workers="block")
                                 try:
                                     result = await self._viewport(
@@ -115,7 +116,7 @@ class Browser:
             "technical_detail": type(error).__name__,
             "suggestion": "修复页面脚本错误"}))
         content = prepare_html(source, assets)
-        await page.set_content('<meta http-equiv="Content-Security-Policy" content="'+CSP.replace("frame-src 'none'","frame-src about:")+'"><iframe sandbox="allow-scripts" style="border:0;width:100%;height:100vh" '
+        await page.set_content('<meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="'+CSP.replace("frame-src 'none'","frame-src about:")+'"><iframe sandbox="allow-scripts" style="border:0;width:100%;height:100vh" '
                                'srcdoc="' + html_module.escape(content, quote=True) +
                                '"></iframe><style>html,body{margin:0;overflow:hidden}</style>')
         handle=await page.locator("iframe").first.element_handle()
@@ -208,9 +209,13 @@ class Browser:
                                "suggestion":"为点击目标和结果元素设置稳定 ID；检查字段应填写 #元素ID 选择器，不能填写文字说明"})
                 continue
             selector = item["selector"]
-            operation = "click"
+            operation = "tap" if name == "mobile" else "click"
             try:
-                await frame.locator(selector).first.click(timeout=1000)
+                target = frame.locator(selector).first
+                if name == "mobile":
+                    await target.tap(timeout=1000)
+                else:
+                    await target.click(timeout=1000)
                 expected = item.get("expect_visible")
                 if expected:
                     operation = "expected_visible"
@@ -220,7 +225,7 @@ class Browser:
                                "element":selector,"description":"交互操作未能正常完成",
                                "technical_detail":type(error).__name__,
                                "operation":operation,
-                               "suggestion":("让此元素可见且可点击" if operation=="click"
+                               "suggestion":("让此元素可见且可操作" if operation in ("click", "tap")
                                             else "让操作后的预期内容正常显示")})
             position=await frame.evaluate("() => ({x:scrollX,y:scrollY})")
             region = {"viewport":name,"kind":"interaction","selector":selector,
