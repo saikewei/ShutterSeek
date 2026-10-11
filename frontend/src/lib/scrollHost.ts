@@ -18,13 +18,13 @@ function docScroller(): HTMLElement {
 }
 
 /** Current scroll offset of the active host (0 when not scrollable). */
-export function getScrollTop(): number {
-  const el = hostEl()
+export function getScrollTop(element?: HTMLElement): number {
+  const el = element ?? hostEl()
   return el ? el.scrollTop : docScroller().scrollTop
 }
 
-export function setScrollTop(top: number): void {
-  const el = hostEl()
+export function setScrollTop(top: number, element?: HTMLElement): void {
+  const el = element ?? hostEl()
   if (el) {
     el.scrollTop = top
     return
@@ -33,8 +33,8 @@ export function setScrollTop(top: number): void {
 }
 
 /** Full scrollable height of the active host. */
-export function hostScrollHeight(): number {
-  const el = hostEl()
+export function hostScrollHeight(element?: HTMLElement): number {
+  const el = element ?? hostEl()
   return el ? el.scrollHeight : docScroller().scrollHeight
 }
 
@@ -83,4 +83,13 @@ export function setHostVisibility(visible: boolean): void {
   const el = hostEl()
   const target = el ?? document.getElementById('app')
   if (target) target.style.visibility = visible ? '' : 'hidden'
+}
+
+/** Explicit panel hosts let editors scroll their transcript without moving the shell. */
+export function isScrollHostNearEnd(element: HTMLElement, margin = 64): boolean {
+  return hostScrollHeight(element) - getScrollTop(element) - element.clientHeight <= margin
+}
+
+export function scrollHostToEnd(element: HTMLElement): void {
+  setScrollTop(hostScrollHeight(element), element)
 }

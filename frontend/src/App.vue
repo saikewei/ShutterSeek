@@ -2,15 +2,17 @@
   <!-- Auth / invite pages render standalone on every device -->
   <router-view v-if="chromeless" />
 
-  <!-- Mobile shell.
-       Scrolling happens on the document here, not in an inner container: iOS
-       Safari only collapses its bottom toolbar in response to document-level
-       scrolling. The top bar is sticky and the tab bar is fixed, so neither of
-       them moves with the rubber-band the way a flow-layout footer used to. -->
-  <div v-else-if="isMobileShell" class="min-h-svh bg-canvas text-ink">
+  <!-- Mobile browsing uses document scrolling for iOS browser chrome.
+       Creation editors keep the shell fixed and scroll their transcript.
+       The top bar is sticky and the tab bar is fixed. -->
+  <div v-else-if="isMobileShell" class="min-h-svh bg-canvas text-ink"
+    :class="{ 'creation-mobile-shell': creationWorkspaceActive }"
+    :style="creationWorkspaceActive ? { height: editorViewport.height + 'px', top: editorViewport.top + 'px' } : undefined"
+    :data-editor-keyboard="creationWorkspaceActive && editorKeyboardOpen ? 'true' : undefined">
     <MobileTopBar ref="topBar" />
 
-    <main :style="{ paddingBottom: 'calc(var(--ss-tabbar-h) + env(safe-area-inset-bottom))' }">
+    <main :class="{ 'creation-mobile-main': creationWorkspaceActive }"
+      :style="{ paddingBottom: creationWorkspaceActive && editorKeyboardOpen ? '0px' : 'calc(var(--ss-tabbar-h) + env(safe-area-inset-bottom))' }">
       <router-view v-slot="{ Component }">
         <Transition name="page" mode="out-in">
           <component :is="Component" />
@@ -18,7 +20,7 @@
       </router-view>
     </main>
 
-    <MobileTabBar />
+    <MobileTabBar v-if="!creationWorkspaceActive || !editorKeyboardOpen" />
   </div>
 
   <!-- Desktop shell -->
@@ -111,7 +113,7 @@
     </nav>
 
     <!-- Main content -->
-    <main data-scroll-host class="flex-1 overflow-auto overscroll-none">
+    <main data-scroll-host class="flex-1 min-w-0 min-h-0 overscroll-none" :class="creationWorkspaceActive ? 'overflow-hidden' : 'overflow-auto'">
       <router-view />
     </main>
   </div>
@@ -119,7 +121,7 @@
 
 <script setup lang="ts">
 import { creationsEnabled } from "@/stores/creations"
-import { computed, provide, ref } from 'vue'
+import { computed, onMounted, onUnmounted, provide, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { authState, isAdmin, clearUser } from '@/stores/auth'
 import { isMobileShell } from '@/stores/device'
@@ -131,6 +133,25 @@ import MobileTabBar from '@/components/mobile/MobileTabBar.vue'
 const route = useRoute()
 const router = useRouter()
 const creationsActive = computed(() => route.path === '/creations' || route.path.startsWith('/creations/'))
+const creationWorkspaceActive = computed(() => creationsActive.value && !!route.params.id)
+const editorViewport = ref({ height: window.innerHeight, top: 0 })
+const editorKeyboardOpen = computed(() => editorViewport.value.height < window.innerHeight * 0.8)
+function updateEditorViewport() {
+  const viewport = window.visualViewport
+  editorViewport.value = { height: viewport?.height || window.innerHeight, top: viewport?.offsetTop || 0 }
+}
+onMounted(() => {
+  updateEditorViewport()
+  window.addEventListener('resize', updateEditorViewport)
+  window.visualViewport?.addEventListener('resize', updateEditorViewport)
+  window.visualViewport?.addEventListener('scroll', updateEditorViewport)
+})
+onUnmounted(() => {
+  window.removeEventListener('resize', updateEditorViewport)
+  window.visualViewport?.removeEventListener('resize', updateEditorViewport)
+  window.visualViewport?.removeEventListener('scroll', updateEditorViewport)
+})
+
 
 // Login / invite pages render without any app chrome.
 const chromeless = computed(() => !!route.meta.chromeless)
@@ -156,3 +177,12 @@ async function doLogout() {
   router.push('/login')
 }
 </script>
+
+<style>
+/* Editors keep panels fixed; browsing routes retain document scrolling. */
+.creation-mobile-shell { position: fixed; inset-inline: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.creation-mobile-main { flex: 1; min-height: 0; overflow: hidden; }
+.creation-mobile-shell > header { flex-shrink: 0; }
+.creation-mobile-shell[data-editor-keyboard="true"] .creation-page > header,
+.creation-mobile-shell[data-editor-keyboard="true"] .panel-switch { display: none; }
+</style>

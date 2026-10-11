@@ -1,5 +1,5 @@
 <template>
-  <div class="creation-page">
+  <div class="creation-page" :class="{ 'creation-editor': !!workId }">
     <header class="flex items-center gap-3 flex-wrap">
       <RouterLink v-if="workId" to="/creations" class="btn-ghost px-2.5 py-1.5 text-xs" aria-label="返回作品列表">← 作品</RouterLink>
       <div class="flex-1 min-w-0">
@@ -35,7 +35,7 @@
     </template>
 
     <template v-else-if="detail">
-      <CreationProgress v-if="activeRun" class="creation-live-progress" :style="{ top: topOffset() + 'px' }" :progress="progress" :started-at="startedAt" :reconnecting="reconnecting" @cancel="cancel" />
+      <CreationProgress v-if="activeRun" class="creation-live-progress" :progress="progress" :started-at="startedAt" :reconnecting="reconnecting" @cancel="cancel" />
       <p v-else-if="busy" role="status" class="text-sm text-ink-2">正在提交，请稍候…</p>
       <div v-if="isMobileShell" class="panel-switch flex gap-1 p-1 rounded-xl bg-raised border border-line" aria-label="创作面板">
         <button v-for="item in ['对话', '预览']" :key="item" class="flex-1 py-2 rounded-lg text-sm transition-colors" :class="panel === item ? 'bg-accent-soft text-ink font-medium' : 'text-ink-3'" :aria-pressed="panel === item" @click="panel = item">{{ item }}</button>
@@ -43,11 +43,11 @@
 
       <div class="creation-workspace" :class="{ 'creation-mobile': isMobileShell }">
         <section v-show="!isMobileShell || panel === '对话'" class="creation-conversation min-w-0 rounded-2xl border border-line bg-raised" aria-label="创作对话">
-          <div class="px-4 sm:px-5 py-4 border-b border-line">
+          <div class="conversation-heading px-4 sm:px-5 py-4 border-b border-line">
             <h2 class="text-sm font-medium">一起创作</h2>
             <p class="text-xs text-ink-3 mt-1">说说想法，也可以随时调整内容和风格。</p>
           </div>
-          <div class="space-y-5 p-4 sm:p-5">
+          <div ref="chatScroll" class="conversation-scroll space-y-5 p-4 sm:p-5" role="log" aria-label="聊天内容" tabindex="0" @scroll="rememberChatPosition">
             <div v-if="!detail.messages.length" class="chat-row">
               <span class="chat-avatar" aria-hidden="true">✦</span>
               <div class="chat-bubble chat-assistant">
@@ -79,22 +79,24 @@
               </div>
             </div>
 
+          </div>
+          <div class="conversation-footer">
             <form class="composer rounded-xl border border-line p-3" @submit.prevent="send">
               <label for="creation-message" class="sr-only">给创作助手的消息</label>
-              <textarea id="creation-message" ref="composer" v-model="message" rows="3" class="w-full resize-none bg-transparent text-sm text-ink placeholder:text-ink-3 focus:outline-none" :placeholder="detail.creation.current_version ? '告诉我想修改哪里…' : currentQuestion ? '回复助手，或聊聊你想调整的地方…' : '说说你想做什么样的作品…'" :disabled="!!activeRun || busy" @keydown.enter="composerEnter" />
+              <textarea id="creation-message" v-model="message" :rows="isMobileShell ? 2 : 3" class="w-full resize-none bg-transparent text-sm text-ink placeholder:text-ink-3 focus:outline-none" :placeholder="detail.creation.current_version ? '告诉我想修改哪里…' : currentQuestion ? '回复助手，或聊聊你想调整的地方…' : '说说你想做什么样的作品…'" :disabled="!!activeRun || busy" @keydown.enter="composerEnter" />
               <div class="flex items-center gap-2 mt-2">
                 <span class="text-xs text-ink-3 flex-1">回车发送 · ⇧ + 回车换行</span>
                 <button v-if="currentQuestion && !activeRun" type="button" class="btn-ghost px-3 py-2 text-xs" :disabled="busy" @click="run('skip')">先跳过</button>
                 <button type="submit" class="btn-primary px-4 py-2 text-sm" :disabled="busy || !!activeRun || !message.trim()">发送</button>
               </div>
             </form>
-            <p class="text-[11px] text-ink-3">助手会区分画面观察和你提供的事实，未知信息不会编造。</p>
           </div>
         </section>
 
-        <section v-show="!isMobileShell || panel === '预览'" class="creation-preview-panel min-w-0 space-y-3" :style="!isMobileShell ? { top: topOffset() + 'px' } : undefined" aria-label="作品预览">
+        <section v-show="!isMobileShell || panel === '预览'" class="creation-preview-panel min-w-0 space-y-3" aria-label="作品预览">
           <div class="flex items-center gap-2 px-1">
             <h2 class="text-sm font-medium flex-1">作品预览</h2>
+            <button v-if="report.rounds" class="btn-ghost px-3 py-1.5 text-xs" @click="reportOpen = true">效果检查</button>
             <span v-if="selectedVersion" class="text-xs" :class="selectedVersion.verified ? 'text-accent-strong' : 'text-ink-3'">{{ selectedVersion.verified ? '效果检查通过' : '待完善的候选版本' }}</span>
             <button v-if="version && version !== detail.creation.current_version" class="btn-ghost px-3 py-1.5 text-xs" :disabled="busy || !!activeRun" @click="restore">恢复此版本</button>
           </div>
@@ -105,9 +107,13 @@
             <p class="text-sm text-ink-3 mt-3 max-w-xs leading-relaxed">{{ activeRun ? '当前阶段会在上方实时更新，完成后自动显示预览。' : '先聊聊想法，确认内容、风格和照片后，就可以生成作品。' }}</p>
           </div>
           <p v-if="version" class="text-xs text-ink-3 px-1">已自动保存。继续在对话中提出修改，会保留当前版本。</p>
-          <details v-if="report.rounds" class="rounded-xl border border-line bg-raised p-4">
-            <summary class="cursor-pointer text-xs text-ink-2">效果检查 · {{ report.rounds }} 轮 · {{ report.issues?.length || 0 }} 项提示</summary>
-            <div class="space-y-3 pt-3">
+
+        </section>
+      </div>
+
+      <AppModal :open="reportOpen" title="效果检查" @close="reportOpen = false">
+        <p class="text-xs text-ink-3 mb-3">{{ report.rounds }} 轮检查 · {{ report.issues?.length || 0 }} 项提示</p>
+        <div class="space-y-3">
               <p class="text-sm text-ink-2">{{ reportSummary(report) }}</p>
               <div v-for="(issue, index) in report.issues" :key="index" class="text-xs leading-relaxed border-t border-line pt-2">
                 <p class="text-ink-3 mb-1">{{ issue.severity === 'blocking' ? '需要调整' : '提示' }} · {{ viewportText(issue.viewport) }} · {{ regionText(issue.region) }}</p>
@@ -122,10 +128,7 @@
               </div>
               <p class="text-[11px] text-ink-3">仅检查报告列出的区域和交互；模型仍可能遗漏问题。</p>
             </div>
-          </details>
-        </section>
-      </div>
-
+      </AppModal>
       <AppModal :open="photosOpen" title="创作照片" @close="photosOpen = false">
         <div class="flex gap-2 mb-4">
           <button v-for="item in ['选图', '照片信息']" :key="item" class="btn-ghost px-3 py-2 text-xs" :aria-pressed="photoPanel === item" :class="{ 'bg-accent-soft': photoPanel === item }" @click="photoPanel = item">{{ item }}</button>
@@ -187,7 +190,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, nextTick, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppModal from '@/components/AppModal.vue'
 import CreationAlbumPicker from '@/components/CreationAlbumPicker.vue'
@@ -195,14 +198,12 @@ import CreationProgress from '@/components/CreationProgress.vue'
 import { THUMB_BASE } from '@/api/client'
 import { creationsEnabled } from '@/stores/creations'
 import { isMobileShell } from '@/stores/device'
-import { topOffsetKey } from '@/lib/chrome'
-import { hostEl, getScrollTop, setScrollTop } from '@/lib/scrollHost'
+import { isScrollHostNearEnd, scrollHostToEnd } from '@/lib/scrollHost'
 import { snapshotProposal, assistantText, displayChinese, needsChinese, reportSummary, viewportText, regionText, type CreationProgress as Progress } from '@/lib/creationChat'
 import { listCreations, getCreation, startCreationRun, cancelCreationRun, restoreCreationVersion, previewURL, parseReport, type Creation, type WorkDetail, type Proposal } from '@/api/creations'
 
 const route = useRoute()
 const router = useRouter()
-const topOffset = inject(topOffsetKey, () => 0)
 const workId = computed(() => String(route.params.id || ''))
 const works = ref<Creation[]>([])
 const detail = ref<WorkDetail | null>(null)
@@ -217,7 +218,9 @@ const photosOpen = ref(false)
 const photoPanel = ref('选图')
 const editOpen = ref(false)
 const versionsOpen = ref(false)
-const composer = ref<HTMLTextAreaElement>()
+const chatScroll = ref<HTMLElement>()
+const followChat = ref(true)
+const reportOpen = ref(false)
 const progress = ref<Progress>({ stage: 'queued' })
 const startedAt = ref(Date.now())
 const reconnecting = ref(false)
@@ -264,6 +267,7 @@ async function load() {
       if (Number.isFinite(createdAt)) startedAt.value = createdAt
       subscribe(activeRun.value.id)
     } else closeStream()
+    await revealComposer()
   } catch (e) { failure(e) }
 }
 function subscribe(runId: string) {
@@ -295,19 +299,18 @@ function subscribe(runId: string) {
     else await revealComposer()
   })
 }
-async function revealComposer() {
-  await nextTick()
-  if (!composer.value || panel.value !== '对话') return
-  const host = hostEl()
-  const bottom = host ? host.getBoundingClientRect().bottom : window.innerHeight
-  const form = composer.value.closest('form')
-  const inset = isMobileShell.value ? parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ss-tabbar-h')) || 0 : 0
-  const delta = (form || composer.value).getBoundingClientRect().bottom + inset - bottom
-  if (delta > 0) setScrollTop(getScrollTop() + delta)
+function rememberChatPosition() {
+  if (chatScroll.value?.clientHeight) followChat.value = isScrollHostNearEnd(chatScroll.value)
 }
+async function revealComposer() {
+  const follow = followChat.value
+  await nextTick()
+  if (follow && chatScroll.value && panel.value === '对话') scrollHostToEnd(chatScroll.value)
+}
+
 async function run(action: string, text = '') {
   if (!detail.value || busy.value || activeRun.value) return
-  busy.value = true; error.value = ''; progress.value = { stage: 'queued' }; startedAt.value = Date.now()
+  busy.value = true; error.value = ''; followChat.value = true; progress.value = { stage: 'queued' }; startedAt.value = Date.now()
   const requestedId = workId.value
   try {
     await startCreationRun(requestedId, {
@@ -345,16 +348,23 @@ async function restore() {
 function onAlbumCreated(id: string) { albumPickerOpen.value = false; void router.push('/creations/' + id) }
 watch([workId, creationsEnabled], () => {
   closeStream(); detail.value = null; proposal.value = null; version.value = ''; message.value = ''; error.value = ''
-  progress.value = { stage: 'queued' }; panel.value = '对话'; photosOpen.value = false; editOpen.value = false; versionsOpen.value = false
+  progress.value = { stage: 'queued' }; followChat.value = true; reportOpen.value = false; panel.value = '对话'; photosOpen.value = false; editOpen.value = false; versionsOpen.value = false
   void load()
 }, { immediate: true })
+watch(panel, () => { if (panel.value === '对话') void revealComposer() })
 onUnmounted(closeStream)
 </script>
 
 <style scoped>
 .creation-page { padding: 1rem; display: flex; flex-direction: column; gap: 1rem; max-width: 1600px; margin: 0 auto; }
-.creation-live-progress { position: sticky; z-index: 20; align-self: stretch; }
-.creation-workspace { display: grid; gap: 1.25rem; align-items: start; }
+.creation-editor { width: 100%; height: 100%; min-height: 0; overflow: hidden; }
+.creation-editor > header, .creation-live-progress, .creation-editor > [role="alert"], .panel-switch { flex-shrink: 0; }
+.creation-workspace { display: grid; gap: 1.25rem; align-items: stretch; }
+.creation-editor .creation-workspace { flex: 1; min-height: 0; grid-template-rows: minmax(0, 1fr); overflow: hidden; }
+.creation-conversation { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.conversation-heading { flex-shrink: 0; }
+.conversation-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.conversation-footer { flex-shrink: 0; padding: .75rem 1rem; border-top: 1px solid var(--color-line); }
 .creation-input { width: 100%; border: 1px solid var(--color-line); border-radius: .65rem; padding: .7rem; background: transparent; font-size: .875rem; }
 .chat-row { display: flex; align-items: flex-start; gap: .65rem; }
 .chat-user-row { justify-content: flex-end; }
@@ -363,14 +373,16 @@ onUnmounted(closeStream)
 .chat-assistant { flex: 1; }
 .chat-user { padding: .85rem 1rem; border-radius: 1rem 1rem .25rem 1rem; background: var(--color-accent-soft); }
 .composer:focus-within { border-color: var(--color-accent); }
-.creation-preview { width: 100%; height: 66svh; min-height: 420px; border: 1px solid var(--color-line); border-radius: 1rem; background: white; }
-.preview-empty { min-height: 440px; }
-.creation-mobile .preview-empty { min-height: 55svh; }
+.composer textarea { display: block; max-height: 20dvh; min-height: 2.5rem; }
+.creation-preview-panel { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.creation-preview-panel > :first-child, .creation-preview-panel > p { flex-shrink: 0; }
+.creation-preview { flex: 1; width: 100%; height: 0; min-height: 0; border: 1px solid var(--color-line); border-radius: 1rem; background: white; }
+.preview-empty { flex: 1; min-height: 0; }
+.creation-mobile .conversation-heading { padding: .75rem 1rem; }
+.creation-mobile .conversation-heading > p { display: none; }
 @media (min-width: 768px) {
   .creation-page { padding: 1.5rem; gap: 1.25rem; }
   .creation-workspace { grid-template-columns: minmax(320px, 0.85fr) minmax(0, 1.6fr); }
-  .creation-preview-panel { position: sticky; }
 }
 .creation-workspace.creation-mobile { grid-template-columns: minmax(0, 1fr); }
-.creation-mobile .creation-preview-panel { position: static; }
 </style>

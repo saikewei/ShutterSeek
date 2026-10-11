@@ -26,7 +26,7 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
             page.set_default_timeout(8000)
             requested=[];submitted=[];current="";run_state=None
             creations=[];album_fetches=0;stream_attempts=0;run_report="{}";chat_turn=0
-            skipped=False;legacy=False;generation_count=0
+            skipped=False;legacy=False;generation_count=0;long_plan=False
             questions=["在哪里拍的？","什么时候拍的？","和谁一起？"]
             messages=[{"id":"assistant-first","role":"assistant","content":json.dumps({
                 "reply":"我已经整理好一份旅行故事方案。","questions":questions},ensure_ascii=False)}]
@@ -38,7 +38,7 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
                     "used_photo_ids":"[1]","created_at":"2026-10-11T08:00:00Z"}
             def detail():
                 return {"creation":{"id":"work","title":"旅行故事","current_version":current},
-                        "photo_ids":[1,2],"state":{"proposal":{"structure":"按旅程顺序讲述照片里的故事",
+                        "photo_ids":[1,2],"state":{"proposal":{"structure":("按旅程顺序讲述照片里的故事。\n"*100 if long_plan else "按旅程顺序讲述照片里的故事"),
                         "style":"温暖简约","used_photo_ids":[1,2]},"questions":questions,
                         "unknowns":["地点"],"observations":[{"photo_id":1,"observation":"A landscape" if legacy else "画面中可见山间风景","unknowns":["地点"]}],"user_facts":[]},
                         "messages":messages,"runs":([{"id":"run","status":run_state,"report":run_report,
@@ -179,6 +179,61 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
             if width>=768 and not touch:
                 self.assertEqual(await nav.get_attribute("aria-current"),"page")
                 self.assertIn("bg-accent-soft",(await nav.get_attribute("class")).split())
+            long_plan=True
+            messages.extend({"id":"history-"+str(i),"role":"assistant","content":"这是较长的聊天记录，用于验证滚动只发生在聊天框中。"*5} for i in range(24))
+            await page.reload()
+            log=page.get_by_role("log",name="聊天内容",exact=True)
+            await log.wait_for()
+            await page.evaluate("""async () => {
+                await document.fonts.ready;
+                await Promise.all(document.getAnimations().filter(a => a.effect?.getTiming().iterations !== Infinity)
+                    .map(a => a.finished.catch(() => {})));
+            }""")
+            header=page.get_by_role("heading",name="旅行故事",exact=True)
+            preview=page.get_by_role("region",name="作品预览",exact=True)
+            before_header=await header.bounding_box()
+            before_composer=await page.get_by_role("textbox",name="给创作助手的消息",exact=True).bounding_box()
+            before_preview=await preview.bounding_box() if width>=768 and not touch else None
+            await log.evaluate("el => el.scrollTop=0")
+            await log.hover()
+            await page.mouse.wheel(0,700)
+            await page.wait_for_timeout(150)
+            self.assertGreater(await log.evaluate("el => el.scrollTop"),0)
+            self.assertAlmostEqual((await header.bounding_box())["y"],before_header["y"],delta=1)
+            self.assertAlmostEqual((await page.get_by_role("textbox",name="给创作助手的消息",exact=True).bounding_box())["y"],before_composer["y"],delta=1)
+            if before_preview:
+                self.assertAlmostEqual((await preview.bounding_box())["y"],before_preview["y"],delta=1)
+                self.assertAlmostEqual((await preview.bounding_box())["height"],before_preview["height"],delta=1)
+            outer=await page.evaluate("() => ({document:document.scrollingElement.scrollTop, main:document.querySelector('[data-scroll-host]')?.scrollTop || 0})")
+            self.assertEqual(outer,{"document":0,"main":0})
+            self.assertLessEqual(await page.evaluate("document.documentElement.scrollHeight"),height+1)
+            await page.screenshot(path=str(artifact/f"chat-scroll-{width}.png"))
+            await log.evaluate("el => el.scrollTop=el.scrollHeight")
+            if width<768 or touch:
+                await page.evaluate("""() => {
+                    window.__editorTestViewport = window.visualViewport;
+                    const original=window.visualViewport;
+                    const keyboard=new Proxy(original,{get(target,key) {
+                        if(key==='height') return 360;
+                        if(key==='offsetTop') return 0;
+                        const value=Reflect.get(target,key,target);
+                        return typeof value==='function' ? value.bind(target) : value;
+                    }});
+                    Object.defineProperty(window,'visualViewport',{configurable:true,value:keyboard});
+                    window.dispatchEvent(new Event('resize'));
+                }""")
+                await page.wait_for_function("document.querySelector('[data-editor-keyboard=\"true\"]') !== null")
+                keyboard_composer=await page.get_by_role("textbox",name="给创作助手的消息",exact=True).bounding_box()
+                self.assertGreaterEqual(keyboard_composer["y"],0)
+                self.assertLessEqual(keyboard_composer["y"]+keyboard_composer["height"],360)
+                self.assertEqual(await page.get_by_role("navigation",name="主导航",exact=True).count(),0)
+                await page.evaluate("""() => {
+                    Object.defineProperty(window,'visualViewport',{configurable:true,value:window.__editorTestViewport});
+                    delete window.__editorTestViewport;
+                    window.dispatchEvent(new Event('resize'));
+                }""")
+                await page.get_by_role("navigation",name="主导航",exact=True).wait_for()
+            long_plan=False
             self.assertEqual(await page.get_by_role("textbox").count(),1)
             self.assertEqual(await page.get_by_text("在哪里拍的？",exact=False).count(),1)
             self.assertEqual(await page.get_by_text("什么时候拍的？",exact=False).count(),0)
@@ -243,6 +298,13 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(confirmed[0]["proposal"]["used_photo_ids"],[1])
             self.assertEqual(confirmed[0]["proposal"]["structure"],"按海边旅程讲述故事")
             self.assertEqual(await page.locator("iframe").get_attribute("sandbox"),"allow-scripts")
+            preview_before_report=await page.locator('iframe[title="作品沙箱预览"]').bounding_box()
+            await page.get_by_role("button",name="效果检查",exact=True).click()
+            review=page.get_by_role("dialog",name="效果检查",exact=True)
+            await review.get_by_text("已检查桌面和手机页面",exact=True).wait_for()
+            await review.get_by_role("button",name="关闭",exact=True).click()
+            preview_after_report=await page.locator('iframe[title="作品沙箱预览"]').bounding_box()
+            self.assertAlmostEqual(preview_before_report["height"],preview_after_report["height"],delta=1)
             await page.get_by_role("button",name="版本记录",exact=True).click()
             await page.get_by_role("combobox",name="查看版本",exact=True).select_option("v1")
             await page.get_by_role("button",name="恢复此版本").click()
@@ -259,6 +321,10 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
             await page.reload()
             await page.get_by_role("alert").get_by_text(failure_text,exact=True).wait_for()
             self.assertEqual(await page.locator('iframe[title="作品沙箱预览"]').count(),1)
+            if width<768 or touch:
+                await page.goto("http://creation-ui.test/#/creations")
+                await page.get_by_role("button",name="选择相册",exact=True).wait_for()
+                self.assertEqual(await page.locator(".creation-mobile-shell, .creation-mobile-main").count(),0)
             await browser.close()
 
     async def test_desktop_confirm_interact_restore(self):
