@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"github.com/DATA-DOG/go-sqlmock"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -11,6 +12,7 @@ import (
 	"shutterseek/internal/model"
 	"strings"
 	"testing"
+	"time"
 )
 
 func mockCreations(t *testing.T) (*CreationService, sqlmock.Sqlmock) {
@@ -218,5 +220,52 @@ func TestCreationEmptyStartupAndCleanupDoNotWrite(t *testing.T) {
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCreationContextRPCEncodesPhotosAndMessages(t *testing.T) {
+	for _, withMessage := range []bool{false, true} {
+		t.Run(fmt.Sprint(withMessage), func(t *testing.T) {
+			s, mock := mockCreations(t)
+			mock.ExpectQuery(`SELECT .* FROM "creation_runs" WHERE id = \$1 AND credential_hash = \$2 AND expires_at > \$3 AND status = \$4`).WithArgs("run", credentialHash("test-capability"), sqlmock.AnyArg(), "running", 1).
+				WillReturnRows(sqlmock.NewRows([]string{"id", "creation_id", "user_id", "input"}).
+					AddRow("run", "work", 7, `{"action":"answer","message":"A trip"}`))
+			mock.ExpectQuery(`SELECT .* FROM "creations" WHERE id = \$1 AND user_id = \$2`).WithArgs("work", int64(7), 1).
+				WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "title", "photo_ids", "state"}).
+					AddRow("work", 7, "Travel", "[1,2]", `{"observations":[]}`))
+			rows := sqlmock.NewRows([]string{"id", "creation_id", "role", "content", "created_at"})
+			if withMessage {
+				rows.AddRow("message", "work", "user", "A trip", time.Date(2026, 10, 11, 8, 0, 0, 0, time.UTC))
+			}
+			mock.ExpectQuery(`SELECT .* FROM "creation_messages" WHERE creation_id = \$1`).WithArgs("work", 40).WillReturnRows(rows)
+			request, _ := structpb.NewStruct(map[string]interface{}{"run_id": "run", "credential": "test-capability", "op": "context"})
+			out, err := s.Call(context.Background(), request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			value := out.AsMap()
+			photos := value["photo_ids"].([]interface{})
+			if len(photos) != 2 || photos[0] != float64(1) || photos[1] != float64(2) {
+				t.Fatalf("invalid photos: %v", photos)
+			}
+			messages, ok := value["messages"].([]interface{})
+			if !ok {
+				t.Fatal("messages must be a JSON array")
+			}
+			if withMessage {
+				if len(messages) != 1 {
+					t.Fatalf("invalid messages: %v", messages)
+				}
+				message := messages[0].(map[string]interface{})
+				if message["role"] != "user" || message["content"] != "A trip" || message["created_at"] != "2026-10-11T08:00:00Z" {
+					t.Fatalf("invalid message: %v", message)
+				}
+			} else if len(messages) != 0 {
+				t.Fatalf("unexpected messages: %v", messages)
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }

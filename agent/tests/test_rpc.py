@@ -74,6 +74,35 @@ class RPCTests(unittest.IsolatedAsyncioTestCase):
                 pass
         self.assertIsNone(self.workspaces["1"].finished)
 
+    async def test_execution_failure_logs_locations_without_payloads(self):
+        async def fail(*args, **kwargs):
+            raise RuntimeError("private-model-key data:image/png;base64,private-image")
+        self.agent.model.invoke = fail
+        run_id = "1"
+        with self.assertLogs("shutterseek.agent", level="ERROR") as logs:
+            with self.assertRaises(grpc.aio.AioRpcError) as error:
+                async for item in self.execute(encode({"run_id": run_id, "credential": "key-1"})):
+                    pass
+        self.assertEqual(error.exception.code(), grpc.StatusCode.INTERNAL)
+        self.assertIn("server diagnostics", error.exception.details())
+        output = "\n".join(logs.output) + error.exception.details()
+        self.assertIn("error_type=RuntimeError", output)
+        self.assertIn("workflow.py:", output)
+        for forbidden in ("private-model-key", "data:image", "private-image", "key-1"):
+            self.assertNotIn(forbidden, output)
+        self.assertNotIn(run_id, self.agent.tasks)
+        self.assertIsNone(self.workspaces[run_id].finished)
+
+    async def test_callback_authentication_failure_keeps_status_and_safe_log(self):
+        with self.assertLogs("shutterseek.agent", level="ERROR") as logs:
+            with self.assertRaises(grpc.aio.AioRpcError) as error:
+                async for item in self.execute(encode({"run_id": "1", "credential": "private-invalid-capability"})):
+                    pass
+        self.assertEqual(error.exception.code(), grpc.StatusCode.PERMISSION_DENIED)
+        self.assertIn("rpc_code=PERMISSION_DENIED", "\n".join(logs.output))
+        self.assertNotIn("private-invalid-capability", "\n".join(logs.output))
+        self.assertEqual(self.agent.tasks, {})
+
     async def test_cancel_capability_and_disconnected_stream(self):
         original=self.agent.model.invoke
         async def stalled(*args,**kwargs):

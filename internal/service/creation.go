@@ -11,6 +11,7 @@ import (
 	"fmt"
 	htmlstd "html"
 	"io"
+	"log"
 	"math"
 	"net"
 	"os"
@@ -26,6 +27,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -461,6 +463,7 @@ func (s *CreationService) execute(ctx context.Context, r model.CreationRun) {
 		return
 	}
 	if err != nil && !errors.Is(err, io.EOF) {
+		log.Printf("creation: run=%s failed rpc_code=%s error_type=%T", r.ID, status.Code(err), err)
 		s.db.Model(&model.CreationRun{}).Where("id = ? AND status = ?", r.ID, "running").Updates(map[string]interface{}{"status": "failed", "credential_hash": "", "report": jsonText(map[string]interface{}{"error": "Agent execution failed; retry resumes the saved work state."}), "updated_at": time.Now()})
 	} else {
 		s.db.Model(&model.CreationRun{}).Where("id = ? AND status = ?", r.ID, "running").Updates(map[string]interface{}{"status": "failed", "credential_hash": "", "updated_at": time.Now()})
@@ -487,7 +490,17 @@ func (s *CreationService) Call(ctx context.Context, in *structpb.Struct) (*struc
 	if err != nil {
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
-	return structpb.NewStruct(out)
+	// Normalize typed slices, model structs, timestamps, and JSON tags for Struct.
+	encoded, err := json.Marshal(out)
+	if err == nil {
+		response := new(structpb.Struct)
+		err = protojson.Unmarshal(encoded, response)
+		if err == nil {
+			return response, nil
+		}
+	}
+	log.Printf("creation: callback serialization failed run=%s op=%s error_type=%T", r.ID, op, err)
+	return nil, status.Error(codes.Internal, "workspace response serialization failed")
 }
 func (s *CreationService) callback(ctx context.Context, r model.CreationRun, c model.Creation, op string, p map[string]interface{}) (map[string]interface{}, error) {
 	out := map[string]interface{}{}
@@ -496,7 +509,7 @@ func (s *CreationService) callback(ctx context.Context, r model.CreationRun, c m
 		var ids []int64
 		_ = json.Unmarshal([]byte(c.PhotoIDs), &ids)
 		out = map[string]interface{}{"creation_id": c.ID, "thread_id": c.ID, "photo_ids": ids, "state": mapText(c.State), "input": mapText(r.Input), "title": c.Title, "base_version": r.BaseVersion}
-		var messages []model.CreationMessage
+		messages := []model.CreationMessage{}
 		if err := s.db.WithContext(ctx).Where("creation_id = ?", c.ID).Order("created_at DESC").Limit(40).Find(&messages).Error; err != nil {
 			return nil, err
 		}
