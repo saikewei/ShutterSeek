@@ -7,7 +7,7 @@ import mimetypes
 import sys
 import unittest
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from browser import CSP,prepare_html
 from test_browser import PNG
@@ -28,7 +28,7 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
             creations=[];album_fetches=0;stream_attempts=0;run_report="{}";chat_turn=0
             skipped=False;legacy=False;generation_count=0;long_plan=False
             work_ids=[1,2];work_rotations={};work_selected=None;photo_revision=0;photo_changes=[]
-            plan_structure=None;photos_changed=False
+            plan_structure=None;photos_changed=False;was_reset=False;resets=[];photo_queries=[]
             questions=["在哪里拍的？","什么时候拍的？","和谁一起？"]
             messages=[{"id":"assistant-first","role":"assistant","content":json.dumps({
                 "reply":"我已经整理好一份旅行故事方案。","questions":questions},ensure_ascii=False)}]
@@ -39,17 +39,20 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
                     "rounds":1,"issues":[],"summary":"已检查桌面和手机页面","screenshots":[]}),
                     "used_photo_ids":"[1]","created_at":"2026-10-11T08:00:00Z"}
             def detail():
-                return {"creation":{"id":"work","title":"旅行故事","current_version":current},
-                        "photo_ids":work_ids,"state":{"photo_revision":photo_revision,"photos_changed":photos_changed,"photo_edits":work_rotations,"selected_photo_ids":work_selected,
-                        "proposal":{"structure":("按旅程顺序讲述照片里的故事。\n"*100 if long_plan else plan_structure or "按旅程顺序讲述照片里的故事"),
+                state={"photo_ids":work_ids,"photo_revision":photo_revision,"photo_edits":work_rotations,"selected_photo_ids":work_selected}
+                if not was_reset:
+                    state.update({"photos_changed":photos_changed,
+                        "proposal":{"structure":("按旅程顺序讲述照片里的故事。\\n"*100 if long_plan else plan_structure or "按旅程顺序讲述照片里的故事"),
                         "style":"温暖简约","used_photo_ids":work_selected or [1,2]},"questions":questions,
-                        "unknowns":["地点"],"observations":[{"photo_id":1,"observation":"A landscape" if legacy else "画面中可见山间风景","unknowns":["地点"]}],"user_facts":[]},
+                        "unknowns":["地点"],"observations":[{"photo_id":1,"observation":"A landscape" if legacy else "画面中可见山间风景","unknowns":["地点"]}],"user_facts":[]})
+                return {"creation":{"id":"work","title":"旅行故事","current_version":current},
+                        "photo_ids":work_ids,"state":state,
                         "messages":messages,"runs":([{"id":"run","status":run_state,"report":run_report,
                             "action":submitted[-1].get("action"),"proposal":submitted[-1].get("proposal"),"photo_revision":submitted[-1].get("photo_revision",photo_revision)}]
                             if run_state and submitted else []),
                         "versions":([version("v2"),version("v1")] if current else [])}
             async def route_handler(route):
-                nonlocal current,run_state,album_fetches,stream_attempts,run_report,chat_turn,skipped,legacy,generation_count,questions,work_ids,work_rotations,work_selected,photo_revision,plan_structure,photos_changed
+                nonlocal current,run_state,album_fetches,stream_attempts,run_report,chat_turn,skipped,legacy,generation_count,questions,work_ids,work_rotations,work_selected,photo_revision,plan_structure,photos_changed,was_reset
                 request=route.request;path=urlparse(request.url).path
                 requested.append((request.method,path))
                 value=None
@@ -75,16 +78,33 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
                         {"id":11,"title":"空相册","photo_count":0,"cover_url":""},
                         {"id":12,"title":"大相册","photo_count":201,"cover_url":""}],
                         "total":3}
-                elif path=="/api/v1/photos" or path.startswith("/api/v1/albums/10/photos"):
-                    value={"items":[{"id":3,"file_name":"新照片","thumbnail_url":"/api/v1/thumbnails/3.webp"}],"next_cursor":"","total":1}
+                elif path=="/api/v1/photos/dates":
+                    value=[{"date":"2026-10-01","count":2},{"date":"2026-09-10","count":3},{"date":"2026-10-03","count":4}]
+                elif path=="/api/v1/albums/10/dates":
+                    value=[{"date":"2025-08-02","count":2}]
+                elif path=="/api/v1/photos":
+                    params=parse_qs(urlparse(request.url).query);photo_queries.append(params)
+                    found=[1,2,3];next_cursor="";head_count=0
+                    if params.get("month")==["2026-09"]:
+                        found=[9,4] if params.get("cursor") else [9,3];head_count=1
+                        next_cursor="" if params.get("cursor") else "sept-next"
+                    value={"items":[{"id":id,"file_name":"照片 "+str(id),"thumbnail_url":f"/api/v1/thumbnails/{id}.webp"} for id in found],"next_cursor":next_cursor,"total":len(found),"head_count":head_count}
                 elif path=="/api/v1/search":
                     self.assertIn("q=",request.url)
-                    value={"items":[{"id":3,"file_name":"搜索结果","score":.8}],"total":1}
+                    value={"items":[{"id":id,"file_name":"搜索结果 "+str(id),"score":.8} for id in [1,2,3]],"total":3}
                 elif path=="/api/v1/creations/work/photos":
                     change=request.post_data_json;photo_changes.append(change)
                     self.assertEqual(change["base_revision"],photo_revision)
                     work_ids=change["photo_ids"];work_selected=change["used_photo_ids"];work_rotations=change["rotations"];photo_revision+=1;photos_changed=bool(current)
                     if change.get("proposal"):plan_structure=change["proposal"]["structure"]
+                    await route.fulfill(status=204);return
+                elif path=="/api/v1/creations/work/reset":
+                    resets.append(request.post_data_json)
+                    self.assertEqual(resets[-1],{"base_version":current,"base_revision":photo_revision})
+                    if len(resets)==1:
+                        await route.fulfill(status=503,content_type="application/json",body='{"error":"还原暂时失败，请重试"}');return
+                    current="";photo_revision+=1;was_reset=True;messages.clear();submitted.clear()
+                    run_state=None;run_report="{}";questions=[];plan_structure=None;photos_changed=False
                     await route.fulfill(status=204);return
                 elif path=="/api/v1/creations/work":value=detail()
                 elif path=="/api/v1/creations/work/runs":
@@ -237,13 +257,14 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
             await page.evaluate("getSelection().removeAllRanges()")
             await header.click(click_count=3)
             self.assertEqual(await page.evaluate("getSelection().toString()"),"")
+            self.assertGreaterEqual((await header.bounding_box())["width"],160)
             before_header=await header.bounding_box()
             before_composer=await page.get_by_role("textbox",name="给创作助手的消息",exact=True).bounding_box()
             before_preview=await preview.bounding_box() if width>=768 and not touch else None
             await log.evaluate("el => el.scrollTop=0")
             await log.hover()
             await page.mouse.wheel(0,700)
-            await page.wait_for_timeout(150)
+            await page.wait_for_function("document.querySelector('[role=log]').scrollTop > 0")
             self.assertGreater(await log.evaluate("el => el.scrollTop"),0)
             self.assertAlmostEqual((await header.bounding_box())["y"],before_header["y"],delta=1)
             self.assertAlmostEqual((await page.get_by_role("textbox",name="给创作助手的消息",exact=True).bounding_box())["y"],before_composer["y"],delta=1)
@@ -322,6 +343,7 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
             status=page.get_by_role("status")
             await status.get_by_text("正在生成网页",exact=True).wait_for()
             self.assertTrue(await page.get_by_role("button",name="取消任务",exact=True).is_visible())
+            self.assertTrue(await page.get_by_role("button",name="还原作品",exact=True).is_disabled())
             bounds=await status.bounding_box()
             self.assertGreaterEqual(bounds["y"],0)
             self.assertLessEqual(bounds["y"]+bounds["height"],height)
@@ -373,12 +395,45 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
             await photo_dialog.get_by_role("button",name="搜索、增删与旋转",exact=True).click()
             picker=page.get_by_role("dialog",name="管理创作照片",exact=True)
             await picker.get_by_role("button",name="找照片",exact=True).click()
+            already=picker.get_by_role("button",name="添加照片 1",exact=True)
+            await already.wait_for()
+            self.assertTrue(await already.is_disabled())
+            self.assertEqual(await already.evaluate("el => getComputedStyle(el).opacity"),"0.5")
+            self.assertEqual(await already.evaluate("el => getComputedStyle(el).filter"),"grayscale(1)")
+            months=picker.get_by_role("combobox",name="跳转到月份",exact=True)
+            await months.locator('option[value="2026-10"]').wait_for(state="attached")
+            self.assertEqual(await months.locator("option").all_text_contents(),["最新照片","2026年10月 · 6张","2026年9月 · 3张"])
+            await months.select_option("2026-09")
+            await picker.get_by_role("button",name="加载更多照片",exact=True).click()
+            await picker.get_by_role("button",name="添加照片 4",exact=True).wait_for()
+            self.assertEqual(photo_queries[-1].get("month"),["2026-09"])
+            self.assertEqual(photo_queries[-1].get("cursor"),["sept-next"])
+            self.assertEqual(await picker.get_by_role("button",name="添加照片 9",exact=True).count(),0)
+            await page.screenshot(path=str(artifact/f"month-picker-{width}.png"))
+            await picker.get_by_role("combobox",name="找照片的范围",exact=True).select_option("10")
+            await months.locator('option[value="2025-08"]').wait_for(state="attached")
+            await months.select_option("2025-08")
+            await picker.get_by_role("button",name="添加照片 3",exact=True).wait_for()
+            self.assertEqual(photo_queries[-1].get("album_id"),["10"])
+            self.assertEqual(photo_queries[-1].get("month"),["2025-08"])
             await picker.get_by_role("textbox",name="搜索创作照片",exact=True).fill("球场")
             await picker.get_by_role("button",name="搜索",exact=True).click()
             await picker.get_by_role("button",name="添加照片 3",exact=True).click()
+            added=picker.get_by_role("button",name="添加照片 3",exact=True)
+            self.assertTrue(await added.is_disabled())
+            self.assertEqual(await added.evaluate("el => getComputedStyle(el).opacity"),"0.5")
+            self.assertEqual(await months.input_value(),"")
             await picker.get_by_role("button",name="当前照片 · 3",exact=True).click()
             await picker.get_by_role("button",name="旋转照片 3",exact=True).click()
             self.assertIn("rotate(90deg)",await picker.get_by_role("img",name="创作照片 3",exact=True).get_attribute("style"))
+            await picker.get_by_role("button",name="从作品移除照片 2",exact=True).click()
+            await picker.get_by_role("button",name="找照片",exact=True).click()
+            self.assertTrue(await added.is_disabled())
+            removed=picker.get_by_role("button",name="添加照片 2",exact=True)
+            self.assertFalse(await removed.is_disabled())
+            await removed.click()
+            self.assertTrue(await removed.is_disabled())
+            await picker.get_by_role("button",name="当前照片 · 3",exact=True).click()
             await picker.get_by_role("button",name="从作品移除照片 2",exact=True).click()
             await picker.get_by_role("button",name="保存选图",exact=True).click()
             await picker.wait_for(state="detached")
@@ -403,6 +458,44 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
             await page.reload()
             await page.get_by_role("alert").get_by_text(failure_text,exact=True).wait_for()
             self.assertEqual(await page.locator('iframe[title="作品沙箱预览"]').count(),1)
+            await page.get_by_role("button",name="还原作品",exact=True).click()
+            reset_dialog=page.get_by_role("dialog",name="还原作品",exact=True)
+            await reset_dialog.get_by_text("清空后无法恢复这些内容",exact=False).wait_for()
+            await reset_dialog.get_by_role("button",name="取消",exact=True).click()
+            await reset_dialog.wait_for(state="detached")
+            self.assertEqual(resets,[])
+            await page.get_by_role("button",name="还原作品",exact=True).click()
+            await reset_dialog.get_by_role("button",name="确认还原",exact=True).click()
+            await reset_dialog.get_by_role("alert").get_by_text("还原暂时失败，请重试",exact=True).wait_for()
+            self.assertEqual(current,"v1")
+            self.assertGreater(len(messages),0)
+            await reset_dialog.get_by_role("button",name="确认还原",exact=True).click()
+            await reset_dialog.wait_for(state="detached")
+            await page.get_by_text("想用这组照片讲一个什么样的故事",exact=False).wait_for()
+            self.assertEqual(work_ids,[1,3]);self.assertEqual(work_selected,[1,3]);self.assertEqual(work_rotations,{"3":90})
+            self.assertEqual(detail()["state"],{"photo_ids":[1,3],"selected_photo_ids":[1,3],"photo_edits":{"3":90},"photo_revision":photo_revision})
+            self.assertEqual(await composer.input_value(),"")
+            self.assertEqual(await page.locator("iframe, .proposal-card").count(),0)
+            self.assertEqual(await page.get_by_role("button",name="版本记录",exact=True).count(),0)
+            self.assertEqual(await page.get_by_role("alert").count(),0)
+            self.assertEqual(await page.get_by_role("button",name="还原作品",exact=True).count(),0)
+            await page.reload()
+            await page.get_by_text("想用这组照片讲一个什么样的故事",exact=False).wait_for()
+            await page.get_by_role("button",name="照片 · 2",exact=True).click()
+            await photo_dialog.get_by_role("button",name="搜索、增删与旋转",exact=True).click()
+            await picker.get_by_role("img",name="创作照片 3",exact=True).wait_for()
+            self.assertIn("rotate(90deg)",await picker.get_by_role("img",name="创作照片 3",exact=True).get_attribute("style"))
+            self.assertTrue(await picker.get_by_label("用于成品 3",exact=True).is_checked())
+            await picker.get_by_role("button",name="找照片",exact=True).click()
+            await picker.get_by_role("button",name="添加照片 3",exact=True).wait_for()
+            self.assertTrue(await picker.get_by_role("button",name="添加照片 3",exact=True).is_disabled())
+            await picker.get_by_role("button",name="取消",exact=True).click()
+            await picker.wait_for(state="detached")
+            self.assertEqual(submitted,[])
+            await composer.fill("重新创作，做一个生活画廊")
+            await composer.press("Enter")
+            await page.get_by_text("了解了，我记下了你刚才的回答。",exact=False).wait_for()
+            self.assertEqual(submitted[-1],{"action":"answer","message":"重新创作，做一个生活画廊","base_version":"","photo_revision":photo_revision})
             if width<768 or touch:
                 await page.goto("http://creation-ui.test/#/creations")
                 await page.get_by_role("button",name="选择相册",exact=True).wait_for()

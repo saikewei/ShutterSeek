@@ -59,3 +59,6 @@ export function previewURL(id: string, version: string): string {
 export async function updateCreationPhotos(id: string, input: PhotoSelection & { base_version: string; base_revision: number; proposal?: Proposal }) {
   await api.patch('/creations/' + encodeURIComponent(id) + '/photos', input)
 }
+export async function resetCreation(id: string, input: { base_version: string; base_revision: number }) {
+  await api.post('/creations/' + encodeURIComponent(id) + '/reset', input)
+}

@@ -84,6 +84,19 @@ func (h *Handler) UpdateCreationPhotos(c *gin.Context) {
 	}
 	c.Status(http.StatusNoContent)
 }
+func (h *Handler) ResetCreation(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 4<<10)
+	var req service.CreationResetRequest
+	if c.ShouldBindJSON(&req) != nil {
+		creationError(c, service.ErrCreationInvalid)
+		return
+	}
+	if err := h.CreationSvc.Reset(c.Request.Context(), creationUser(c), c.Param("creation"), req); err != nil {
+		creationError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
 func (h *Handler) CreationPhotoContent(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("photo"), 10, 64)
 	if err != nil || id <= 0 {

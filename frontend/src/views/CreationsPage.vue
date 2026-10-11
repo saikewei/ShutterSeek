@@ -2,14 +2,15 @@
   <div class="creation-page" :class="{ 'creation-editor': !!workId }">
     <header class="flex items-center gap-3 flex-wrap">
       <RouterLink v-if="workId" to="/creations" class="btn-ghost px-2.5 py-1.5 text-xs" aria-label="返回作品列表">← 作品</RouterLink>
-      <div class="flex-1 min-w-0">
+      <div class="flex-1 min-w-40">
         <h1 class="font-display text-xl truncate">{{ detail?.creation.title || 'AI 网页创作' }}</h1>
         <p v-if="detail" class="text-xs text-ink-3 mt-1">{{ detail.creation.current_version ? '继续对话，让作品更贴近你的想法' : '聊聊照片背后的故事，再一起确认方案' }}</p>
       </div>
-      <template v-if="detail">
+      <div v-if="detail" class="creation-actions flex shrink-0 items-center gap-1 sm:gap-2 ml-auto">
         <button class="btn-ghost px-3 py-2 text-xs" @click="photosOpen = true">照片 · {{ detail.photo_ids.length }}</button>
         <button v-if="detail.versions.length" class="btn-ghost px-3 py-2 text-xs" @click="versionsOpen = true">版本记录</button>
-      </template>
+        <button v-if="hasContext" class="btn-ghost px-3 py-2 text-xs text-ink-3" :disabled="busy || photoSaving || !!activeRun" @click="resetError = ''; resetOpen = true">还原作品</button>
+      </div>
     </header>
     <p v-if="error || runFailure" role="alert" class="rounded-xl border border-danger-ink/30 bg-raised p-3 text-sm text-danger-ink">{{ error || runFailure }}</p>
     <p v-if="!creationsEnabled" class="text-ink-2 text-sm">AI 创作尚未启用。</p>
@@ -113,6 +114,17 @@
         </section>
       </div>
 
+      <AppModal :open="resetOpen" title="还原作品" @close="closeReset">
+        <p class="text-sm text-ink-2 leading-relaxed">回到只选好照片的起点，重新开始聊天创作。</p>
+        <p class="text-xs text-ink-3 mt-3 leading-relaxed">保留当前照片、用于成品的勾选和旋转。清空对话、图片描述、补充事实、方案、全部历史版本及检查记录；清空后无法恢复这些内容。</p>
+        <p v-if="resetError" role="alert" class="text-sm text-danger-ink mt-3">{{ resetError }}</p>
+        <template #footer>
+          <div class="flex justify-end gap-2">
+            <button class="btn-ghost px-4 py-2 text-sm" :disabled="busy" @click="closeReset">取消</button>
+            <button class="btn-danger px-4 py-2 text-sm" :disabled="busy || !!activeRun" @click="resetWork">{{ busy ? '还原中…' : '确认还原' }}</button>
+          </div>
+        </template>
+      </AppModal>
       <AppModal :open="reportOpen" title="效果检查" @close="reportOpen = false">
         <p class="text-xs text-ink-3 mb-3">{{ report.rounds }} 轮检查 · {{ report.issues?.length || 0 }} 项提示</p>
         <div class="space-y-3">
@@ -198,7 +210,7 @@ import { creationsEnabled } from '@/stores/creations'
 import { isMobileShell } from '@/stores/device'
 import { isScrollHostNearEnd, scrollHostToEnd } from '@/lib/scrollHost'
 import { snapshotProposal, assistantText, displayChinese, needsChinese, reportSummary, viewportText, regionText, type CreationProgress as Progress } from '@/lib/creationChat'
-import { listCreations, getCreation, startCreationRun, cancelCreationRun, restoreCreationVersion, previewURL, parseReport, type Creation, type WorkDetail, type Proposal, type PhotoSelection, updateCreationPhotos, createCreation } from '@/api/creations'
+import { listCreations, getCreation, startCreationRun, cancelCreationRun, restoreCreationVersion, previewURL, parseReport, type Creation, type WorkDetail, type Proposal, type PhotoSelection, updateCreationPhotos, createCreation, resetCreation } from '@/api/creations'
 
 const route = useRoute()
 const router = useRouter()
@@ -217,6 +229,7 @@ const photoPanel = ref('选图')
 const photoPickerOpen = ref(false), photoPickerAlbum = ref<number>(), photoSaving = ref(false), photoSaveError = ref('')
 const editOpen = ref(false)
 const versionsOpen = ref(false)
+const resetOpen = ref(false), resetError = ref('')
 const chatScroll = ref<HTMLElement>()
 const followChat = ref(true)
 const reportOpen = ref(false)
@@ -226,6 +239,7 @@ const reconnecting = ref(false)
 let source: EventSource | null = null
 let subscribedRun = ''
 const activeRun = computed(() => detail.value?.runs.find(r => r.status === 'queued' || r.status === 'running'))
+const hasContext = computed(() => !!detail.value && !!(detail.value.messages.length || detail.value.runs.length || detail.value.versions.length || detail.value.state.proposal || detail.value.state.observations?.length || detail.value.state.user_facts?.length))
 const currentQuestion = computed(() => detail.value?.creation.current_version ? '' : detail.value?.state.questions?.[0] || '')
 const selectedVersion = computed(() => detail.value?.versions.find(v => v.id === version.value))
 const usedIDs = computed(() => {
@@ -346,6 +360,30 @@ async function restore() {
   busy.value = true; error.value = ''
   try { await restoreCreationVersion(workId.value, version.value, detail.value.creation.current_version); versionsOpen.value = false; await load() } catch (e) { failure(e) } finally { busy.value = false }
 }
+function closeReset() { if (!busy.value) resetOpen.value = false }
+async function resetWork() {
+  if (!detail.value || busy.value || photoSaving.value || activeRun.value) return
+  const previous = detail.value, requestedId = workId.value
+  const revision = previous.state.photo_revision || 0
+  busy.value = true; resetError.value = ''
+  try {
+    await resetCreation(requestedId, { base_version: previous.creation.current_version, base_revision: revision })
+    if (requestedId !== workId.value) return
+    closeStream()
+    detail.value = {
+      creation: { ...previous.creation, current_version: '' }, photo_ids: previous.photo_ids,
+      state: { photo_ids: previous.photo_ids, selected_photo_ids: previous.state.selected_photo_ids || previous.state.proposal?.used_photo_ids || previous.photo_ids, photo_edits: previous.state.photo_edits || {}, photo_revision: revision + 1 },
+      messages: [], runs: [], versions: [],
+    }
+    proposal.value = null; message.value = ''; version.value = ''; error.value = ''
+    progress.value = { stage: 'queued' }; followChat.value = true; panel.value = '对话'
+    resetOpen.value = false; reportOpen.value = false; photosOpen.value = false; editOpen.value = false; versionsOpen.value = false
+    await load()
+  } catch (e) {
+    const value = e as { response?: { data?: { error?: string } } }
+    resetError.value = displayChinese(value.response?.data?.error, '还原失败，请稍后重试。')
+  } finally { busy.value = false }
+}
 function openPhotoPicker() { photosOpen.value = false; photoPickerAlbum.value = undefined; photoSaveError.value = ''; photoPickerOpen.value = true }
 function browseAlbum(id: number) { albumPickerOpen.value = false; photoPickerAlbum.value = id; photoSaveError.value = ''; photoPickerOpen.value = true }
 async function savePhotos(selection: PhotoSelection) {
@@ -368,7 +406,7 @@ async function savePhotos(selection: PhotoSelection) {
 function onAlbumCreated(id: string) { albumPickerOpen.value = false; void router.push('/creations/' + id) }
 watch([workId, creationsEnabled], () => {
   closeStream(); detail.value = null; proposal.value = null; version.value = ''; message.value = ''; error.value = ''
-  progress.value = { stage: 'queued' }; followChat.value = true; reportOpen.value = false; panel.value = '对话'; photosOpen.value = false; editOpen.value = false; versionsOpen.value = false; photoPickerOpen.value = false
+  progress.value = { stage: 'queued' }; followChat.value = true; reportOpen.value = false; panel.value = '对话'; photosOpen.value = false; editOpen.value = false; versionsOpen.value = false; photoPickerOpen.value = false; resetOpen.value = false; resetError.value = ''
   void load()
 }, { immediate: true })
 watch(panel, () => { if (panel.value === '对话') void revealComposer() })
