@@ -101,11 +101,12 @@ go run ./tools/embimport/
 
 ### AI 网页创作（默认关闭）
 
-管理员可从相册或选图进入，单个作品 1–200 张照片。先回答或跳过最多三个问题，再确认结构、风格和选图；
+管理员和访客可从相册或选图进入，访客仅能使用有权访问的公开相册照片。单个作品 1–200 张照片，通过聊天逐步完善想法，再确认结构、风格和选图；
 生成与每次修改都在隔离浏览器中执行桌面、手机截图审查。首次审查后最多修复两轮；
 未通过时仍保存候选版本，页面显示问题、截图和实际检查范围。
 
 数据库迁移见 [scripts/sql/creations-v1.sql](scripts/sql/creations-v1.sql)，必须由用户手动执行。
+分享还需手动执行 [scripts/sql/creations-sharing.sql](scripts/sql/creations-sharing.sql)，作品仅允许登录后只读访问，访客仍需照片访问权限。
 应用不会自动建表。迁移包含 photo_user 的表和事件序列授权；已执行旧版 SQL 的环境需另外手动执行 [creations-v1-grants.sql](scripts/sql/creations-v1-grants.sql)。生产数据库与文件仍遵循 AGENTS.md 的只读约定。
 
 开发环境在开发容器中使用：
@@ -127,14 +128,19 @@ python3 -m venv /tmp/shutterseek-agent-venv
 | SHUTTERSEEK_CREATIONS_MODEL_KEY | 必需；模型密钥 |
 | SHUTTERSEEK_CREATIONS_MODEL | deepseek-flash |
 | SHUTTERSEEK_CREATIONS_MODEL_URL | https://api.deepseek.com |
-| COMPOSE_PROFILES | 启用生产第三容器时设为 creations |
+| COMPOSE_PROFILES | 手动运行 Compose 时设为 creations；CI 根据创作开关自动启用 |
+| IMAGE_TAG | 手动默认 latest；CI 使用完整提交 SHA，三个服务版本一致 |
 
 开发启动 Agent：`cd agent && /tmp/shutterseek-agent-venv/bin/python server.py`。
 启用 Go 前，先检查手动迁移和模型配置；开发与生产共库，不要为测试创建生产作品。
 真实模型离线验收可运行 `python agent/tests/live_review.py`，不连接数据库，不创建作品；
 它会产生受控模型调用费用，报告与截图存放在被忽略的 tmp/ 下。
 
-部署仍由 main 的 CI 完成，新增独立 Agent 镜像缓存和 ACR 同步。不要手动改变 NAS 线上容器。
+部署由 main 的 CI 完成：Go、前端、Python 与浏览器测试 → 三镜像独立缓存构建 → 容器内运行时验收 → GHCR 与可选 ACR 发布 → 上传该提交的冻结 Compose 配置 → 拉取同一 SHA 的镜像 → 等待所有启用服务健康。
+Agent 镜像以生产非 root 用户、禁网及相同资源限制运行真实浏览器截图验收；健康检查验证 Agent gRPC 及 Go 鉴权回调。
+生产配置保存在 NAS 的 .env；启用创作前须配置 SHUTTERSEEK_CREATIONS_ENABLED=true 与模型密钥，并手动完成 SQL。
+CI 缺少模型配置时会在拉取和重建之前终止。所有生产部署串行，失败的健康检查会使流水线失败，不会误报部署成功。
+发布的 Compose 和脚本保存在 tmp/releases/<SHA>/，不改动开发检出的分支。不要手动改变 NAS 线上容器。
 Agent 无数据库凭据、无照片目录挂载、无应用 Cookie；模型并发 5，浏览器公平队列并发 1。
 运行凭证只存 SHA-256 摘要，绑定运行、用户、作品与最多 200 张照片，31 分钟失效；
 重启会重新发放凭证。检查点和 pending writes 由 Go 存储，仅含文本和图片/截图引用。

@@ -58,8 +58,8 @@ PostgreSQL + pgvector（1024 维）存元数据与向量；FastAPI + ONNX Runtim
     `remote set-url origin ssh://git@ssh.github.com:443/saikewei/ShutterSeek.git`、`git push origin <branch>`，收尾删临时文件。
     容器内 `git fetch` 不可用，远端状态用 `gh api /repos/saikewei/ShutterSeek/git/ref/heads/<branch>` 核对，
     必要时 `git update-ref` 同步本地跟踪引用。
-- CI（`.github/workflows/deploy.yml`）：push `main` → 单测 → 构建两镜像（GHA 层缓存）→ 推 GHCR + 阿里云 ACR →
-  Tailscale → NAS 上登录 ACR 并 `docker compose pull && up -d`，整条约 2–3 分钟。
+- CI（`.github/workflows/deploy.yml`）：push `main` → Go / 前端 / Python 与浏览器验收 → 构建三镜像（GHA 独立层缓存）→ 镜像内运行时验收 → 推 GHCR + 阿里云 ACR →
+  Tailscale → 上传该 SHA 的冻结部署配置 → NAS 拉取同一 SHA 的镜像并等待全部启用服务健康；创作开启时自动部署 Agent。
 
 ## 4. 验收命令（改完必须跑）
 

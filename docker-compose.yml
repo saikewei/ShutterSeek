@@ -1,11 +1,7 @@
 services:
   shutterseek:
-    # 镜像仓库前缀可切换：默认 GHCR（国内实测只有 ~0.04MB/s）。
-    # 配好阿里云 ACR 后在 .env 里设 IMAGE_REGISTRY=<域名>/<命名空间>，
-    # 域名以 ACR 控制台「访问凭证」页给出的 docker login 命令为准：
-    #   新个人版实例（2024-09-09 起）形如 crpi-xxxx.cn-hangzhou.personal.cr.aliyuncs.com
-    #   旧个人版实例形如 registry.cn-hangzhou.aliyuncs.com
-    image: ${IMAGE_REGISTRY:-ghcr.io/saikewei}/shutterseek:latest
+    # CI supplies an immutable revision tag and the selected registry.
+    image: ${IMAGE_REGISTRY:-ghcr.io/saikewei}/shutterseek:${IMAGE_TAG:-latest}
     container_name: shutterseek
     restart: unless-stopped
     ports:
@@ -35,19 +31,27 @@ services:
       SHUTTERSEEK_CERT_DIR: /certs
       ALIYUN_ACCESS_KEY_ID: ${ALIYUN_ACCESS_KEY_ID:-}
       ALIYUN_ACCESS_KEY_SECRET: ${ALIYUN_ACCESS_KEY_SECRET:-}
-      # 文字检索（embedding sidecar）
+      # Creation workspace and text embedding sidecar
       SHUTTERSEEK_CREATIONS_ENABLED: ${SHUTTERSEEK_CREATIONS_ENABLED:-false}
       SHUTTERSEEK_AGENT_ADDRESS: agent:50051
       SHUTTERSEEK_CREATIONS_RPC_LISTEN: 0.0.0.0:8081
       SHUTTERSEEK_EMBED_URL: ${SHUTTERSEEK_EMBED_URL:-http://embedding:8000}
       SHUTTERSEEK_EMBED_TOKEN: ${EMBED_TOKEN}
       SHUTTERSEEK_EMBED_TIMEOUT_MS: ${SHUTTERSEEK_EMBED_TIMEOUT_MS:-10000}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'if [ "$$SHUTTERSEEK_TLS_ENABLED" = true ]; then wget --no-check-certificate -q -O /dev/null "https://127.0.0.1:$$SHUTTERSEEK_TLS_PORT/api/health"; else wget -q -O /dev/null http://127.0.0.1:8080/api/health; fi'
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
     networks:
       - default
       - shutterseek-internal
 
   embedding:
-    image: ${IMAGE_REGISTRY:-ghcr.io/saikewei}/shutterseek-embedding:latest
+    image: ${IMAGE_REGISTRY:-ghcr.io/saikewei}/shutterseek-embedding:${IMAGE_TAG:-latest}
     container_name: shutterseek-embedding
     restart: unless-stopped
     volumes:
@@ -69,7 +73,8 @@ services:
       - shutterseek-internal
 
   agent:
-    image: ${IMAGE_REGISTRY:-ghcr.io/saikewei}/shutterseek-agent:latest
+    image: ${IMAGE_REGISTRY:-ghcr.io/saikewei}/shutterseek-agent:${IMAGE_TAG:-latest}
+    container_name: shutterseek-agent
     profiles: ["creations"]
     restart: unless-stopped
     environment:
@@ -77,6 +82,15 @@ services:
       SHUTTERSEEK_CREATIONS_MODEL: ${SHUTTERSEEK_CREATIONS_MODEL:-deepseek-flash}
       SHUTTERSEEK_CREATIONS_MODEL_URL: ${SHUTTERSEEK_CREATIONS_MODEL_URL:-https://api.deepseek.com}
       SHUTTERSEEK_CREATIONS_MODEL_KEY: ${SHUTTERSEEK_CREATIONS_MODEL_KEY:-}
+    depends_on:
+      shutterseek:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "health_check.py"]
+      interval: 15s
+      timeout: 10s
+      start_period: 30s
+      retries: 5
     mem_limit: 1536m
     cpus: "2.0"
     shm_size: 256m
