@@ -29,10 +29,12 @@ with Path(os.environ["FAKE_LOG"]).open("a") as output:
     output.write(json.dumps({"args": args, "tag": os.environ.get("IMAGE_TAG")}) + "\\n")
 if "--help" in args:
     print("--wait-timeout")
-elif "--environment" in args:
-    print("SHUTTERSEEK_CREATIONS_ENABLED=" + os.environ["FAKE_ENABLED"])
+elif "config" in args and "--quiet" not in args:
+    print('services:\\n  shutterseek:\\n    environment:\\n      SHUTTERSEEK_CREATIONS_ENABLED: "' + os.environ["FAKE_ENABLED"] + '"')
     if os.environ["FAKE_KEY"] == "true":
-        print("SHUTTERSEEK_CREATIONS_MODEL_KEY=test-only-model-key")
+        print("      SHUTTERSEEK_CREATIONS_MODEL_KEY: test-only-model-key")
+    else:
+        print('      SHUTTERSEEK_CREATIONS_MODEL_KEY: ""')
 elif "up" in args and os.environ["FAKE_FAILURE"] == "true":
     sys.exit(42)
 """)

@@ -41,7 +41,7 @@ services:
     healthcheck:
       test:
         - CMD-SHELL
-        - 'if [ "$$SHUTTERSEEK_TLS_ENABLED" = true ]; then wget --no-check-certificate -q -O /dev/null "https://127.0.0.1:$$SHUTTERSEEK_TLS_PORT/api/health"; else wget -q -O /dev/null http://127.0.0.1:8080/api/health; fi'
+        - 'if [ "$$SHUTTERSEEK_TLS_ENABLED" = true ]; then curl --fail --silent --show-error --noproxy "*" --output /dev/null --resolve "$$SHUTTERSEEK_TLS_DOMAIN:$$SHUTTERSEEK_TLS_PORT:127.0.0.1" "https://$$SHUTTERSEEK_TLS_DOMAIN:$$SHUTTERSEEK_TLS_PORT/api/health"; else curl --fail --silent --show-error --output /dev/null http://127.0.0.1:8080/api/health; fi'
       interval: 15s
       timeout: 5s
       start_period: 30s
