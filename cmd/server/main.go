@@ -103,6 +103,22 @@ func main() {
 		SearchSvc: searchSvc, UploadSvc: uploadSvc, PhotoSvc: photoSvc,
 		StatsSvc: statsSvc, ThumbnailsDir: cfg.Thumbnail.OutputDir,
 	}
+	if os.Getenv("SHUTTERSEEK_CREATIONS_ENABLED") == "true" {
+		address := os.Getenv("SHUTTERSEEK_AGENT_ADDRESS")
+		if address == "" {
+			address = "127.0.0.1:50051"
+		}
+		listen := os.Getenv("SHUTTERSEEK_CREATIONS_RPC_LISTEN")
+		if listen == "" {
+			listen = "127.0.0.1:8081"
+		}
+		creationSvc, err := service.StartCreationService(gormDB, cfg.Thumbnail.OutputDir, address, listen)
+		if err != nil {
+			log.Fatalf("creation service: %v", err)
+		}
+		h.CreationSvc = creationSvc
+		defer creationSvc.Close()
+	}
 	r := router.Setup(h, cfg.Thumbnail.OutputDir, cfg.Model.Dir)
 
 	// ── Server (HTTP or HTTPS via Let's Encrypt DNS-01) ──

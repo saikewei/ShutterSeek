@@ -41,6 +41,31 @@ func Setup(h *handler.Handler, thumbDir, modelsDir string) *gin.Engine {
 		v1.GET("/auth/me", h.Me)
 		v1.POST("/auth/logout", h.Logout)
 
+		v1.GET("/creations/capabilities", h.CreationCapabilities)
+		creations := v1.Group("/creations")
+		creations.Use(h.CreationEnabled)
+		creations.GET("/shared/:share", h.GetSharedCreation)
+		creations.GET("/shared/:share/preview", h.SharedCreationPreview)
+		creations.GET("/:creation/share", h.GetCreationShare)
+		creations.POST("/:creation/share", h.EnableCreationShare)
+		creations.DELETE("/:creation/share", h.RevokeCreationShare)
+		creations.GET("", h.ListCreations)
+		creations.POST("", h.CreateCreation)
+		creations.GET("/:creation", h.GetCreation)
+		creations.PATCH("/:creation", h.RenameCreation)
+		creations.PATCH("/:creation/photos", h.UpdateCreationPhotos)
+		creations.POST("/:creation/reset", h.ResetCreation)
+		creations.GET("/:creation/photos/:photo", h.CreationPhotoContent)
+		creations.GET("/:creation/messages", h.CreationMessages)
+		creations.GET("/:creation/versions", h.CreationVersions)
+		creations.POST("/:creation/runs", h.StartCreationRun)
+		creations.GET("/:creation/runs/:run", h.GetCreationRun)
+		creations.POST("/:creation/runs/:run/cancel", h.CancelCreationRun)
+		creations.GET("/:creation/runs/:run/events", h.CreationEvents)
+		creations.POST("/:creation/versions/:version/restore", h.RestoreCreationVersion)
+		creations.GET("/:creation/preview", h.CreationPreview)
+		creations.GET("/:creation/screenshots/:asset", h.CreationScreenshot)
+
 		// Admin only
 		admin := v1.Group("")
 		admin.Use(middleware.AdminOnly())
@@ -66,7 +91,7 @@ func Setup(h *handler.Handler, thumbDir, modelsDir string) *gin.Engine {
 	}
 	r.GET("/api/health", h.Health)
 
-	// 客户端推理模型（fp16 ONNX，1.2GB，长缓存）
+	// Client inference model with a long cache lifetime.
 	r.GET("/models/vision_encoder/model.onnx", func(c *gin.Context) {
 		p := filepath.Join(modelsDir, "vision_encoder", "model.onnx")
 		if _, err := os.Stat(p); err != nil {

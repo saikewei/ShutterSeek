@@ -2,15 +2,17 @@
   <!-- Auth / invite pages render standalone on every device -->
   <router-view v-if="chromeless" />
 
-  <!-- Mobile shell.
-       Scrolling happens on the document here, not in an inner container: iOS
-       Safari only collapses its bottom toolbar in response to document-level
-       scrolling. The top bar is sticky and the tab bar is fixed, so neither of
-       them moves with the rubber-band the way a flow-layout footer used to. -->
-  <div v-else-if="isMobileShell" class="min-h-svh bg-canvas text-ink">
-    <MobileTopBar ref="topBar" />
+  <!-- Mobile browsing uses document scrolling for iOS browser chrome.
+       Creation editors keep the shell fixed and scroll their transcript.
+       The top bar is sticky and the tab bar is fixed. -->
+  <div v-else-if="isMobileShell" class="min-h-svh bg-canvas text-ink"
+    :class="{ 'creation-mobile-shell': creationWorkspaceActive }"
+    :style="creationWorkspaceActive ? { height: editorViewport.height + 'px', top: editorViewport.top + 'px' } : undefined"
+    :data-editor-keyboard="creationWorkspaceActive && editorKeyboardOpen ? 'true' : undefined">
+    <MobileTopBar v-show="!creationWorkspaceActive || !editorKeyboardOpen" ref="topBar" />
 
-    <main :style="{ paddingBottom: 'calc(var(--ss-tabbar-h) + env(safe-area-inset-bottom))' }">
+    <main :class="{ 'creation-mobile-main': creationWorkspaceActive }"
+      :style="{ paddingBottom: creationWorkspaceActive && editorKeyboardOpen ? '0px' : 'calc(var(--ss-tabbar-h) + env(safe-area-inset-bottom))' }">
       <router-view v-slot="{ Component }">
         <Transition name="page" mode="out-in">
           <component :is="Component" />
@@ -18,7 +20,7 @@
       </router-view>
     </main>
 
-    <MobileTabBar />
+    <MobileTabBar v-if="!creationWorkspaceActive || !editorKeyboardOpen" />
   </div>
 
   <!-- Desktop shell -->
@@ -66,6 +68,16 @@
           <span v-if="$route.path === '/search'" class="absolute left-0 top-1.5 bottom-1.5 w-[2.5px] rounded-full bg-accent"></span>
           搜索
         </router-link>
+        <router-link
+          v-if="creationsEnabled"
+          to="/creations"
+          class="relative block px-4 py-2 text-sm transition-colors duration-150 rounded-r-md"
+          :class="creationsActive ? 'text-ink font-semibold bg-accent-soft' : 'text-ink-2 hover:text-ink hover:bg-white/5'"
+          :aria-current="creationsActive ? 'page' : undefined"
+        >
+          <span v-if="creationsActive" class="absolute left-0 top-1.5 bottom-1.5 w-[2.5px] rounded-full bg-accent" aria-hidden="true"></span>
+          AI 创作
+        </router-link>
         <template v-if="isAdmin">
           <div class="border-t border-line my-2 mx-4"></div>
           <router-link
@@ -101,14 +113,15 @@
     </nav>
 
     <!-- Main content -->
-    <main data-scroll-host class="flex-1 overflow-auto overscroll-none">
+    <main data-scroll-host class="flex-1 min-w-0 min-h-0 overscroll-none" :class="creationWorkspaceActive ? 'overflow-hidden' : 'overflow-auto'">
       <router-view />
     </main>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, provide, ref } from 'vue'
+import { creationsEnabled } from "@/stores/creations"
+import { computed, onMounted, onUnmounted, provide, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { authState, isAdmin, clearUser } from '@/stores/auth'
 import { isMobileShell } from '@/stores/device'
@@ -119,6 +132,55 @@ import MobileTabBar from '@/components/mobile/MobileTabBar.vue'
 
 const route = useRoute()
 const router = useRouter()
+const creationsActive = computed(() => route.path === '/creations' || route.path.startsWith('/creations/'))
+const creationWorkspaceActive = computed(() => creationsActive.value && !!route.params.id)
+const editorViewport = ref({ height: window.innerHeight, top: 0 })
+const editorInputFocused = ref(false)
+const editorFocusHeight = ref(window.innerHeight)
+const editorKeyboardResized = ref(false)
+// Some browsers resize both viewports for the keyboard, making a height ratio insufficient.
+const editorKeyboardOpen = computed(() =>
+  editorInputFocused.value && (!editorKeyboardResized.value || editorViewport.value.height < editorFocusHeight.value * 0.8) ||
+  editorViewport.value.height < window.innerHeight * 0.8
+)
+function updateEditorFocus() {
+  const element = document.activeElement
+  const focused = element instanceof HTMLElement && (
+    element.isContentEditable ||
+    element instanceof HTMLTextAreaElement && !element.disabled && !element.readOnly ||
+    element instanceof HTMLInputElement && !element.disabled && !element.readOnly &&
+      ['text', 'search', 'email', 'url', 'tel', 'number', 'password'].includes(element.type)
+  )
+  if (focused && !editorInputFocused.value) {
+    editorFocusHeight.value = Math.max(window.innerHeight, editorViewport.value.height)
+    editorKeyboardResized.value = false
+  }
+  editorInputFocused.value = focused
+}
+function onEditorFocusOut() { queueMicrotask(updateEditorFocus) }
+function updateEditorViewport() {
+  const viewport = window.visualViewport
+  editorViewport.value = { height: viewport?.height || window.innerHeight, top: viewport?.offsetTop || 0 }
+  if (editorInputFocused.value && editorViewport.value.height < editorFocusHeight.value * 0.8) {
+    editorKeyboardResized.value = true
+  }
+}
+onMounted(() => {
+  updateEditorViewport()
+  document.addEventListener('focusin', updateEditorFocus)
+  document.addEventListener('focusout', onEditorFocusOut)
+  window.addEventListener('resize', updateEditorViewport)
+  window.visualViewport?.addEventListener('resize', updateEditorViewport)
+  window.visualViewport?.addEventListener('scroll', updateEditorViewport)
+})
+onUnmounted(() => {
+  document.removeEventListener('focusin', updateEditorFocus)
+  document.removeEventListener('focusout', onEditorFocusOut)
+  window.removeEventListener('resize', updateEditorViewport)
+  window.visualViewport?.removeEventListener('resize', updateEditorViewport)
+  window.visualViewport?.removeEventListener('scroll', updateEditorViewport)
+})
+
 
 // Login / invite pages render without any app chrome.
 const chromeless = computed(() => !!route.meta.chromeless)
@@ -144,3 +206,12 @@ async function doLogout() {
   router.push('/login')
 }
 </script>
+
+<style>
+/* Editors keep panels fixed; browsing routes retain document scrolling. */
+.creation-mobile-shell { position: fixed; inset-inline: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.creation-mobile-main { flex: 1; min-height: 0; overflow: hidden; }
+.creation-mobile-shell > header { flex-shrink: 0; }
+.creation-mobile-shell[data-editor-keyboard="true"] .creation-page > header,
+.creation-mobile-shell[data-editor-keyboard="true"] .panel-switch { display: none; }
+</style>

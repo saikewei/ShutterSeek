@@ -29,7 +29,7 @@
           >月份</button>
 
           <button
-            v-if="isAdmin && !selectMode"
+            v-if="(isAdmin || creationsEnabled) && !selectMode"
             @click="enterSelectMode"
             class="shrink-0 px-3.5 py-1.5 text-xs rounded-full bg-surface text-ink-2 hover:bg-line-strong hover:text-ink transition-colors"
           >选择</button>
@@ -46,7 +46,7 @@
               <span v-if="rangeLoading"> · 选择中...</span>
             </span>
             <button
-              v-if="rangeFn"
+              v-if="isAdmin && rangeFn"
               @click="rangeMode = !rangeMode"
               class="shrink-0 px-3.5 py-1.5 text-xs rounded-full transition-colors"
               :class="rangeMode ? 'bg-accent text-[#1C1208] font-semibold' : 'bg-surface text-ink-2 hover:text-ink'"
@@ -71,7 +71,10 @@
         </div>
       </div>
 
-      <div v-if="selectMode" class="flex items-center gap-1.5 px-2 pb-1.5">
+      <div v-if="selectMode" class="flex flex-wrap items-center gap-1.5 px-2 pb-1.5">
+        <button v-if="creationsEnabled" @click="openCreationName" :disabled="creatingWork || selected.size === 0 || selected.size > 200" class="btn-ghost px-3 py-1.5 text-xs">
+          {{ selected.size > 200 ? '创作最多 200 张' : creatingWork ? '创建中…' : 'AI 创作' }}
+        </button>
         <button v-if="isAdmin && removeFromAlbumId !== undefined" @click="confirmRemoveOpen = true" class="btn-danger-soft px-3 py-1.5 text-xs">
           从相册删除
         </button>
@@ -231,6 +234,8 @@
     <!-- Date scrubber (desktop only; mobile uses the month-picker modal) -->
     <DateScrubber v-if="!isMobileShell && !singlePage" :dates="datePoints" :active-month="activeMonth" @jump="jumpToDate" />
 
+    <CreationNameDialog :open="creationNameOpen" title="给作品命名" submit-label="创建作品" :busy="creatingWork" :error="creationError" @close="creationNameOpen = false" @save="createFromSelection" />
+
     <!-- Album picker dialog -->
     <AppModal :open="albumPickerOpen" title="添加到相册" @close="albumPickerOpen = false">
       <div class="space-y-1">
@@ -267,6 +272,29 @@
 </template>
 
 <script setup lang="ts">
+import { useRouter } from 'vue-router'
+import { createCreation } from '@/api/creations'
+import CreationNameDialog from '@/components/CreationNameDialog.vue'
+import { creationsEnabled } from '@/stores/creations'
+const creationRouter = useRouter()
+const creatingWork = ref(false), creationNameOpen = ref(false), creationError = ref('')
+function openCreationName() {
+  if (!selected.value.size || selected.value.size > 200 || creatingWork.value) return
+  creationError.value = ''; creationNameOpen.value = true
+}
+async function createFromSelection(title: string) {
+  if (!selected.value.size || selected.value.size > 200 || creatingWork.value) return
+  creatingWork.value = true
+  try {
+    const work = await createCreation({ photo_ids: [...selected.value], title })
+    creationNameOpen.value = false
+    await creationRouter.push('/creations/' + work.id)
+  } catch (e) {
+    const value = e as { response?: { data?: { error?: string } } }
+    creationError.value = value.response?.data?.error || '创建失败，请稍后重试'
+  } finally { creatingWork.value = false }
+}
+
 import { inject, nextTick, ref, computed, onMounted, onUnmounted, reactive, watch } from 'vue'
 import type { Photo, PhotoListResponse } from '@/api/photos'
 import { fetchPhotoDates } from '@/api/photos'
@@ -757,7 +785,7 @@ function exitSelectMode() { selectMode.value = false; selected.value = new Set()
 
 function onPhotoClick(photo: Photo, e: MouseEvent) {
   if (selectMode.value) {
-    if ((e.shiftKey || rangeMode.value) && anchorId.value !== null && props.rangeFn) {
+    if (isAdmin.value && (e.shiftKey || rangeMode.value) && anchorId.value !== null && props.rangeFn) {
       doRangeSelect(anchorId.value, photo.id)
       return
     }

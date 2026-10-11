@@ -5,6 +5,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: shutterseek-production
+  cancel-in-progress: false
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository_owner }}/shutterseek
@@ -12,14 +16,14 @@ env:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 180
     env:
-      # 阿里云 ACR（可选）：配了这 4 个 Secret 才会额外推一份到国内仓库，
-      # NAS 侧再从 ACR 拉（GHCR 从国内实测只有 ~0.04MB/s）。
       ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
       ACR_NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
       ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
       ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
-      EMBEDDING_IMAGE: ${{ github.repository_owner }}/shutterseek-embedding
+      GHCR_PREFIX: ghcr.io/${{ github.repository_owner }}
+      DEPLOY_SHA: ${{ github.sha }}
     permissions:
       contents: read
       packages: write
@@ -28,8 +32,97 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Run unit tests
-        run: go test -count=1 ./cmd/... ./internal/... 2>&1
+      - name: Validate release configuration
+        run: |
+          set -eu
+          configured=0
+          for variable in ACR_REGISTRY ACR_NAMESPACE ACR_USERNAME ACR_PASSWORD; do
+            if [ -n "${!variable}" ]; then configured=$((configured + 1)); fi
+          done
+          if [ "$configured" != 0 ] && [ "$configured" != 4 ]; then
+            echo "Configure all four ACR inputs or leave all unset" >&2
+            exit 1
+          fi
+          docker compose --env-file /dev/null --profile creations config --quiet
+          sh -n scripts/deploy.sh
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build and test Go
+        run: go build ./... && go test -count=1 ./cmd/... ./internal/...
+
+      - name: Set up Node for frontend checks
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Test and build frontend
+        working-directory: frontend
+        run: npm ci && npm test && npm run build
+
+      - name: Set up Python for Agent tests
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Test Agent and browser sandbox
+        timeout-minutes: 15
+        run: |
+          pip install -r agent/requirements.txt
+          playwright install --with-deps chromium --only-shell
+          python -m unittest discover -s agent/tests -v
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Each image has an independent cache and is tested before publication.
+      - name: Build app image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: |
+            ${{ env.GHCR_PREFIX }}/shutterseek:latest
+            ${{ env.GHCR_PREFIX }}/shutterseek:${{ github.sha }}
+          cache-from: type=gha,scope=app
+          cache-to: type=gha,mode=max,scope=app
+
+      - name: Build embedding image
+        uses: docker/build-push-action@v6
+        with:
+          context: embed
+          file: embed/Dockerfile
+          load: true
+          tags: |
+            ${{ env.GHCR_PREFIX }}/shutterseek-embedding:latest
+            ${{ env.GHCR_PREFIX }}/shutterseek-embedding:${{ github.sha }}
+          cache-from: type=gha,scope=embed
+          cache-to: type=gha,mode=max,scope=embed
+
+      - name: Build Agent image
+        uses: docker/build-push-action@v6
+        with:
+          context: agent
+          file: agent/Dockerfile
+          load: true
+          tags: |
+            ${{ env.GHCR_PREFIX }}/shutterseek-agent:latest
+            ${{ env.GHCR_PREFIX }}/shutterseek-agent:${{ github.sha }}
+          cache-from: type=gha,scope=agent
+          cache-to: type=gha,mode=max,scope=agent
+
+      - name: Test packaged runtime images
+        timeout-minutes: 5
+        run: |
+          docker run --rm --network none --entrypoint sh "$GHCR_PREFIX/shutterseek:$DEPLOY_SHA" -c 'test -x /app/server && test -s /app/frontend/dist/index.html && command -v cwebp'
+          docker run --rm --network none --entrypoint python "$GHCR_PREFIX/shutterseek-embedding:$DEPLOY_SHA" -c 'import onnxruntime; import engine; print("Embedding runtime imports passed")'
+          docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges:true --memory 1536m --cpus 2 --shm-size 256m --entrypoint python "$GHCR_PREFIX/shutterseek-agent:$DEPLOY_SHA" -c 'import os, asyncio, image_smoke; assert os.geteuid() == 10001; asyncio.run(image_smoke.main())'
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -38,86 +131,44 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
-
-      # 两个镜像各自用独立的 gha 缓存 scope；mode=max 连中间层（前端构建、go 依赖）一起缓存。
-      # load: true 让镜像同时落到本地 daemon，后面推 ACR 那步沿用 docker tag/push 的既有路径。
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          load: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-          cache-from: type=gha,scope=app
-          cache-to: type=gha,mode=max,scope=app
-
-      - name: Build and push embedding image
-        uses: docker/build-push-action@v6
-        with:
-          context: embed
-          file: embed/Dockerfile
-          push: true
-          load: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.EMBEDDING_IMAGE }}:latest
-            ${{ env.REGISTRY }}/${{ env.EMBEDDING_IMAGE }}:${{ github.sha }}
-          cache-from: type=gha,scope=embed
-          cache-to: type=gha,mode=max,scope=embed
-
-      # ── 可选：同步到阿里云 ACR（国内拉取快）──────────────────────────
-      # 未配置 ACR_* Secret 时这几步自动跳过，行为与之前完全一致。
-      # 诊断步骤只输出长度与 sha256 前缀（不可逆），用于定位是哪个字段配错。
-      - name: Diagnose ACR inputs
-        if: env.ACR_USERNAME != '' && env.ACR_REGISTRY != ''
+      - name: Publish tested GHCR images
+        timeout-minutes: 40
         run: |
-          fp() { printf '%s' "$1" | sha256sum | cut -c1-12; }
-          echo "ACR_REGISTRY  len=${#ACR_REGISTRY} sha256=$(fp "$ACR_REGISTRY")"
-          echo "ACR_NAMESPACE len=${#ACR_NAMESPACE} sha256=$(fp "$ACR_NAMESPACE")"
-          echo "ACR_USERNAME  len=${#ACR_USERNAME} sha256=$(fp "$ACR_USERNAME")"
-          echo "ACR_PASSWORD  len=${#ACR_PASSWORD} sha256=$(fp "$ACR_PASSWORD")"
-          echo "GET /v2/ -> $(curl -sS -o /dev/null -w '%{http_code}' "https://${ACR_REGISTRY}/v2/" 2>&1 || echo connect-failed)"
+          set -eu
+          for image in shutterseek shutterseek-embedding shutterseek-agent; do
+            timeout 600 docker push "$GHCR_PREFIX/$image:$DEPLOY_SHA"
+            timeout 600 docker push "$GHCR_PREFIX/$image:latest"
+          done
 
       - name: Log in to ACR
-        if: env.ACR_USERNAME != '' && env.ACR_REGISTRY != ''
+        if: env.ACR_REGISTRY != ''
         uses: docker/login-action@v3
         with:
           registry: ${{ env.ACR_REGISTRY }}
           username: ${{ env.ACR_USERNAME }}
           password: ${{ env.ACR_PASSWORD }}
 
-      - name: Push to ACR
-        if: env.ACR_USERNAME != '' && env.ACR_REGISTRY != ''
+      - name: Publish tested ACR images
+        if: env.ACR_REGISTRY != ''
+        timeout-minutes: 60
         run: |
-          set -e
-          # 只推 latest：ACR 个人版不支持自动清理旧版本，推 sha tag 会每次多存一份
-          # （两个镜像约 670MB）。历史版本仍保留在 GHCR 里，需要回滚时从那边取。
-          #
-          # 超时 + 重试：这是从 GitHub runner **跨境**推到阿里云 cn-hangzhou，
-          # 而 docker push 没有任何请求级超时 —— 某个 layer 的 PATCH/PUT 被黑洞
-          # 掉就会一直挂着，直到 job 的 6 小时上限（run 实测卡在 embedding 的
-          # 323MB pip 层）。push 本身是幂等的：已上传的 blob 留在 registry，
-          # 重试会打出 Layer already exists，只补没传完的部分。
+          set -eu
           ACR_PREFIX="${ACR_REGISTRY}/${ACR_NAMESPACE}"
           push_with_retry() {
             ref="$1"
-            for i in 1 2 3; do
-              if timeout 600 docker push "$ref"; then
-                echo "✅ pushed $ref (第 $i 次尝试)"
-                return 0
-              fi
-              echo "⚠️ push $ref 第 $i 次失败或 10 分钟无进展，重试…"
+            for attempt in 1 2 3; do
+              if timeout 600 docker push "$ref"; then return 0; fi
+              echo "Image push failed or timed out, attempt $attempt of 3" >&2
               sleep 15
             done
-            echo "❌ push $ref 连续 3 次失败，放弃"
             return 1
           }
-          for img in shutterseek shutterseek-embedding; do
-            docker tag "${REGISTRY}/${GITHUB_REPOSITORY_OWNER}/${img}:latest" "${ACR_PREFIX}/${img}:latest"
-            push_with_retry "${ACR_PREFIX}/${img}:latest"
+          # Revision tags keep all three services on the same tested release.
+          for image in shutterseek shutterseek-embedding shutterseek-agent; do
+            for tag in "$DEPLOY_SHA" latest; do
+              docker tag "$GHCR_PREFIX/$image:$DEPLOY_SHA" "$ACR_PREFIX/$image:$tag"
+              push_with_retry "$ACR_PREFIX/$image:$tag"
+            done
           done
 
       - name: Connect Tailscale
@@ -127,24 +178,29 @@ jobs:
           oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
           tags: tag:github-actions
 
-      - name: Deploy to NAS
+      - name: Upload frozen deployment configuration
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.NAS_HOST }}
+          username: ${{ secrets.NAS_USER }}
+          key: ${{ secrets.NAS_SSH_KEY }}
+          source: "docker-compose.yml,scripts/deploy.sh"
+          target: "/volume1/docker/ShutterSeek/tmp/releases/${{ github.sha }}"
+
+      - name: Deploy and verify all enabled services
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.NAS_HOST }}
           username: ${{ secrets.NAS_USER }}
           key: ${{ secrets.NAS_SSH_KEY }}
-          # ACR_* 透传到 NAS，脚本里按需登录私有仓库
-          envs: ACR_REGISTRY,ACR_USERNAME,ACR_PASSWORD
-          # NAS→GHCR 实测只有 ~0.5MB/s，30m 曾在拉取 442MB 的 embedding 镜像时
-          # 超时失败（run #43）。依赖已锁版本，正常情况下拉取会退化为 manifest 检查；
-          # 这里留 60m 作为安全网。切到国内 ACR 后这一步通常只要几秒。
+          envs: ACR_REGISTRY,ACR_NAMESPACE,ACR_USERNAME,ACR_PASSWORD,GHCR_PREFIX,DEPLOY_SHA
           command_timeout: 60m
           script: |
-            set -e
-            cd /volume1/docker/ShutterSeek
-            # NAS 的 .env 若把 IMAGE_REGISTRY 指向 ACR，需要先登录（私有仓库）
-            if [ -n "$ACR_REGISTRY" ] && [ -n "$ACR_USERNAME" ]; then
-              echo "$ACR_PASSWORD" | docker login "$ACR_REGISTRY" -u "$ACR_USERNAME" --password-stdin
+            set -eu
+            if [ -n "$ACR_REGISTRY" ]; then
+              printf '%s' "$ACR_PASSWORD" | docker login "$ACR_REGISTRY" -u "$ACR_USERNAME" --password-stdin
+              export IMAGE_REGISTRY="$ACR_REGISTRY/$ACR_NAMESPACE"
+            else
+              export IMAGE_REGISTRY="$GHCR_PREFIX"
             fi
-            docker compose pull
-            docker compose up -d
+            sh "/volume1/docker/ShutterSeek/tmp/releases/$DEPLOY_SHA/scripts/deploy.sh"

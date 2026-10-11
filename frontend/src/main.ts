@@ -13,6 +13,9 @@ import AdminLogs from './views/AdminLogs.vue'
 import AdminHome from './views/admin/AdminHome.vue'
 import AdminStatus from './views/admin/AdminStatus.vue'
 import UploadPage from './views/UploadPage.vue'
+import CreationsPage from './views/CreationsPage.vue'
+import CreationPreviewPage from './views/CreationPreviewPage.vue'
+import SharedCreationPage from './views/SharedCreationPage.vue'
 import { authState, checkAuth, isAdmin } from './stores/auth'
 import { scrollHostToTop } from './lib/scrollHost'
 
@@ -24,8 +27,11 @@ const routes = [
   { path: '/albums', component: AlbumList },
   { path: '/albums/:id', component: AlbumDetail },
   { path: '/search', component: Search },
-  // Admin-only pages. The APIs behind them carry AdminOnly() as well; this
-  // guard is what keeps the pages themselves unreachable for guests.
+  // Creation routes require a session; ownership and photo visibility are checked by Go.
+  { path: '/creations/shared/:share', component: SharedCreationPage, meta: { chromeless: true, sharedCreation: true } },
+  { path: '/creations/:id/preview', component: CreationPreviewPage, meta: { chromeless: true } },
+  { path: '/creations/:id?', component: CreationsPage },
+  // Management and uploads retain the administrator guard.
   { path: '/upload', component: UploadPage, meta: { adminOnly: true } },
   { path: '/admin', component: AdminHome, meta: { adminOnly: true } },
   { path: '/admin/status', component: AdminStatus, meta: { adminOnly: true } },
@@ -45,7 +51,7 @@ router.beforeEach(async (to, _from, next) => {
   if (to.meta.noAuth) {
     next()
   } else if (!authState.user) {
-    next('/login')
+    next(to.meta.sharedCreation ? { path: '/login', query: { redirect: to.fullPath } } : '/login')
   } else if (to.meta.adminOnly && !isAdmin.value) {
     next('/')
   } else {

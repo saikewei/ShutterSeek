@@ -21,6 +21,18 @@ describe('tabsFor', () => {
   })
 })
 
+describe('guest creation navigation', () => {
+  it('adds creation only for guests when enabled', () => {
+    expect(tabsFor('guest', true).map(t => t.to)).toEqual(['/', '/albums', '/search', '/creations'])
+    expect(tabsFor('admin', true).map(t => t.to)).toEqual(['/', '/albums', '/search', '/admin'])
+    expect(tabsFor(undefined, true).some(t => t.to === '/creations')).toBe(false)
+  })
+  it('keeps the creation tab active throughout the guest workspace', () => {
+    expect(activeTabIndex(tabsFor('guest', true), '/creations/work')).toBe(3)
+    expect(shellTitle('/creations/work')).toBe('AI 创作')
+  })
+})
+
 describe('activeTabIndex', () => {
   const tabs = tabsFor('admin')
 

@@ -39,6 +39,13 @@ const SEARCH: MobileTab = {
   match: (path) => path.startsWith('/search'),
 }
 
+const CREATIONS: MobileTab = {
+  to: '/creations',
+  label: 'AI 创作',
+  paths: ['M12 3l2.4 6.6L21 12l-6.6 2.4L12 21l-2.4-6.6L3 12l6.6-2.4L12 3Z'],
+  match: (path) => path === '/creations' || path.startsWith('/creations/'),
+}
+
 // Upload is deliberately absent: the mobile admin console covers everything
 // except uploading, which stays a desktop-only flow.
 const ADMIN: MobileTab = {
@@ -51,9 +58,10 @@ const ADMIN: MobileTab = {
 }
 
 /** Tabs available to the given role, in display order. */
-export function tabsFor(role: string | null | undefined): MobileTab[] {
+export function tabsFor(role: string | null | undefined, creationsEnabled = false): MobileTab[] {
   const tabs = [PHOTOS, ALBUMS, SEARCH]
   if (role === 'admin') tabs.push(ADMIN)
+  if (role === 'guest' && creationsEnabled) tabs.push(CREATIONS)
   return tabs
 }
 
@@ -71,6 +79,7 @@ export function shellTitle(path: string): string {
   if (path.startsWith('/admin/invites')) return '邀请码'
   if (path.startsWith('/admin/status')) return '系统状态'
   if (path.startsWith('/admin')) return '管理'
+  if (path.startsWith('/creations')) return 'AI 创作'
   if (path.startsWith('/upload')) return '上传照片'
   return 'ShutterSeek'
 }

@@ -6,6 +6,9 @@
         <h1 class="text-sm font-medium font-display text-ink truncate">{{ album?.title || 'Album' }}</h1>
         <p class="text-xs text-ink-3 tabular-nums">{{ album?.photo_count?.toLocaleString() || 0 }} photos</p>
       </div>
+      <button v-if="creationsEnabled" @click="createFromAlbum" :disabled="creatingWork || !album?.photo_count || album.photo_count > 200" class="btn-ghost px-3 py-1.5 text-xs">
+        {{ album?.photo_count > 200 ? '请先选图' : 'AI 创作' }}
+      </button>
       <!-- Upload is not part of the mobile flow, so only the more useful
            "search this album" action survives there -->
       <button
@@ -19,6 +22,7 @@
       >{{ isMobileShell ? '搜索' : '搜索相册' }}</button>
     </header>
 
+    <p v-if="creationError" role="alert" class="p-3 text-danger-ink">{{ creationError }}</p>
     <PhotoGrid
       :key="albumId"
       ref="gridRef"
@@ -54,6 +58,24 @@
 </template>
 
 <script setup lang="ts">
+import { useRouter } from 'vue-router'
+import { createCreation } from '@/api/creations'
+import { creationsEnabled } from '@/stores/creations'
+const creationRouter = useRouter()
+const creationError = ref('')
+const creatingWork = ref(false)
+async function createFromAlbum() {
+  if (creatingWork.value) return
+  creatingWork.value = true
+  try {
+    const work = await createCreation({ album_id: albumId, title: album.value?.title })
+    await creationRouter.push('/creations/' + work.id)
+  } catch (e) {
+    const value = e as { response?: { data?: { error?: string } } }
+    creationError.value = value.response?.data?.error || '创建失败，请稍后重试'
+  } finally { creatingWork.value = false }
+}
+
 import { computed, inject, provide, ref, reactive } from 'vue'
 import { useRoute } from 'vue-router'
 import PhotoGrid from '@/components/PhotoGrid.vue'

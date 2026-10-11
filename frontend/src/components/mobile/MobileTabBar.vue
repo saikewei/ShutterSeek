@@ -52,11 +52,12 @@
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { authState } from '@/stores/auth'
+import { creationsEnabled } from '@/stores/creations'
 import { activeTabIndex, tabsFor, type MobileTab } from '@/lib/tabs'
 import { scrollHostToTop } from '@/lib/scrollHost'
 
 const route = useRoute()
-const tabs = computed(() => tabsFor(authState.user?.role))
+const tabs = computed(() => tabsFor(authState.user?.role, creationsEnabled.value))
 const activeIndex = computed(() => activeTabIndex(tabs.value, route.path))
 
 function isActive(tab: MobileTab): boolean {
