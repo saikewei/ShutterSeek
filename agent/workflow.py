@@ -26,7 +26,23 @@ GENERATE = """Return {"html":string,"used_photo_ids":[number],
 "interactions":[{"selector":string,"expect_visible":string}]}.
 Produce a complete responsive HTML/CSS/JavaScript page with Chinese user-facing text following the confirmed
 proposal and user request. All photo src attributes use ss-photo:<id>.
-Use no external resources. Do not invent facts. Preserve explicit user facts.
+Design a distinctive, photo-led experience matched to the confirmed style and purpose.
+Choose composition deliberately: image scale, whitespace, rhythm, typography and useful
+interaction can carry the story. Avoid defaulting to identical photo-and-paragraph cards.
+Use no external resources. Do not invent facts. Keep factual claims faithful to user messages.
+visual_context is PRIVATE DESIGN REFERENCE: use it to choose layout, image grouping,
+cropping and visual rhythm. Never paste all visual summaries into visible paragraphs,
+captions, titles, alt text, or a list of photo descriptions.
+Write only concise editorial copy that helps this particular story. Prefer strong images,
+short headings and selective captions. Do not give every photo a paragraph by default.
+Longer narrative is appropriate only when requested or supplied by the user.
+Omit missing dates, places, names and relationships entirely. Never add "unknown",
+"unconfirmed", "pending confirmation", "未确认", "未知", "待确认", analysis notes,
+or process disclaimers as metadata badges or placeholder fields in the finished page.
+Omitting a detail is required when it is uncertain; never invent a replacement.
+Keep alt text brief and factual. Preserve all confirmed photos without requiring captions.
+When editing an existing page, remove legacy analysis dumps and uncertainty placeholders;
+retain approved narrative and photo selection rather than preserving working notes.
 Give each important interactive control a stable CSS selector and describe
 one key interaction to inspect. Include useful alt text. Keep HTML under 512 KiB.
 When locked_photo_ids is present, include EVERY locked photo in the HTML,
@@ -39,6 +55,10 @@ missing photos and interaction state. Browser diagnostics also matter.
 Return {"issues":[{"severity":"blocking|warning|info","viewport":"desktop|mobile",
 "region":string,"element":string,"description":string,"suggestion":string}],
 "summary":string}. Write all human-readable review text in Simplified Chinese. Return no blocking issues only if the inspected regions pass.
+Also inspect editorial quality: the page should be photo-led and composed for the
+confirmed purpose, not a dump of internal visual descriptions. Treat visible analysis notes,
+missing-information placeholders and uncertainty badges as blocking issues.
+Do not penalize a deliberately minimal style just for being simple.
 Do not claim unseen page regions or untested interactions passed."""
 REPAIR = """Repair the HTML using the visual issues and browser diagnostics.
 Preserve confirmed content, user facts, photo selection and useful interactions.
@@ -80,6 +100,22 @@ def validate_issues(value):
         if issue["viewport"] not in {"desktop", "mobile"}:
             raise ValueError("review viewport is invalid")
     return value
+
+
+def publication_context(state):
+    # Only user-sourced facts and visual references enter the publication brief.
+    return {
+        "proposal":state["proposal"],
+        "visual_context":[{"photo_id":item["photo_id"],
+                           "visual_summary":item.get("observation","")}
+                          for item in state.get("observations",[])],
+        "editorial_facts":[{"message_id":item["message_id"],"text":item["text"]}
+                           for item in state.get("user_facts",[])],
+        "user_requests":[{"id":item["id"],"content":item["content"]}
+                         for item in state.get("messages",[]) if item["role"]=="user"],
+        "copy_policy":{"visual_context":"reference_only","uncertain_facts":"omit",
+                       "default":"photo_led_selective_copy"},
+    }
 
 
 class Workflow:
@@ -179,11 +215,7 @@ class Workflow:
                 "phase":"waiting", "html":""}
 
     async def generate(self, state):
-        data = {
-            "proposal":state["proposal"],"observations":state["observations"],
-            "facts":state.get("user_facts",[]),"unknowns":state.get("unknowns",[]),
-            "messages":state["messages"],"previous_html":state.get("previous_html",""),
-        }
+        data = {**publication_context(state),"previous_html":state.get("previous_html","")}
         if state["input"]["action"] == "confirm":
             data["locked_photo_ids"] = state["proposal"]["used_photo_ids"]
         # One bounded contract correction precedes rendering; visual repairs stay capped at two.
@@ -277,8 +309,8 @@ class Workflow:
     async def repair(self, state):
         await self.emit({"stage":"repairing","round":state["repairs"]+1})
         result=await self._call(REPAIR,{
+            **publication_context(state),
             "html":state["html"],"issues":state["report"]["issues"],
-            "proposal":state["proposal"],"facts":state.get("user_facts",[]),
             "photo_ids":state["photo_ids"],"interactions":state["interactions"],
             **({"locked_photo_ids":state["proposal"]["used_photo_ids"]}
                if state["input"]["action"] == "confirm" else {}),

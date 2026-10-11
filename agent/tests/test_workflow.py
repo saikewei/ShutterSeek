@@ -141,6 +141,34 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(workspace.finished["verified"])
         self.assertIn("correcting", [event["stage"] for event in events])
 
+    async def test_publication_brief_keeps_observations_as_reference_and_omits_unknown_metadata(self):
+        workspace=MemoryWorkspace(1)
+        state={**workspace.context["state"],**workspace.context}
+        state["proposal"]=workspace.context["state"]["proposal"]
+        state["observations"]=[{"photo_id":1,"observation":"海岸上可见礁石和海浪","unknowns":["地点未确认"],"analysis":"不要发布这条分析"}]
+        state["unknowns"]=["拍摄时间未确认"]
+        state["user_facts"]=[{"message_id":"user","text":"照片拍于海边","display_text":"照片拍于海边"}]
+        state["messages"]=[{"id":"user","role":"user","content":"想做一个以照片为主的旅行展示"},
+                           {"id":"assistant","role":"assistant","content":"地点未确认，需要补充信息"}]
+        captured=[]
+        model=FakeModel(FairGate(5))
+        original=model.invoke
+        async def inspect(instruction,data,images=()):
+            captured.append(data)
+            return await original(instruction,data,images)
+        model.invoke=inspect
+        result=await Workflow(workspace,model,FakeBrowser(FairGate(1)),emit).generate(state)
+        data=captured[0]
+        self.assertEqual(data["visual_context"],[{"photo_id":1,"visual_summary":"海岸上可见礁石和海浪"}])
+        self.assertEqual(data["copy_policy"]["visual_context"],"reference_only")
+        self.assertEqual(data["copy_policy"]["uncertain_facts"],"omit")
+        self.assertEqual(data["editorial_facts"],[{"message_id":"user","text":"照片拍于海边"}])
+        self.assertEqual(data["user_requests"],[{"id":"user","content":"想做一个以照片为主的旅行展示"}])
+        self.assertNotIn("unknowns",data)
+        self.assertNotIn("messages",data)
+        self.assertNotIn("地点未确认",json.dumps(data,ensure_ascii=False))
+        self.assertEqual(result["used_photo_ids"],[1])
+
     async def test_generation_contract_correction_is_bounded_and_never_renders_bad_selection(self):
         workspace = MemoryWorkspace(1)
         workspace.context["photo_ids"] = [1, 2]
