@@ -364,6 +364,8 @@ onUnmounted(closeStream)
 .creation-conversation { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .conversation-heading { flex-shrink: 0; }
 .conversation-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+/* Selection is scoped to transcript and proposal content, including on Safari. */
+.conversation-scroll, .conversation-scroll * { user-select: text; -webkit-user-select: text; }
 .conversation-footer { flex-shrink: 0; padding: .75rem 1rem; border-top: 1px solid var(--color-line); }
 .creation-input { width: 100%; border: 1px solid var(--color-line); border-radius: .65rem; padding: .7rem; background: transparent; font-size: .875rem; }
 .chat-row { display: flex; align-items: flex-start; gap: .65rem; }

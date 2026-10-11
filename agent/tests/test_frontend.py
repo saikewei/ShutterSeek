@@ -191,6 +191,38 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
             }""")
             header=page.get_by_role("heading",name="旅行故事",exact=True)
             preview=page.get_by_role("region",name="作品预览",exact=True)
+            await log.evaluate("el => el.scrollTop=0")
+            paragraph=log.locator(".chat-bubble .whitespace-pre-wrap").first
+            self.assertEqual(await paragraph.evaluate("el => getComputedStyle(el).userSelect"),"text")
+            self.assertEqual(await paragraph.evaluate("el => getComputedStyle(el).webkitUserSelect"),"text")
+            self.assertEqual(await log.locator(".proposal-card p").first.evaluate("el => getComputedStyle(el).userSelect"),"text")
+            self.assertEqual(await header.evaluate("el => getComputedStyle(el).userSelect"),"none")
+            self.assertEqual(await page.locator(".creation-preview-panel h2").evaluate("el => getComputedStyle(el).userSelect"),"none")
+            await paragraph.scroll_into_view_if_needed()
+            # Read glyph coordinates, then select with native pointer events.
+            glyphs=await paragraph.evaluate("""el => {
+                const range=document.createRange();
+                range.setStart(el.firstChild,0);range.setEnd(el.firstChild,8);
+                const rect=range.getClientRects()[0];
+                return {x:rect.x,y:rect.y,width:rect.width,height:rect.height};
+            }""")
+            await page.mouse.move(glyphs["x"]+.1,glyphs["y"]+glyphs["height"]/2)
+            await page.mouse.down()
+            await page.mouse.move(glyphs["x"]+glyphs["width"]+1,glyphs["y"]+glyphs["height"]/2,steps=8)
+            await page.mouse.up()
+            selected=await page.evaluate("getSelection().toString()")
+            self.assertIn("我已经整理好一份",selected)
+            await page.evaluate("""() => {
+                document.addEventListener('copy', event => {
+                    window.__chatCopied={text:getSelection().toString(),prevented:event.defaultPrevented};
+                }, {once:true});
+            }""")
+            await page.keyboard.press("Control+c")
+            await page.wait_for_function("window.__chatCopied !== undefined")
+            self.assertEqual(await page.evaluate("window.__chatCopied"),{"text":selected,"prevented":False})
+            await page.evaluate("getSelection().removeAllRanges()")
+            await header.click(click_count=3)
+            self.assertEqual(await page.evaluate("getSelection().toString()"),"")
             before_header=await header.bounding_box()
             before_composer=await page.get_by_role("textbox",name="给创作助手的消息",exact=True).bounding_box()
             before_preview=await preview.bounding_box() if width>=768 and not touch else None
