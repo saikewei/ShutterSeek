@@ -7,6 +7,7 @@ import grpc
 from google.protobuf.struct_pb2 import Struct
 from rpc import encode,decode
 from server import Agent
+from workflow import CandidateError
 from concurrency import FairGate
 from test_workflow import MemoryWorkspace,FakeModel,FakeBrowser
 
@@ -92,6 +93,19 @@ class RPCTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn(forbidden, output)
         self.assertNotIn(run_id, self.agent.tasks)
         self.assertIsNone(self.workspaces[run_id].finished)
+
+    async def test_known_candidate_failure_streams_safe_reason_before_abort(self):
+        async def invalid(*args, **kwargs):
+            raise CandidateError("confirmed_photos_changed")
+        self.agent.model.invoke = invalid
+        events = []
+        with self.assertLogs("shutterseek.agent", level="ERROR") as logs:
+            with self.assertRaises(grpc.aio.AioRpcError) as error:
+                async for item in self.execute(encode({"run_id":"1", "credential":"key-1"})):
+                    events.append(decode(item))
+        self.assertEqual(error.exception.code(), grpc.StatusCode.INTERNAL)
+        self.assertEqual(events[-1], {"stage":"failed", "error_code":"confirmed_photos_changed"})
+        self.assertIn("error_code=confirmed_photos_changed", "\n".join(logs.output))
 
     async def test_callback_authentication_failure_keeps_status_and_safe_log(self):
         with self.assertLogs("shutterseek.agent", level="ERROR") as logs:

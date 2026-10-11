@@ -19,7 +19,10 @@ Produce a complete responsive HTML/CSS/JavaScript page following the confirmed
 proposal and user request. All photo src attributes use ss-photo:<id>.
 Use no external resources. Do not invent facts. Preserve explicit user facts.
 Give each important interactive control a stable CSS selector and describe
-one key interaction to inspect. Include useful alt text. Keep HTML under 512 KiB."""
+one key interaction to inspect. Include useful alt text. Keep HTML under 512 KiB.
+When locked_photo_ids is present, include EVERY locked photo in the HTML,
+include no other photo, and return exactly that list in used_photo_ids.
+You may change the layout, but never add, omit or replace confirmed photos."""
 REVIEW = """You must visually inspect EVERY supplied screenshot at its original
 detail. The screenshot metadata maps image order to viewport and page region.
 Evaluate text overlap, horizontal overflow, cropping, mobile readability,
@@ -31,6 +34,20 @@ Do not claim unseen page regions or untested interactions passed."""
 REPAIR = """Repair the HTML using the visual issues and browser diagnostics.
 Preserve confirmed content, user facts, photo selection and useful interactions.
 """ + GENERATE
+
+CANDIDATE_ERRORS = {
+    "candidate_html_invalid": "candidate HTML is missing or too large",
+    "photo_selection_invalid": "photo selection is invalid or outside the work scope",
+    "photo_references_mismatch": "used photo list does not match HTML references",
+    "confirmed_photos_changed": "generation changed confirmed photo selection",
+    "interaction_manifest_invalid": "interaction manifest is invalid",
+}
+
+
+class CandidateError(ValueError):
+    def __init__(self, code):
+        self.code = code
+        super().__init__(CANDIDATE_ERRORS[code])
 
 
 def ids(value, scope):
@@ -108,29 +125,46 @@ class Workflow:
                 "phase":"waiting", "html":""}
 
     async def generate(self, state):
-        result = await self._call(GENERATE, {
+        data = {
             "proposal":state["proposal"],"observations":state["observations"],
             "facts":state.get("user_facts",[]),"unknowns":state.get("unknowns",[]),
             "messages":state["messages"],"previous_html":state.get("previous_html",""),
-        })
-        return self.candidate(state, result, 0)
+        }
+        if state["input"]["action"] == "confirm":
+            data["locked_photo_ids"] = state["proposal"]["used_photo_ids"]
+        # One bounded contract correction precedes rendering; visual repairs stay capped at two.
+        for attempt in range(2):
+            await self.emit({"stage":"generating" if attempt == 0 else "correcting",
+                             "attempt":attempt + 1})
+            result = await self._call(GENERATE, data)
+            try:
+                return self.candidate(state, result, 0)
+            except CandidateError as error:
+                if attempt == 1:
+                    raise
+                data = {**data, "rejected_candidate":result,
+                        "validation_error":str(error),
+                        "correction":"Correct the candidate contract and preserve every locked photo."}
 
     def candidate(self, state, result, repairs):
         source = result.get("html")
         if not isinstance(source,str) or not source.strip() or len(source.encode())>512*1024:
-            raise ValueError("candidate HTML is missing or too large")
+            raise CandidateError("candidate_html_invalid")
         if not source.lstrip().lower().startswith("<!doctype"):
             source="<!doctype html>"+source
-        selected = ids(result.get("used_photo_ids"),state["photo_ids"])
+        try:
+            selected = ids(result.get("used_photo_ids"),state["photo_ids"])
+        except (ValueError, TypeError):
+            raise CandidateError("photo_selection_invalid") from None
         import re
         referenced={int(x) for x in re.findall(r"ss-photo:([0-9]+)",source)}
         if referenced != set(selected):
-            raise ValueError("used photo list does not match HTML references")
+            raise CandidateError("photo_references_mismatch")
         if state["input"]["action"]=="confirm" and set(selected)!=set(state["proposal"]["used_photo_ids"]):
-            raise ValueError("generation changed confirmed photo selection")
+            raise CandidateError("confirmed_photos_changed")
         interactions = result.get("interactions",[])
         if not isinstance(interactions,list):
-            raise ValueError("interaction manifest is invalid")
+            raise CandidateError("interaction_manifest_invalid")
         return {**state,"html":source,"used_photo_ids":selected,
                 "interactions":interactions[:1],"repairs":repairs,"phase":"rendering"}
 
@@ -191,6 +225,8 @@ class Workflow:
             "html":state["html"],"issues":state["report"]["issues"],
             "proposal":state["proposal"],"facts":state.get("user_facts",[]),
             "photo_ids":state["photo_ids"],"interactions":state["interactions"],
+            **({"locked_photo_ids":state["proposal"]["used_photo_ids"]}
+               if state["input"]["action"] == "confirm" else {}),
         })
         return self.candidate(state,result,state["repairs"]+1)
 

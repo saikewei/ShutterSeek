@@ -1,4 +1,5 @@
 """Production-build UI acceptance with mocked APIs; never touches the real app."""
+import asyncio
 import base64
 import json
 import html
@@ -23,7 +24,9 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
             context=await browser.new_context(viewport={"width":width,"height":height},has_touch=touch)
             page=await context.new_page()
             requested=[];submitted=[];current="";run_state=None
-            creations=[];album_fetches=0
+            creations=[];album_fetches=0;stream_attempts=0;run_report="{}"
+            release_failure=asyncio.Event()
+            failure_text="模型未保留你确认的选图。自动纠正未成功，请重试生成。"
             def version(id):
                 return {"id":id,"verified":id=="v2","report":json.dumps({
                     "rounds":1,"issues":[],"summary":"Inspected both viewports","screenshots":[]}),
@@ -33,10 +36,10 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
                         "photo_ids":[1,2],"state":{"proposal":{"structure":"A journey",
                         "style":"Minimal","used_photo_ids":[1,2]},"questions":["在哪里？"],
                         "unknowns":["地点"],"observations":[],"user_facts":[]},
-                        "messages":[],"runs":([{"id":"run","status":run_state,"report":"{}"}] if run_state else []),
+                        "messages":[],"runs":([{"id":"run","status":run_state,"report":run_report}] if run_state else []),
                         "versions":([version("v2"),version("v1")] if current else [])}
             async def route_handler(route):
-                nonlocal current,run_state,album_fetches
+                nonlocal current,run_state,album_fetches,stream_attempts,run_report
                 request=route.request;path=urlparse(request.url).path
                 requested.append((request.method,path))
                 value=None
@@ -65,8 +68,20 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
                 elif path=="/api/v1/creations/work":value=detail()
                 elif path=="/api/v1/creations/work/runs":
                     submitted.append(request.post_data_json)
-                    run_state="queued";value={"id":"run","status":"queued","report":"{}"}
+                    run_state="queued";run_report="{}";value={"id":"run","status":"queued","report":"{}"}
                 elif path.endswith("/events"):
+                    stream_attempts+=1
+                    if len(submitted)==1:
+                        if stream_attempts==1:
+                            run_state="running"
+                            await route.fulfill(status=200,content_type="text/event-stream",
+                                body='retry: 50\n\nevent: progress\ndata: {"stage":"generating"}\n\n')
+                        else:
+                            await release_failure.wait()
+                            run_state="failed";run_report=json.dumps({"error":failure_text})
+                            await route.fulfill(status=200,content_type="text/event-stream",
+                                body='event: done\ndata: {"status":"failed"}\n\n')
+                        return
                     current="v2";run_state="completed"
                     await route.fulfill(status=200,content_type="text/event-stream",
                         body='event: progress\ndata: {"stage":"reviewing"}\n\nevent: done\ndata: {"status":"completed"}\n\n')
@@ -144,6 +159,21 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
             await page.get_by_label("内容结构",exact=True).fill("A confirmed journey")
             await page.get_by_label("使用照片 2",exact=True).uncheck()
             await page.get_by_role("button",name="确认并生成").click()
+            status=page.get_by_role("status")
+            await status.get_by_text("正在生成网页，请稍候…",exact=True).wait_for()
+            self.assertTrue(await page.get_by_role("button",name="取消任务",exact=True).is_visible())
+            await page.screenshot(path=str(artifact/f"generating-{width}.png"))
+            release_failure.set()
+            alert=page.get_by_role("alert")
+            await alert.get_by_text(failure_text,exact=True).wait_for()
+            self.assertEqual(await page.locator("iframe").count(),0)
+            if width<768 or touch:
+                self.assertEqual(await page.get_by_role("button",name="对话",exact=True).get_attribute("aria-pressed"),"true")
+            await page.reload()
+            await alert.get_by_text(failure_text,exact=True).wait_for()
+            await page.get_by_label("内容结构",exact=True).fill("A confirmed journey")
+            await page.get_by_label("使用照片 2",exact=True).uncheck()
+            await page.get_by_role("button",name="确认并生成").click()
             await page.wait_for_function("document.querySelector('iframe') !== null")
             if width<768 or touch:
                 await page.get_by_role("button",name="预览",exact=True).click()
@@ -166,6 +196,10 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
             if width<768 or touch:
                 preview_width=await page.locator("iframe").bounding_box()
                 self.assertGreater(preview_width["width"],width*.8)
+            run_state="failed";run_report=json.dumps({"error":failure_text})
+            await page.reload()
+            await page.get_by_role("alert").get_by_text(failure_text,exact=True).wait_for()
+            self.assertEqual(await page.locator('iframe[title="作品沙箱预览"]').count(),1)
             await browser.close()
 
     async def test_desktop_confirm_interact_restore(self):

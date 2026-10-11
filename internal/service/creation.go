@@ -449,7 +449,12 @@ func (s *CreationService) execute(ctx context.Context, r model.CreationRun) {
 		return
 	}
 	s.db.WithContext(ctx).Create(&model.CreationEvent{RunID: r.ID, Data: jsonText(map[string]interface{}{"stage": "started", "queue_seconds": time.Since(r.CreatedAt).Seconds()}), CreatedAt: time.Now()})
+	failureReport := map[string]interface{}{"error": "创作任务失败，请重试；已保存的方案和作品会保留。"}
 	err := creationrpc.Execute(ctx, s.conn, map[string]interface{}{"run_id": r.ID, "credential": token}, func(event map[string]interface{}) error {
+		if event["stage"] == "failed" {
+			code, _ := event["error_code"].(string)
+			failureReport = creationFailureReport(code)
+		}
 		return s.db.WithContext(ctx).Create(&model.CreationEvent{RunID: r.ID, Data: jsonText(event), CreatedAt: time.Now()}).Error
 	})
 	if ctx.Err() != nil && s.stop != nil {
@@ -464,11 +469,27 @@ func (s *CreationService) execute(ctx context.Context, r model.CreationRun) {
 	}
 	if err != nil && !errors.Is(err, io.EOF) {
 		log.Printf("creation: run=%s failed rpc_code=%s error_type=%T", r.ID, status.Code(err), err)
-		s.db.Model(&model.CreationRun{}).Where("id = ? AND status = ?", r.ID, "running").Updates(map[string]interface{}{"status": "failed", "credential_hash": "", "report": jsonText(map[string]interface{}{"error": "Agent execution failed; retry resumes the saved work state."}), "updated_at": time.Now()})
+		s.db.Model(&model.CreationRun{}).Where("id = ? AND status = ?", r.ID, "running").Updates(map[string]interface{}{"status": "failed", "credential_hash": "", "report": jsonText(failureReport), "updated_at": time.Now()})
 	} else {
 		s.db.Model(&model.CreationRun{}).Where("id = ? AND status = ?", r.ID, "running").Updates(map[string]interface{}{"status": "failed", "credential_hash": "", "updated_at": time.Now()})
 	}
 }
+func creationFailureReport(code string) map[string]interface{} {
+	messages := map[string]string{
+		"candidate_html_invalid":       "模型返回的网页内容无效或过大。请重试生成。",
+		"photo_selection_invalid":      "模型返回的照片列表无效。请重试生成。",
+		"photo_references_mismatch":    "模型返回的网页与照片列表不一致。自动纠正未成功，请重试生成。",
+		"confirmed_photos_changed":     "模型未保留你确认的选图。自动纠正未成功，请重试生成，或调整选图后再次确认。",
+		"interaction_manifest_invalid": "模型返回的交互信息无效。请重试生成。",
+	}
+	message, ok := messages[code]
+	if !ok {
+		code = "agent_execution_failed"
+		message = "创作任务失败，请重试；已保存的方案和作品会保留。"
+	}
+	return map[string]interface{}{"error_code": code, "error": message}
+}
+
 func (s *CreationService) Call(ctx context.Context, in *structpb.Struct) (*structpb.Struct, error) {
 	data := in.AsMap()
 	runID, _ := data["run_id"].(string)

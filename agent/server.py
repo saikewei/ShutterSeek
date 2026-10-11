@@ -11,7 +11,7 @@ from concurrency import FairGate
 from rpc import Workspace, encode, decode
 from model import CreationModel
 from browser import Browser
-from workflow import Workflow
+from workflow import Workflow, CandidateError
 
 LOGGER = logging.getLogger("shutterseek.agent")
 
@@ -26,8 +26,9 @@ def log_failure(run_id, error):
     locations = " > ".join(f"{Path(frame.filename).name}:{frame.lineno}:{frame.name}"
                            for frame in frames)
     code = error.code().name if isinstance(error, grpc.aio.AioRpcError) else "INTERNAL"
-    LOGGER.error("creation_run_failed run=%s error_type=%s rpc_code=%s stack=%s",
-                 reference, type(error).__name__, code, locations)
+    reason = error.code if isinstance(error, CandidateError) else "agent_execution_failed"
+    LOGGER.error("creation_run_failed run=%s error_type=%s rpc_code=%s error_code=%s stack=%s",
+                 reference, type(error).__name__, code, reason, locations)
 
 
 class Agent:
@@ -43,6 +44,8 @@ class Agent:
             raise
         except Exception as error:
             log_failure(decode(request).get("run_id"), error)
+            yield encode({"stage":"failed", "error_code":
+                          error.code if isinstance(error, CandidateError) else "agent_execution_failed"})
             code = error.code() if isinstance(error, grpc.aio.AioRpcError) else grpc.StatusCode.INTERNAL
             await context.abort(code, "Agent execution failed; see server diagnostics.")
 

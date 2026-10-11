@@ -4,11 +4,15 @@ import (
 	"context"
 	"fmt"
 	"github.com/DATA-DOG/go-sqlmock"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
+	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/types/known/structpb"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"net"
 	"shutterseek/internal/model"
 	"strings"
 	"testing"
@@ -267,5 +271,59 @@ func TestCreationContextRPCEncodesPhotosAndMessages(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+func TestCreationFailureReasonPersistsAfterAgentAbort(t *testing.T) {
+	s, mock := mockCreations(t)
+	listener := bufconn.Listen(1 << 20)
+	server := grpc.NewServer()
+	server.RegisterService(&grpc.ServiceDesc{
+		ServiceName: "shutterseek.creation.v1.Agent",
+		HandlerType: (*interface{})(nil),
+		Streams: []grpc.StreamDesc{{StreamName: "Execute", ServerStreams: true, Handler: func(_ interface{}, stream grpc.ServerStream) error {
+			request := new(structpb.Struct)
+			if err := stream.RecvMsg(request); err != nil {
+				return err
+			}
+			event, _ := structpb.NewStruct(map[string]interface{}{"stage": "failed", "error_code": "confirmed_photos_changed"})
+			if err := stream.SendMsg(event); err != nil {
+				return err
+			}
+			return status.Error(codes.Internal, "Agent execution failed; see server diagnostics.")
+		}}},
+	}, struct{}{})
+	go server.Serve(listener)
+	defer server.Stop()
+	conn, err := grpc.NewClient("passthrough:///creation-test",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	s.conn = conn
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "creation_runs"`).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	for _, id := range []int64{1, 2} {
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "creation_events"`).WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(id))
+		mock.ExpectCommit()
+	}
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "creation_runs"`).
+		WithArgs("", jsonText(creationFailureReport("confirmed_photos_changed")), "failed", sqlmock.AnyArg(), "run", "running").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	s.execute(ctx, model.CreationRun{ID: "run", CreatedAt: time.Now()})
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+	report := creationFailureReport("private-invalid-reason")
+	if report["error_code"] != "agent_execution_failed" || strings.Contains(report["error"].(string), "private") {
+		t.Fatal("unknown failure reason leaked")
 	}
 }

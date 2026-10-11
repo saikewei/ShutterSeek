@@ -3,9 +3,12 @@
     <div class="flex items-center gap-3">
       <RouterLink v-if="workId" to="/creations" class="btn-ghost px-2 py-1">← 作品</RouterLink>
       <h1 class="text-xl font-display">{{ detail?.creation.title || 'AI 网页创作' }}</h1>
-      <span v-if="activeRun" class="text-xs text-ink-3" role="status">{{ stageLabel }}</span>
     </div>
-    <p v-if="error" role="alert" class="text-danger-ink">{{ error }}</p>
+    <p v-if="error || runFailure" role="alert" class="text-danger-ink">{{ error || runFailure }}</p>
+    <div v-if="activeRun || busy" role="status" class="border border-line rounded-xl bg-raised p-3 space-y-1">
+      <p class="text-sm font-medium">{{ activeRun ? stageLabel : '正在提交任务…' }}</p>
+      <p class="text-xs text-ink-3">完成后会自动显示结果。关闭页面不会取消任务。</p>
+    </div>
     <p v-if="!creationsEnabled">AI 创作尚未启用。</p>
     <template v-else-if="!workId">
       <p class="text-sm text-ink-2">从相册或照片网格选择 1–200 张照片，创作故事页、旅行展示、时间线或画廊。补充信息仅保存在当前作品。</p>
@@ -72,9 +75,9 @@
           </div>
           <iframe v-if="version" :key="version" :src="previewURL(workId, version)" sandbox="allow-scripts" referrerpolicy="no-referrer" title="作品沙箱预览" class="creation-preview" />
           <div v-else class="border border-dashed border-line rounded-xl p-10 text-ink-3 text-center">确认方案后，这里将显示可交互作品。</div>
-          <div v-if="report.rounds || report.error" class="border border-line rounded-xl p-3 space-y-2">
+          <div v-if="report.rounds" class="border border-line rounded-xl p-3 space-y-2">
             <h2 class="font-medium">视觉检查 · {{ report.rounds || 0 }} 轮</h2>
-            <p class="text-sm">{{ report.summary || report.error }}</p>
+            <p class="text-sm">{{ report.summary }}</p>
             <p v-for="(issue, index) in report.issues" :key="index" class="text-sm">
               {{ issue.severity === 'blocking' ? '阻断' : '提示' }} · {{ issue.viewport }} · {{ issue.region }} · {{ issue.element }}：{{ issue.description }}；{{ issue.suggestion }}
             </p>
@@ -138,7 +141,12 @@ const usedIDs = computed(() => {
   return proposal.value?.used_photo_ids || []
 })
 const report = computed(() => parseReport(detail.value?.versions.find(v => v.id === version.value)?.report || detail.value?.runs[0]?.report))
-const stageLabel = computed(() => ({ observing: '理解照片', model: '模型处理中', rendering: '浏览器排队 / 渲染', rendered: '截图已保存', reviewing: '视觉审查', reviewed: '审查完成', repairing: '修复中' }[stage.value] || '任务排队 / 处理中'))
+const runFailure = computed(() => {
+  if (busy.value || activeRun.value || detail.value?.runs[0]?.status !== 'failed') return ''
+  const text = parseReport(detail.value.runs[0].report).error
+  return text && !text.startsWith('Agent execution failed') ? text : '创作任务失败，请重试；已保存的方案和作品会保留。'
+})
+const stageLabel = computed(() => ({ generating: '正在生成网页，请稍候…', correcting: '正在纠正生成结果的选图与格式…', observing: '理解照片', model: '模型处理中', rendering: '浏览器排队 / 渲染', rendered: '截图已保存', reviewing: '视觉审查', reviewed: '审查完成', repairing: '修复中' }[stage.value] || '任务排队 / 处理中'))
 
 function readableMessage(text: string) {
   try { const data = JSON.parse(text); return data.proposal ? data.proposal.structure + '\n风格：' + data.proposal.style : text } catch { return text }
@@ -170,7 +178,7 @@ function subscribe(run: string) {
 }
 async function run(action: string) {
   if (!detail.value || busy.value || activeRun.value) return
-  busy.value = true; error.value = ''
+  busy.value = true; error.value = ''; stage.value = 'queued'
   try {
     const answerText = detail.value.state.questions?.map((q, i) => q + '：' + (answers.value[i]?.trim() || '跳过')).join('\n') || ''
     await startCreationRun(workId.value, {

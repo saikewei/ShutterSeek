@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from concurrency import FairGate
-from workflow import Workflow
+from workflow import Workflow, CandidateError
 from checkpoint import clean
 
 PHOTO="data:image/webp;base64,UklGRg=="
@@ -113,6 +113,49 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(workspace.finished["used_photo_ids"],[workspace.user])
             self.assertEqual(workspace.saved["config"]["configurable"]["thread_id"],str(workspace.user))
             self.assertNotIn("data:image/",json.dumps(workspace.saved))
+
+    async def test_generation_corrects_changed_confirmed_photos_before_render(self):
+        workspace = MemoryWorkspace(1)
+        workspace.context["photo_ids"] = [1, 2]
+        model = FakeModel(FairGate(5))
+        original = model.invoke
+        calls = []
+        async def generate(instruction, data, images=()):
+            if "Produce a complete responsive" in instruction and "Repair the HTML" not in instruction:
+                calls.append(data)
+                self.assertEqual(data["locked_photo_ids"], [1])
+                if len(calls) == 1:
+                    return {"html":'<img src="ss-photo:2">',"used_photo_ids":[2]}, {}
+                self.assertEqual(data["validation_error"], "generation changed confirmed photo selection")
+            return await original(instruction, data, images)
+        model.invoke = generate
+        browser = FakeBrowser(FairGate(1))
+        events = []
+        async def capture(event): events.append(event)
+        await Workflow(workspace, model, browser, capture).execute()
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(browser.renders, 1)
+        self.assertEqual(workspace.finished["used_photo_ids"], [1])
+        self.assertTrue(workspace.finished["verified"])
+        self.assertIn("correcting", [event["stage"] for event in events])
+
+    async def test_generation_contract_correction_is_bounded_and_never_renders_bad_selection(self):
+        workspace = MemoryWorkspace(1)
+        workspace.context["photo_ids"] = [1, 2]
+        model = FakeModel(FairGate(5))
+        calls = 0
+        async def invalid(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            return {"html":'<img src="ss-photo:2">',"used_photo_ids":[2]}, {}
+        model.invoke = invalid
+        browser = FakeBrowser(FairGate(1))
+        with self.assertRaises(CandidateError) as error:
+            await Workflow(workspace, model, browser, emit).execute()
+        self.assertEqual(error.exception.code, "confirmed_photos_changed")
+        self.assertEqual(calls, 2)
+        self.assertEqual(browser.renders, 0)
+        self.assertIsNone(workspace.finished)
 
     async def test_two_repairs_then_unverified_candidate(self):
         workspace=MemoryWorkspace(1);model=FakeModel(FairGate(5),99)
