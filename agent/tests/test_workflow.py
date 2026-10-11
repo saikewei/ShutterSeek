@@ -1,6 +1,7 @@
 import asyncio
 import copy
 import json
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -90,7 +91,7 @@ class FakeBrowser:
             self.renders+=1
             await asyncio.sleep(.005)
             assert "ss-photo:" in source
-            assert len(assets)==1
+            assert set(assets)=={x for x in re.findall(r"ss-photo:([0-9]+)",source)}
             screenshots=[{"data":SHOT,"metadata":{"viewport":v,"kind":"page","y":0}}
                          for v in ("desktop","mobile")]
         return {"screenshots":screenshots,"diagnostics":[],"coverage":["desktop","mobile"],
@@ -399,6 +400,38 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
         model.invoke=check
         await Workflow(workspace,model,FakeBrowser(FairGate(1)),capture).execute()
         self.assertEqual(events[-1]["stage"],"waiting")
+
+    async def test_new_rotated_photo_is_observed_before_modifying_and_keeps_selection_snapshot(self):
+        workspace=MemoryWorkspace(1,"modify")
+        workspace.context["photo_ids"]=[1,2]
+        workspace.context["state"].update(observations=[{"photo_id":1,"observation":"已有风景"}],
+            selected_photo_ids=[1,2],photo_edits={"2":90},photo_revision=2,photos_changed=True)
+        async def call(op,payload=None):
+            if op=="photo":
+                self.assertIn(payload["id"],[1,2])
+                return {"data":PHOTO}
+            return await MemoryWorkspace.call(workspace,op,payload)
+        workspace.call=call
+        model=FakeModel(FairGate(5))
+        await Workflow(workspace,model,FakeBrowser(FairGate(1)),emit).execute()
+        self.assertEqual(model.image_batches,[1])
+        self.assertEqual(workspace.finished["used_photo_ids"],[1,2])
+        snapshot=workspace.finished["state"]
+        self.assertEqual(snapshot["photo_ids"],[1,2])
+        self.assertEqual(snapshot["photo_edits"],{"2":90})
+        self.assertEqual(snapshot["photo_revision"],2)
+        self.assertFalse(snapshot["photos_changed"])
+        self.assertEqual(snapshot["observations"][-1]["rotation"],90)
+
+    async def test_unused_pool_photos_are_not_observed_or_sent_to_publication(self):
+        workspace=MemoryWorkspace(1,"modify")
+        workspace.context["photo_ids"]=[1,2]
+        workspace.context["state"].update(selected_photo_ids=[1])
+        model=FakeModel(FairGate(5))
+        await Workflow(workspace,model,FakeBrowser(FairGate(1)),emit).execute()
+        self.assertEqual(model.image_batches,[1])
+        self.assertEqual(workspace.finished["used_photo_ids"],[1])
+        self.assertEqual([x["photo_id"] for x in workspace.finished["state"]["observations"]],[1])
 
     async def test_completed_checkpoint_replays_without_model_calls(self):
         workspace=MemoryWorkspace(1);model=FakeModel(FairGate(5))

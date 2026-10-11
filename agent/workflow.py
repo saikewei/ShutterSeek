@@ -7,10 +7,14 @@ import re
 from langgraph.graph import StateGraph, START, END
 from checkpoint import GoCheckpointer, clean, CheckpointMaterialError
 from interaction import validate_interaction
+from design_tools import DesignTools, design_guidance
 from localization import TRANSLATE, display_slots, needs_chinese
 
 OBSERVE = """Observe these photos in the given order. Return
-{"observations":[{"photo_id":number,"observation":string,"unknowns":[string]}]}.
+{"observations":[{"photo_id":number,"observation":string,"unknowns":[string],
+"visual_design":{"colors":[string],"focal_point":string,"composition":string}}]}.
+visual_design is private design reference: describe actual visible colors, focal
+subject and useful framing in Chinese; colors may use hex values. No invented facts.
 Use cautious visual descriptions in Simplified Chinese. No invented facts."""
 PLAN = """Propose a content structure, visual style and photo selection first.
 Return {"reply":string,
@@ -22,12 +26,17 @@ next step. Ask at most ONE short, useful question, only in the questions array;
 do not hide a questionnaire in reply. Never repeat an answered or skipped question.
 Use question_budget: when it is zero, ask no questions and offer a usable plan.
 Questions are optional. If the user skipped, ask no further questions this turn.
-Do not generate HTML. Incorporate explicit user answers without inventing facts."""
+Do not generate HTML. Incorporate explicit user answers without inventing facts.
+Follow explicit style preferences. When style is open, propose a distinctive photo
+composition, an intentional palette and one useful interaction instead of always
+defaulting to a sparse white page. Keep the proposal concise and in Chinese."""
 GENERATE = """Return {"html":string,"used_photo_ids":[number],
 "interactions":[{"selector":string,"expect_visible":string}]}.
 Produce a complete responsive HTML/CSS/JavaScript page with Chinese user-facing text following the confirmed
 proposal and user request. All photo src attributes use ss-photo:<id>.
 Design a distinctive, photo-led experience matched to the confirmed style and purpose.
+Concise copy does not require an empty design. Unless an explicitly quiet treatment
+was approved, use one memorable visual idea and a purposeful interaction rooted in the photos.
 Choose composition deliberately: image scale, whitespace, rhythm, typography and useful
 interaction can carry the story. Avoid defaulting to identical photo-and-paragraph cards.
 Use no external resources or data:image URLs. Photos must use ss-photo:<id>;
@@ -125,8 +134,10 @@ def publication_context(state):
     return {
         "proposal":state["proposal"],
         "visual_context":[{"photo_id":item["photo_id"],
-                           "visual_summary":item.get("observation","")}
-                          for item in state.get("observations",[])],
+                           "visual_summary":item.get("observation",""),
+                           **({"visual_design":item["visual_design"]} if item.get("visual_design") else {}),
+                           **({"width":item["width"],"height":item["height"]} if item.get("width") and item.get("height") else {})}
+                          for item in state.get("observations",[]) if item["photo_id"] in state["proposal"]["used_photo_ids"]],
         "editorial_facts":[{"message_id":item["message_id"],"text":item["text"]}
                            for item in state.get("user_facts",[])],
         "user_requests":[{"id":item["id"],"content":item["content"]}
@@ -136,15 +147,27 @@ def publication_context(state):
     }
 
 
+def observation_targets(state):
+    return state.get("selected_photo_ids") or state["photo_ids"]
+
+
+def needs_observation(state):
+    observed={int(x["photo_id"]) for x in state.get("observations",[])}
+    return bool(set(observation_targets(state))-observed)
+
+
 class Workflow:
     def __init__(self, workspace, model, browser, emit):
         self.workspace, self.model, self.browser, self.emit = workspace, model, browser, emit
 
-    async def _call(self, instruction, data, images=(), stage=None):
+    async def _call(self, instruction, data, images=(), stage=None, toolbox=None):
         operation = stage or {OBSERVE:"observing", PLAN:"planning", REVIEW:"reviewing",
                               REPAIR:"repairing", TRANSLATE:"localizing"}.get(instruction,"generating")
         await self.emit({"stage":operation,"status":"started"})
-        result, metric = await self.model.invoke(instruction, data, images)
+        if toolbox is not None and hasattr(self.model,"invoke_with_tools"):
+            result,metric=await self.model.invoke_with_tools(instruction,data,images,toolbox)
+        else:
+            result, metric = await self.model.invoke(instruction, data, images)
         await self.emit({"stage":operation,"status":"finished",**metric})
         return result
 
@@ -180,28 +203,37 @@ class Workflow:
     async def observe(self, state):
         observations = list(state.get("observations", []))
         completed = {int(x["photo_id"]) for x in observations}
-        todo = [x for x in state["photo_ids"] if x not in completed]
+        targets=observation_targets(state)
+        todo = [x for x in targets if x not in completed]
         # Every batch is its own graph node and checkpoint, so recovery does
         # not repeat all earlier photo-understanding calls.
         batch = todo[:8]
         if batch:
-            await self.emit({"stage":"observing","completed":len(observations),
-                             "total":len(state["photo_ids"]),"batch_size":len(batch)})
-            images = [(await self.workspace.call("photo", {"id":x}))["data"] for x in batch]
+            await self.emit({"stage":"observing","completed":len(completed & set(targets)),
+                             "total":len(targets),"batch_size":len(batch)})
+            photos = [await self.workspace.call("photo",{"id":x}) for x in batch]
+            images = [photo["data"] for photo in photos]
             result = await self.chinese(await self._call(OBSERVE, {"photo_ids":batch}, images))
             records = result.get("observations")
             if not isinstance(records, list) or len(records)!=len(batch) or {int(x["photo_id"]) for x in records} != set(batch):
                 raise ValueError("observations do not match the current batch")
+            metadata=dict(zip(batch,photos))
+            for record in records:
+                record["rotation"]=state.get("photo_edits",{}).get(str(int(record["photo_id"])),0)
+                photo=metadata[int(record["photo_id"])]
+                if photo.get("width") and photo.get("height"):
+                    record.update(width=photo["width"],height=photo["height"])
             observations.extend(records)
-            await self.emit({"stage":"observing","completed":len(observations),
-                             "total":len(state["photo_ids"])})
+            await self.emit({"stage":"observing","completed":len({int(x["photo_id"]) for x in observations} & set(targets)),
+                             "total":len(targets)})
         return {**state, "observations":observations}
 
     async def plan(self, state):
         asked = list(state.get("asked_questions",[]))
         count = max(int(state.get("question_count",len(asked))),len(asked))
         result = await self._call(PLAN, {
-            "title":state["title"],"observations":state["observations"],
+            "title":state["title"],"observations":[x for x in state["observations"] if x["photo_id"] in observation_targets(state)],
+            "selected_photo_ids":state.get("selected_photo_ids"),
             "messages":state["messages"],"previous_proposal":state.get("proposal"),
             "skipped":state["input"]["action"]=="skip",
             "asked_questions":asked,"question_budget":max(0,3-count),
@@ -217,7 +249,7 @@ class Workflow:
                 or not isinstance(proposal.get("style"),str) or not proposal["structure"].strip()
                 or not proposal["style"].strip()):
             raise ValueError("proposal is incomplete")
-        proposal["used_photo_ids"] = ids(proposal.get("used_photo_ids"), state["photo_ids"])
+        proposal["used_photo_ids"] = ids(state.get("selected_photo_ids") or proposal.get("used_photo_ids"), state["photo_ids"])
         questions = [re.split(r"(?<=[?？])",q.strip(),maxsplit=1)[0]
                      for q in result.get("questions",[]) if q.strip()][:1]
         questions = [q for q in questions if q not in asked]
@@ -234,7 +266,7 @@ class Workflow:
 
     async def generate(self, state):
         data = {**publication_context(state),"previous_html":state.get("previous_html","")}
-        if state["input"]["action"] == "confirm":
+        if state["input"]["action"] in ("confirm","modify"):
             data["locked_photo_ids"] = state["proposal"]["used_photo_ids"]
         return await self._generate_candidate(state, GENERATE, data, 0, "generating")
 
@@ -243,7 +275,8 @@ class Workflow:
         for attempt in range(2):
             operation = stage if attempt == 0 else "correcting"
             await self.emit({"stage":operation,"attempt":attempt + 1})
-            result = await self._call(instruction, data, stage=operation)
+            result = await self._call(instruction+"\n\n"+design_guidance(), data, stage=operation,
+                                      toolbox=DesignTools(state,self.emit))
             try:
                 return self.candidate(state, result, repairs)
             except CandidateError as error:
@@ -267,7 +300,7 @@ class Workflow:
         referenced={int(x) for x in re.findall(r"ss-photo:([0-9]+)",source)}
         if referenced != set(selected):
             raise CandidateError("photo_references_mismatch")
-        if state["input"]["action"]=="confirm" and set(selected)!=set(state["proposal"]["used_photo_ids"]):
+        if state["input"]["action"] in ("confirm","modify") and set(selected)!=set(state["proposal"]["used_photo_ids"]):
             raise CandidateError("confirmed_photos_changed")
         interactions = result.get("interactions",[])
         if not isinstance(interactions,list):
@@ -345,7 +378,7 @@ class Workflow:
             "html":state["html"],"issues":state["report"]["issues"],
             "photo_ids":state["photo_ids"],"interactions":state["interactions"],
             **({"locked_photo_ids":state["proposal"]["used_photo_ids"]}
-               if state["input"]["action"] == "confirm" else {}),
+               if state["input"]["action"] in ("confirm","modify") else {}),
         }
         return await self._generate_candidate(state,REPAIR,data,state["repairs"]+1,"repairing")
 
@@ -356,9 +389,11 @@ class Workflow:
         builder.add_edge(START,"localize")
         builder.add_conditional_edges("localize",lambda state:
             END if state["input"]["action"] == "localize" else
+            "observe" if state.get("selected_photo_ids") is not None and needs_observation(state) else
             "generate" if state["input"]["action"] in ("confirm","modify") else "observe")
         builder.add_conditional_edges("observe",lambda state:
-            "observe" if len(state["observations"])<len(state["photo_ids"]) else "plan")
+            "observe" if needs_observation(state) else
+            "generate" if state["input"]["action"] in ("confirm","modify") else "plan")
         builder.add_edge("plan",END)
         builder.add_edge("generate","render")
         builder.add_edge("render","review")
@@ -377,12 +412,15 @@ class Workflow:
             proposal=state["input"]["proposal"]
             ids(proposal.get("used_photo_ids"),state["photo_ids"])
             state["proposal"]=proposal
+            state["selected_photo_ids"]=proposal["used_photo_ids"]
         # Every new user message is the only source of factual additions.
         previous_facts={x["message_id"]:x for x in state.get("user_facts",[])}
         state["user_facts"]=[{"message_id":x["id"],"text":x["content"],
                              "display_text":previous_facts.get(x["id"],{}).get("display_text",x["content"])}
                              for x in state["messages"] if x["role"]=="user"]
         state.setdefault("observations",[])
+        if state.get("selected_photo_ids") and state.get("proposal"):
+            state["proposal"]["used_photo_ids"]=ids(state["selected_photo_ids"],state["photo_ids"])
         if state["input"]["action"]=="modify" and not state.get("proposal"):
             raise ValueError("confirm a proposal first")
         graph=self.graph()
@@ -391,9 +429,11 @@ class Workflow:
             durability="sync")
         # Strip run-specific context and heavy code before saving work facts.
         work_state={key:result[key] for key in
-                    ("observations","proposal","questions","unknowns","user_facts","reply","question_count","asked_questions")
+                    ("observations","proposal","questions","unknowns","user_facts","reply","question_count","asked_questions",
+                     "photo_ids","selected_photo_ids","photo_edits","photo_revision","photos_changed")
                     if key in result}
         waiting=result["phase"]=="waiting"
+        if not waiting:work_state["photos_changed"]=False
         message=(json.dumps({"reply":result.get("reply",""),"proposal":result.get("proposal"),"questions":result.get("questions",[])},
                             ensure_ascii=False) if waiting else
                  ("视觉检查通过，作品已保存。" if result["verified"] else
