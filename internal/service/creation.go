@@ -491,11 +491,15 @@ func (s *CreationService) execute(ctx context.Context, r model.CreationRun) {
 }
 func creationFailureReport(code string) map[string]interface{} {
 	messages := map[string]string{
-		"candidate_html_invalid":       "模型返回的网页内容无效或过大。请重试生成。",
-		"photo_selection_invalid":      "模型返回的照片列表无效。请重试生成。",
-		"photo_references_mismatch":    "模型返回的网页与照片列表不一致。自动纠正未成功，请重试生成。",
-		"confirmed_photos_changed":     "模型未保留你确认的选图。自动纠正未成功，请重试生成，或调整选图后再次确认。",
-		"interaction_manifest_invalid": "模型返回的交互信息无效。请重试生成。",
+		"candidate_html_invalid":         "模型返回的网页内容无效或过大。请重试生成。",
+		"candidate_embedded_image":       "模型返回的网页包含内嵌图片数据，自动纠正未成功。请重试生成。",
+		"candidate_restricted_material":  "模型返回的网页包含不允许的凭证相关内容，自动纠正未成功。请重试生成。",
+		"checkpoint_image_material":      "任务内容含不允许写入检查点的图片数据，已保存的方案和作品会保留。",
+		"checkpoint_credential_material": "任务内容触发了检查点的凭证保护，已保存的方案和作品会保留。",
+		"photo_selection_invalid":        "模型返回的照片列表无效。请重试生成。",
+		"photo_references_mismatch":      "模型返回的网页与照片列表不一致。自动纠正未成功，请重试生成。",
+		"confirmed_photos_changed":       "模型未保留你确认的选图。自动纠正未成功，请重试生成，或调整选图后再次确认。",
+		"interaction_manifest_invalid":   "模型返回的交互信息无效。请重试生成。",
 	}
 	message, ok := messages[code]
 	if !ok {

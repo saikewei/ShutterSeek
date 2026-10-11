@@ -5,7 +5,7 @@ import resource
 import copy
 import re
 from langgraph.graph import StateGraph, START, END
-from checkpoint import GoCheckpointer
+from checkpoint import GoCheckpointer, clean, CheckpointMaterialError
 from interaction import validate_interaction
 from localization import TRANSLATE, display_slots, needs_chinese
 
@@ -30,7 +30,10 @@ proposal and user request. All photo src attributes use ss-photo:<id>.
 Design a distinctive, photo-led experience matched to the confirmed style and purpose.
 Choose composition deliberately: image scale, whitespace, rhythm, typography and useful
 interaction can carry the story. Avoid defaulting to identical photo-and-paragraph cards.
-Use no external resources. Do not invent facts. Keep factual claims faithful to user messages.
+Use no external resources or data:image URLs. Photos must use ss-photo:<id>;
+draw decorative graphics with inline <svg> markup or CSS, never encoded image data.
+Do not include credential-related code, identifiers or attributes; this page has no
+authentication capability. Do not invent facts. Keep factual claims faithful to user messages.
 visual_context is PRIVATE DESIGN REFERENCE: use it to choose layout, image grouping,
 cropping and visual rhythm. Never paste all visual summaries into visible paragraphs,
 captions, titles, alt text, or a list of photo descriptions.
@@ -79,6 +82,8 @@ Preserve confirmed content, user facts, photo selection and useful interactions.
 
 CANDIDATE_ERRORS = {
     "candidate_html_invalid": "candidate HTML is missing or too large",
+    "candidate_embedded_image": "generated HTML must not embed data:image URLs; use ss-photo:<id> for photos and inline <svg> markup or CSS for decorations",
+    "candidate_restricted_material": "generated HTML contains restricted credential-related material; remove it and keep the page self-contained",
     "photo_selection_invalid": "photo selection is invalid or outside the work scope",
     "photo_references_mismatch": "used photo list does not match HTML references",
     "confirmed_photos_changed": "generation changed confirmed photo selection",
@@ -231,13 +236,16 @@ class Workflow:
         data = {**publication_context(state),"previous_html":state.get("previous_html","")}
         if state["input"]["action"] == "confirm":
             data["locked_photo_ids"] = state["proposal"]["used_photo_ids"]
-        # One bounded contract correction precedes rendering; visual repairs stay capped at two.
+        return await self._generate_candidate(state, GENERATE, data, 0, "generating")
+
+    async def _generate_candidate(self, state, instruction, data, repairs, stage):
+        # Contract correction applies to generation and repair without adding visual rounds.
         for attempt in range(2):
-            await self.emit({"stage":"generating" if attempt == 0 else "correcting",
-                             "attempt":attempt + 1})
-            result = await self._call(GENERATE, data, stage="generating" if attempt == 0 else "correcting")
+            operation = stage if attempt == 0 else "correcting"
+            await self.emit({"stage":operation,"attempt":attempt + 1})
+            result = await self._call(instruction, data, stage=operation)
             try:
-                return self.candidate(state, result, 0)
+                return self.candidate(state, result, repairs)
             except CandidateError as error:
                 if attempt == 1:
                     raise
@@ -269,6 +277,12 @@ class Workflow:
                 validate_interaction(item)
         except ValueError:
             raise CandidateError("interaction_manifest_invalid") from None
+        # Check before graph persistence so the model can correct unsafe material.
+        try:
+            clean({"html":source,"interactions":interactions[:1]})
+        except CheckpointMaterialError as error:
+            raise CandidateError("candidate_embedded_image" if error.code=="checkpoint_image_material"
+                                 else "candidate_restricted_material") from None
         return {**state,"html":source,"used_photo_ids":selected,
                 "interactions":interactions[:1],"repairs":repairs,"phase":"rendering"}
 
@@ -326,14 +340,14 @@ class Workflow:
 
     async def repair(self, state):
         await self.emit({"stage":"repairing","round":state["repairs"]+1})
-        result=await self._call(REPAIR,{
+        data={
             **publication_context(state),
             "html":state["html"],"issues":state["report"]["issues"],
             "photo_ids":state["photo_ids"],"interactions":state["interactions"],
             **({"locked_photo_ids":state["proposal"]["used_photo_ids"]}
                if state["input"]["action"] == "confirm" else {}),
-        })
-        return self.candidate(state,result,state["repairs"]+1)
+        }
+        return await self._generate_candidate(state,REPAIR,data,state["repairs"]+1,"repairing")
 
     def graph(self):
         builder=StateGraph(dict)

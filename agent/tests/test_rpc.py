@@ -8,6 +8,7 @@ from google.protobuf.struct_pb2 import Struct
 from rpc import encode,decode
 from server import Agent
 from workflow import CandidateError
+from checkpoint import CheckpointMaterialError
 from concurrency import FairGate
 from test_workflow import MemoryWorkspace,FakeModel,FakeBrowser
 
@@ -106,6 +107,19 @@ class RPCTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(error.exception.code(), grpc.StatusCode.INTERNAL)
         self.assertEqual(events[-1], {"stage":"failed", "error_code":"confirmed_photos_changed"})
         self.assertIn("error_code=confirmed_photos_changed", "\n".join(logs.output))
+
+    async def test_checkpoint_failure_has_safe_classification_without_payloads(self):
+        async def invalid(*args,**kwargs):
+            raise CheckpointMaterialError("checkpoint_image_material")
+        self.agent.model.invoke=invalid
+        events=[]
+        with self.assertLogs("shutterseek.agent",level="ERROR") as logs:
+            with self.assertRaises(grpc.aio.AioRpcError):
+                async for item in self.execute(encode({"run_id":"1","credential":"key-1"})):
+                    events.append(decode(item))
+        self.assertEqual(events[-1],{"stage":"failed","error_code":"checkpoint_image_material"})
+        self.assertIn("error_code=checkpoint_image_material","\n".join(logs.output))
+        self.assertNotIn("key-1","\n".join(logs.output))
 
     async def test_callback_authentication_failure_keeps_status_and_safe_log(self):
         with self.assertLogs("shutterseek.agent", level="ERROR") as logs:

@@ -4,6 +4,12 @@ import asyncio
 from langgraph.checkpoint.base import BaseCheckpointSaver, CheckpointTuple
 
 
+class CheckpointMaterialError(ValueError):
+    def __init__(self, code):
+        self.code = code
+        super().__init__("checkpoint contains forbidden material")
+
+
 def clean(value):
     # Graph channels contain only text, observations, and asset references.
     def safe_error(item):
@@ -11,8 +17,10 @@ def clean(value):
             return {"checkpoint_error": "node execution failed"}
         raise TypeError("unsupported checkpoint value")
     text = json.dumps(value, ensure_ascii=False, default=safe_error)
-    if "data:image/" in text or "credential" in text:
-        raise ValueError("checkpoint contains forbidden material")
+    if "data:image/" in text:
+        raise CheckpointMaterialError("checkpoint_image_material")
+    if "credential" in text:
+        raise CheckpointMaterialError("checkpoint_credential_material")
     return json.loads(text)
 
 

@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from concurrency import FairGate
 from workflow import Workflow, CandidateError
-from checkpoint import clean
+from checkpoint import clean, CheckpointMaterialError
 
 PHOTO="data:image/webp;base64,UklGRg=="
 SHOT=b"fake screenshot"
@@ -214,6 +214,71 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(browser.renders,0)
         self.assertIsNone(workspace.finished)
 
+    async def test_forbidden_generated_material_is_corrected_before_checkpoint_write(self):
+        for material,reason in [
+            ('<img src="data:image/svg+xml;base64,private-image">',"candidate_embedded_image"),
+            ('<script>const credential="private-key"</script>',"candidate_restricted_material"),
+        ]:
+            with self.subTest(reason=reason):
+                workspace=MemoryWorkspace(1)
+                model=FakeModel(FairGate(5))
+                original=model.invoke
+                calls=[]
+                async def invoke(instruction,data,images=()):
+                    result,metric=await original(instruction,data,images)
+                    if "Produce a complete responsive" in instruction:
+                        calls.append(data)
+                        if len(calls)==1:result["html"]+=material
+                    return result,metric
+                model.invoke=invoke
+                browser=FakeBrowser(FairGate(1))
+                await Workflow(workspace,model,browser,emit).execute()
+                self.assertEqual(len(calls),2)
+                self.assertIn("validation_error",calls[1])
+                self.assertEqual(browser.renders,1)
+                self.assertTrue(workspace.finished["verified"])
+                self.assertNotIn("private-",json.dumps(workspace.saved))
+
+    async def test_unsafe_candidate_correction_is_bounded_without_rendering_or_checkpointing_bytes(self):
+        workspace=MemoryWorkspace(1)
+        model=FakeModel(FairGate(5))
+        calls=0
+        async def invoke(*args,**kwargs):
+            nonlocal calls
+            calls+=1
+            return {"html":'<img src="ss-photo:1"><img src="data:image/png;base64,private-image">',
+                    "used_photo_ids":[1],"interactions":[]},{}
+        model.invoke=invoke
+        browser=FakeBrowser(FairGate(1))
+        with self.assertRaises(CandidateError) as error:
+            await Workflow(workspace,model,browser,emit).execute()
+        self.assertEqual(error.exception.code,"candidate_embedded_image")
+        self.assertEqual(calls,2)
+        self.assertEqual(browser.renders,0)
+        self.assertNotIn("private-image",json.dumps(workspace.saved))
+        self.assertIsNone(workspace.finished)
+
+    async def test_visual_repair_also_corrects_forbidden_material_without_extra_visual_round(self):
+        workspace=MemoryWorkspace(1)
+        model=FakeModel(FairGate(5),blocking_reviews=1)
+        original=model.invoke
+        repairs=[]
+        async def invoke(instruction,data,images=()):
+            result,metric=await original(instruction,data,images)
+            if "Repair the HTML" in instruction:
+                repairs.append(data)
+                if len(repairs)==1:result["html"]+='<img src="data:image/svg+xml;base64,private-image">'
+            return result,metric
+        model.invoke=invoke
+        browser=FakeBrowser(FairGate(1))
+        await Workflow(workspace,model,browser,emit).execute()
+        self.assertEqual(len(repairs),2)
+        self.assertIn("validation_error",repairs[1])
+        self.assertEqual(browser.renders,2)
+        self.assertEqual(workspace.finished["report"]["rounds"],2)
+        self.assertTrue(workspace.finished["verified"])
+        self.assertNotIn("private-image",json.dumps(workspace.saved))
+
     async def test_generation_contract_correction_is_bounded_and_never_renders_bad_selection(self):
         workspace = MemoryWorkspace(1)
         workspace.context["photo_ids"] = [1, 2]
@@ -401,7 +466,14 @@ class GateTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(gate.active,0)
 
     def test_reject_embedded_image_checkpoint(self):
-        with self.assertRaises(ValueError):clean({"image":PHOTO})
+        with self.assertRaises(CheckpointMaterialError) as error:
+            clean({"image":PHOTO})
+        self.assertEqual(error.exception.code,"checkpoint_image_material")
+        self.assertNotIn(PHOTO,str(error.exception))
+        with self.assertRaises(CheckpointMaterialError) as error:
+            clean({"credential":"private-key"})
+        self.assertEqual(error.exception.code,"checkpoint_credential_material")
+        self.assertNotIn("private-key",str(error.exception))
 
 
 if __name__=="__main__":
