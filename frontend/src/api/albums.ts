@@ -65,8 +65,8 @@ export async function removeAlbumPhotos(albumId: number, photoIds: number[]): Pr
   return data
 }
 
-export async function fetchAlbumDates(albumId: number): Promise<Array<{ date: string; count: number }>> {
-  const { data } = await api.get(`/albums/${albumId}/dates`)
+export async function fetchAlbumDates(albumId: number, signal?: AbortSignal): Promise<Array<{ date: string; count: number }>> {
+  const { data } = await api.get(`/albums/${albumId}/dates`, { signal })
   return data
 }
 

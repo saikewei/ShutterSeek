@@ -14,16 +14,23 @@
           <input id="creation-photo-query" ref="queryInput" v-model="query" class="input min-w-0 flex-1" placeholder="如：海边、教室、跳跃…" />
           <button class="btn-primary px-4 text-sm" :disabled="loading">搜索</button>
         </div>
-        <select v-model="album" class="input" aria-label="找照片的范围" @change="find">
-          <option value="">全部照片</option><option v-for="item in albums" :key="item.id" :value="String(item.id)">{{ item.title }}</option>
-        </select>
+        <div class="grid grid-cols-2 gap-2">
+          <select v-model="album" class="input min-w-0" aria-label="找照片的范围" @change="changeAlbum">
+            <option value="">全部照片</option><option v-for="item in albums" :key="item.id" :value="String(item.id)">{{ item.title }}</option>
+          </select>
+          <select v-model="month" class="input min-w-0" aria-label="跳转到月份" :disabled="datesLoading" @change="jumpMonth">
+            <option value="">{{ datesLoading ? '加载月份…' : '最新照片' }}</option>
+            <option v-for="item in months" :key="item.month" :value="item.month">{{ item.month.slice(0, 4) }}年{{ Number(item.month.slice(5)) }}月 · {{ item.count }}张</option>
+          </select>
+        </div>
+        <button v-if="datesError" type="button" class="text-xs text-ink-3 underline" @click="loadDates">月份加载失败，点击重试</button>
       </form>
       <p v-if="loading" role="status" class="text-xs text-ink-3 mb-3">正在寻找照片…</p>
-      <p v-else-if="!results.length" class="text-xs text-ink-3 py-6 text-center">暂无匹配照片，换个描述或相册试试。</p>
+      <p v-else-if="!results.length" class="text-xs text-ink-3 py-6 text-center">暂无照片，换个月份、描述或相册试试。</p>
       <div class="grid grid-cols-3 sm:grid-cols-4 gap-3">
-        <button v-for="photo in results" :key="photo.id" type="button" class="text-left rounded-xl overflow-hidden border border-line bg-surface" :aria-label="'添加照片 ' + photo.id" :disabled="ids.includes(photo.id) || ids.length >= 200 || busy" @click="add(photo.id)">
+        <button v-for="photo in results" :key="photo.id" type="button" class="text-left rounded-xl overflow-hidden border border-line bg-surface disabled:cursor-default" :class="{ 'creation-photo-added': ids.includes(photo.id) }" :aria-label="'添加照片 ' + photo.id" :disabled="ids.includes(photo.id) || ids.length >= 200 || busy" @click="add(photo.id)">
           <img :src="thumb(photo.id)" :alt="photo.file_name || '照片 ' + photo.id" loading="lazy" class="aspect-square w-full object-cover" />
-          <span class="block text-xs px-2 py-2" :class="ids.includes(photo.id) ? 'text-accent-strong' : 'text-ink-2'">{{ ids.includes(photo.id) ? '已加入' : '+ 加入作品' }}</span>
+          <span class="block text-xs px-2 py-2" :class="ids.includes(photo.id) ? 'text-ink-3' : 'text-ink-2'">{{ ids.includes(photo.id) ? '已加入' : '+ 加入作品' }}</span>
         </button>
       </div>
       <button v-if="cursor && !query.trim()" class="btn-ghost w-full py-2 text-xs mt-4" :disabled="loading" @click="more">加载更多照片</button>
@@ -55,22 +62,45 @@
   </AppModal>
 </template>
 <script setup lang="ts">
-import { onUnmounted, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import AppModal from '@/components/AppModal.vue'
 import { THUMB_BASE } from '@/api/client'
-import { fetchPhotos, type Photo } from '@/api/photos'
+import { fetchPhotos, fetchPhotoDates, type DateCount, type Photo } from '@/api/photos'
 import { fetchSearch } from '@/api/search'
-import { fetchAlbums, fetchAlbumPhotos, type Album } from '@/api/albums'
+import { fetchAlbums, fetchAlbumDates, type Album } from '@/api/albums'
 import type { PhotoSelection } from '@/api/creations'
 const props = withDefaults(defineProps<{ open: boolean; creating?: boolean; photoIds?: number[]; usedPhotoIds?: number[]; photoEdits?: Record<string, number>; initialAlbum?: number; busy?: boolean; saveError?: string }>(), { creating: false, busy: false })
 const emit = defineEmits<{ close: []; save: [selection: PhotoSelection] }>()
 const ids = ref<number[]>([]), selected = ref<number[]>([])
 const rotations = ref<Record<string, number>>({})
 const queryInput = ref<HTMLInputElement>()
-const title = ref(''), tab = ref('当前照片'), query = ref(''), album = ref('')
+const title = ref(''), tab = ref('当前照片'), query = ref(''), album = ref(''), month = ref('')
 const albums = ref<Album[]>([]), results = ref<Photo[]>([])
 const cursor = ref(''), loading = ref(false), error = ref('')
+const dates = ref<DateCount[]>([]), datesLoading = ref(false), datesError = ref(false)
+const months = computed(() => {
+  const counts = new Map<string, number>()
+  for (const item of dates.value) {
+    const key = item.date.slice(0, 7)
+    counts.set(key, (counts.get(key) || 0) + item.count)
+  }
+  return [...counts].sort(([a], [b]) => b.localeCompare(a)).map(([month, count]) => ({ month, count }))
+})
 let controller: AbortController | null = null
+let datesController: AbortController | null = null
+let albumsController: AbortController | null = null
+function abortRequests() { controller?.abort(); datesController?.abort(); albumsController?.abort() }
+async function loadDates() {
+  datesController?.abort()
+  const request = new AbortController(); datesController = request
+  dates.value = []; datesLoading.value = true; datesError.value = false
+  try {
+    const data = album.value ? await fetchAlbumDates(Number(album.value), request.signal) : await fetchPhotoDates(request.signal)
+    if (!request.signal.aborted) dates.value = data
+  } catch {
+    if (!request.signal.aborted) datesError.value = true
+  } finally { if (datesController === request) datesLoading.value = false }
+}
 function thumb(id: number) { return THUMB_BASE + '/' + id + '.webp' }
 function close() { if (!props.busy) emit('close') }
 function add(id: number) { if (!ids.value.includes(id) && ids.value.length < 200) { ids.value.push(id); selected.value.push(id) } }
@@ -81,33 +111,45 @@ async function search(append = false) {
   controller?.abort()
   const request = new AbortController(); controller = request
   loading.value = true; error.value = ''
-  if (!append) results.value = []
+  if (!append) { results.value = []; cursor.value = '' }
   try {
     const q = query.value.trim()
     if (q) {
       const data = await fetchSearch({ q, album_id: album.value ? Number(album.value) : undefined, limit: 60 }, request.signal)
       if (!request.signal.aborted) { results.value = data.items; cursor.value = '' }
     } else {
-      const params = { limit: 60, cursor: append ? cursor.value : undefined }
-      const data = album.value ? await fetchAlbumPhotos(Number(album.value), params, request.signal) : await fetchPhotos(params, request.signal)
-      if (!request.signal.aborted) { results.value = append ? [...results.value, ...data.items] : data.items; cursor.value = data.next_cursor }
+      const params = { limit: 60, cursor: append ? cursor.value : undefined, album_id: album.value || undefined, month: month.value || undefined }
+      const data = await fetchPhotos(params, request.signal)
+      if (!request.signal.aborted) {
+        // Timeline jumps preload newer neighbours; start this picker at the chosen month.
+        const items = data.items.slice(data.head_count || 0)
+        results.value = append ? [...results.value, ...items] : items
+        cursor.value = data.next_cursor
+      }
     }
   } catch {
     if (!request.signal.aborted) error.value = '照片加载失败，请重试搜索。'
   } finally { if (controller === request) loading.value = false }
 }
-function find() { queryInput.value?.blur(); void search() }
+function find() { if (query.value.trim()) month.value = ''; queryInput.value?.blur(); void search() }
+function jumpMonth() { query.value = ''; find() }
+function changeAlbum() { month.value = ''; void loadDates(); find() }
 function more() { void search(true) }
 watch(() => props.saveError, value => { if (value) error.value = value })
 watch(() => props.open, async open => {
-  controller?.abort()
+  abortRequests()
   if (!open) return
   ids.value = [...(props.photoIds || [])]; selected.value = [...(props.usedPhotoIds || props.photoIds || [])]
-  rotations.value = { ...(props.photoEdits || {}) }; title.value = ''; query.value = ''
+  rotations.value = { ...(props.photoEdits || {}) }; title.value = ''; query.value = ''; month.value = ''
   tab.value = ids.value.length ? '当前照片' : '找照片'; album.value = props.initialAlbum ? String(props.initialAlbum) : ''
   error.value = ''; results.value = []; cursor.value = ''
-  void search()
-  try { const data = await fetchAlbums(); if (props.open) albums.value = data.items } catch { /* Photo browsing remains usable if albums fail. */ }
+  void search(); void loadDates()
+  const request = new AbortController(); albumsController = request
+  try { const data = await fetchAlbums(request.signal); if (!request.signal.aborted) albums.value = data.items } catch { /* Photo browsing remains usable if albums fail. */ }
 })
-onUnmounted(() => controller?.abort())
+onUnmounted(abortRequests)
 </script>
+
+<style scoped>
+.creation-photo-added { opacity: .5; filter: grayscale(1); }
+</style>
