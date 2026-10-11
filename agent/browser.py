@@ -92,8 +92,8 @@ class Browser:
     def timeout_issue(viewport):
         return {"severity": "blocking", "viewport": viewport,
                 "region": "all", "element": "document",
-                "suggestion": "Reduce rendering work",
-                "description": "Browser inspection timed out"}
+                "suggestion": "减少页面渲染工作量",
+                "description": "页面效果检查超时"}
 
     async def _viewport(self, context, source, assets, name, width, height,
                         interactions, remaining):
@@ -101,15 +101,16 @@ class Browser:
         async def deny(route):
             issues.append({"severity": "blocking", "viewport": name, "region": "network",
                            "element": route.request.resource_type,
-                           "description": "Blocked external request",
-                           "suggestion": "Use only inline assets and ss-photo references"})
+                           "description": "页面尝试加载外部资源，已被阻止",
+                           "suggestion": "请使用作品内的照片和内嵌资源"})
             await route.abort()
         await context.route("**/*", deny)
         page = await context.new_page()
         page.on("pageerror", lambda error: issues.append({
             "severity": "blocking", "viewport": name, "region": "interaction",
-            "element": "script", "description": str(error)[:500],
-            "suggestion": "Fix the JavaScript error"}))
+            "element": "script", "description": "页面脚本运行出错",
+            "technical_detail": str(error)[:500],
+            "suggestion": "修复页面脚本错误"}))
         content = prepare_html(source, assets)
         await page.set_content('<meta http-equiv="Content-Security-Policy" content="'+CSP.replace("frame-src 'none'","frame-src about:")+'"><iframe sandbox="allow-scripts" style="border:0;width:100%;height:100vh" '
                                'srcdoc="' + html_module.escape(content, quote=True) +
@@ -143,20 +144,20 @@ class Browser:
         if await frame.locator("iframe,object,embed").count():
             issues.append({"severity":"blocking","viewport":name,"region":"all",
                            "element":"iframe,object,embed",
-                           "description":"Nested browsing content is forbidden",
-                           "suggestion":"Use inline page elements instead"})
+                           "description":"页面包含不允许的嵌套内容",
+                           "suggestion":"改用普通页面元素"})
         if not frame.url.startswith("about:srcdoc"):
             issues.append({"severity":"blocking","viewport":name,"region":"all",
-                           "element":"document","description":"Generated frame attempted navigation",
-                           "suggestion":"Keep interactions inside the generated page"})
+                           "element":"document","description":"页面尝试跳转，已被阻止",
+                           "suggestion":"让交互在当前作品内完成"})
         if measurements["overflow"]:
             issues.append({"severity":"blocking","viewport":name,"region":"all",
-                           "element":"document","description":"Horizontal overflow",
-                           "suggestion":"Use responsive widths"})
+                           "element":"document","description":"页面出现横向溢出",
+                           "suggestion":"调整宽度以适配屏幕"})
         if measurements["missing"]:
             issues.append({"severity":"blocking","viewport":name,"region":"images",
-                           "element":"img","description":"Missing or undecodable images",
-                           "suggestion":"Use valid work-scoped photo references"})
+                           "element":"img","description":"部分图片缺失或无法显示",
+                           "suggestion":"使用当前作品中的有效照片"})
         maximum = max(0, measurements["height"]-height)
         offsets = list(dict.fromkeys([0, maximum//2, maximum]))
         for y in offsets:
@@ -184,8 +185,8 @@ class Browser:
             if missing:
                 issues.append({"severity":"blocking","viewport":name,
                                "region":"y="+str(y),"element":"img",
-                               "description":"Missing or undecodable images",
-                               "suggestion":"Repair the image in this covered region"})
+                               "description":"部分图片缺失或无法显示",
+                               "suggestion":"修复此区域的图片"})
             region = {"viewport":name,"x":0,"y":y,"width":width,"height":height,
                       "kind":"page","page_height":measurements["height"]}
             images.append({"data":await page.screenshot(type="png", animations="disabled"),
@@ -205,18 +206,19 @@ class Browser:
                     try:
                         await frame.locator(expected[:300]).first.wait_for(state="visible",timeout=1000)
                     except Exception as error:
-                        raise ValueError("Expected interaction state is not visible") from error
+                        raise ValueError("操作后的预期内容未显示") from error
             except Exception as error:
                 issues.append({"severity":"blocking","viewport":name,"region":"interaction",
-                               "element":selector,"description":str(error)[:500],
-                               "suggestion":"Repair the required interaction"})
+                               "element":selector,"description":"交互操作未能正常完成",
+                               "technical_detail":str(error)[:500],
+                               "suggestion":"修复此交互操作"})
             position=await frame.evaluate("() => ({x:scrollX,y:scrollY})")
             region = {"viewport":name,"kind":"interaction","selector":selector,
                       **position,"width":width,"height":height}
             if not frame.url.startswith("about:srcdoc"):
                 issues.append({"severity":"blocking","viewport":name,"region":"interaction",
-                               "element":selector,"description":"Generated frame attempted navigation",
-                               "suggestion":"Keep interactions inside the generated page"})
+                               "element":selector,"description":"页面尝试跳转，已被阻止",
+                               "suggestion":"让交互在当前作品内完成"})
             images.append({"data":await page.screenshot(type="png", animations="disabled"),
                            "metadata":region})
             coverage.append(region)

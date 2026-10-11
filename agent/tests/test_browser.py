@@ -43,9 +43,9 @@ class BrowserTests(unittest.IsolatedAsyncioTestCase):
             '<button id="show">Show</button><p id="extra" hidden>Unavailable</p>',{},
             [{"selector":"#show","expect_visible":"#extra"}])
         descriptions=[x["description"] for x in result["diagnostics"]]
-        self.assertIn("Horizontal overflow",descriptions)
-        self.assertIn("Missing or undecodable images",descriptions)
-        self.assertTrue(any("Expected interaction" in x for x in descriptions))
+        self.assertIn("页面出现横向溢出",descriptions)
+        self.assertIn("部分图片缺失或无法显示",descriptions)
+        self.assertTrue(any("交互操作未能正常完成" in x for x in descriptions))
         self.assertTrue(all(x["severity"]=="blocking" for x in result["diagnostics"]))
 
     async def test_sandbox_blocks_host_session_and_network(self):
@@ -62,7 +62,7 @@ class BrowserTests(unittest.IsolatedAsyncioTestCase):
           }
           </script>""",{},[{"selector":"#test","expect_visible":"#isolated"}])
         # CSP console errors are expected from the deliberate network attempt.
-        self.assertFalse(any("Expected interaction" in x["description"]
+        self.assertFalse(any("交互操作未能正常完成" in x["description"]
                              for x in result["diagnostics"]))
 
 
@@ -73,16 +73,16 @@ class BrowserTests(unittest.IsolatedAsyncioTestCase):
         """,{},[{"selector":"#nav","expect_visible":"#retained"}])
         # Chromium replaces the frame with its internal blocked-navigation
         # page. No request reaches the route handler or the network.
-        self.assertFalse(any(x["description"]=="Blocked external request"
+        self.assertFalse(any(x["description"]=="页面尝试加载外部资源，已被阻止"
                              for x in result["diagnostics"]))
-        self.assertTrue(any("Expected interaction" in x["description"]
+        self.assertTrue(any("交互操作未能正常完成" in x["description"]
                             for x in result["diagnostics"]))
 
     async def test_nested_frame_cannot_replace_the_inspected_document(self):
         result=await Browser(FairGate(1)).render(
             '<main style="height:3000px"><h1>Original page</h1><iframe srcdoc="Nested page"></iframe></main>',{})
         self.assertEqual(len(result["screenshots"]),6)
-        self.assertTrue(any(x["description"]=="Nested browsing content is forbidden"
+        self.assertTrue(any(x["description"]=="页面包含不允许的嵌套内容"
                             for x in result["diagnostics"]))
         for region in result["coverage"]:
             self.assertGreaterEqual(region["page_height"],3000)
@@ -95,7 +95,7 @@ class BrowserTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(10)
         browser._viewport=stalled
         result=await browser.render("<h1>test</h1>",{})
-        self.assertTrue(any("timed out" in x["description"] for x in result["diagnostics"]))
+        self.assertTrue(any("超时" in x["description"] for x in result["diagnostics"]))
         self.assertEqual(gate.active,0)
         next_result=await Browser(gate).render("<h1>next user</h1>",{})
         self.assertEqual(len(next_result["screenshots"]),2)

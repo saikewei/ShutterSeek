@@ -60,6 +60,10 @@ type CreationProposal struct {
 	Style        string  `json:"style"`
 	UsedPhotoIDs []int64 `json:"used_photo_ids"`
 }
+type CreationRunView struct {
+	model.CreationRun
+	Proposal *CreationProposal `json:"proposal,omitempty"`
+}
 type CreationRunRequest struct {
 	Proposal    *CreationProposal `json:"proposal,omitempty"`
 	Action      string            `json:"action"`
@@ -172,11 +176,22 @@ func (s *CreationService) Detail(ctx context.Context, user int64, id string) (ma
 	}
 	var ids []int64
 	_ = json.Unmarshal([]byte(c.PhotoIDs), &ids)
-	return map[string]interface{}{"creation": c, "photo_ids": ids, "state": mapText(c.State), "messages": messages, "versions": versions, "runs": runs}, nil
+	views := make([]CreationRunView, 0, len(runs))
+	for _, run := range runs {
+		view := CreationRunView{CreationRun: run}
+		if run.Action == "confirm" {
+			var input CreationRunRequest
+			if json.Unmarshal([]byte(run.Input), &input) == nil {
+				view.Proposal = input.Proposal
+			}
+		}
+		views = append(views, view)
+	}
+	return map[string]interface{}{"creation": c, "photo_ids": ids, "state": mapText(c.State), "messages": messages, "versions": versions, "runs": views}, nil
 }
 func (s *CreationService) Run(ctx context.Context, user int64, id string, req CreationRunRequest) (model.CreationRun, error) {
 	var run model.CreationRun
-	if req.Action != "answer" && req.Action != "skip" && req.Action != "confirm" && req.Action != "modify" {
+	if req.Action != "answer" && req.Action != "skip" && req.Action != "confirm" && req.Action != "modify" && req.Action != "localize" {
 		return run, ErrCreationInvalid
 	}
 	if len(req.Message) > 8000 {
@@ -348,7 +363,7 @@ func CreationPreviewDocument(source string) string {
 	} else {
 		source = "<!doctype html>" + content + source
 	}
-	return "<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><style>html,body{margin:0;overflow:hidden;height:100%}iframe{border:0;width:100%;height:100%;display:block}</style></head><body><iframe sandbox=\"allow-scripts\" referrerpolicy=\"no-referrer\" title=\"Generated content\" srcdoc=\"" + htmlstd.EscapeString(source) + "\"></iframe></body></html>"
+	return "<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><style>html,body{margin:0;overflow:hidden;height:100%}iframe{border:0;width:100%;height:100%;display:block}</style></head><body><iframe sandbox=\"allow-scripts\" referrerpolicy=\"no-referrer\" title=\"作品内容\" srcdoc=\"" + htmlstd.EscapeString(source) + "\"></iframe></body></html>"
 }
 func (s *CreationService) thumbnail(id int64) ([]byte, error) {
 	f, err := os.Open(filepath.Join(s.thumbnails, fmt.Sprintf("%d.webp", id)))

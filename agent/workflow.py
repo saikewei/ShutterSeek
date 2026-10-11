@@ -2,20 +2,29 @@
 import base64
 import json
 import resource
+import copy
+import re
 from langgraph.graph import StateGraph, START, END
 from checkpoint import GoCheckpointer
+from localization import TRANSLATE, display_slots, needs_chinese
 
 OBSERVE = """Observe these photos in the given order. Return
 {"observations":[{"photo_id":number,"observation":string,"unknowns":[string]}]}.
-Use cautious visual descriptions. No invented facts."""
+Use cautious visual descriptions in Simplified Chinese. No invented facts."""
 PLAN = """Propose a content structure, visual style and photo selection first.
-Return {"proposal":{"structure":string,"style":string,"used_photo_ids":[number]},
-"questions":[string],"unknowns":[string]}. Ask at most 3 questions.
-If the user skipped questions, return an empty questions list.
-Do not generate HTML. Incorporate the user's explicit answers."""
+Return {"reply":string,
+"proposal":{"structure":string,"style":string,"used_photo_ids":[number]},
+"questions":[string],"unknowns":[string]} in Simplified Chinese.
+Keep reply to 1–3 short sentences, with no questions or questionnaire.
+Converse naturally. Acknowledge the user's latest answer before proposing the
+next step. Ask at most ONE short, useful question, only in the questions array;
+do not hide a questionnaire in reply. Never repeat an answered or skipped question.
+Use question_budget: when it is zero, ask no questions and offer a usable plan.
+Questions are optional. If the user skipped, ask no further questions this turn.
+Do not generate HTML. Incorporate explicit user answers without inventing facts."""
 GENERATE = """Return {"html":string,"used_photo_ids":[number],
 "interactions":[{"selector":string,"expect_visible":string}]}.
-Produce a complete responsive HTML/CSS/JavaScript page following the confirmed
+Produce a complete responsive HTML/CSS/JavaScript page with Chinese user-facing text following the confirmed
 proposal and user request. All photo src attributes use ss-photo:<id>.
 Use no external resources. Do not invent facts. Preserve explicit user facts.
 Give each important interactive control a stable CSS selector and describe
@@ -29,7 +38,7 @@ Evaluate text overlap, horizontal overflow, cropping, mobile readability,
 missing photos and interaction state. Browser diagnostics also matter.
 Return {"issues":[{"severity":"blocking|warning|info","viewport":"desktop|mobile",
 "region":string,"element":string,"description":string,"suggestion":string}],
-"summary":string}. Return no blocking issues only if the inspected regions pass.
+"summary":string}. Write all human-readable review text in Simplified Chinese. Return no blocking issues only if the inspected regions pass.
 Do not claim unseen page regions or untested interactions passed."""
 REPAIR = """Repair the HTML using the visual issues and browser diagnostics.
 Preserve confirmed content, user facts, photo selection and useful interactions.
@@ -77,9 +86,41 @@ class Workflow:
     def __init__(self, workspace, model, browser, emit):
         self.workspace, self.model, self.browser, self.emit = workspace, model, browser, emit
 
-    async def _call(self, instruction, data, images=()):
+    async def _call(self, instruction, data, images=(), stage=None):
+        operation = stage or {OBSERVE:"observing", PLAN:"planning", REVIEW:"reviewing",
+                              REPAIR:"repairing", TRANSLATE:"localizing"}.get(instruction,"generating")
+        await self.emit({"stage":operation,"status":"started"})
         result, metric = await self.model.invoke(instruction, data, images)
-        await self.emit({"stage": "model", **metric})
+        await self.emit({"stage":operation,"status":"finished",**metric})
+        return result
+
+    async def chinese(self, value):
+        value = copy.deepcopy(value)
+        slots = display_slots(value)
+        for offset in range(0, len(slots), 24):
+            batch = slots[offset:offset + 24]
+            result = await self._call(TRANSLATE, {"texts":[
+                {"id":index,"text":entry[2]} for index,entry in enumerate(batch)]})
+            translations = result.get("translations")
+            if not isinstance(translations, list) or len(translations) != len(batch):
+                raise ValueError("Chinese translations are incomplete")
+            seen = set()
+            for entry in translations:
+                index = entry.get("id")
+                text = entry.get("text")
+                if (not isinstance(index,(int,float)) or int(index)!=index or
+                        index not in range(len(batch)) or index in seen or
+                        not isinstance(text,str) or not text.strip() or needs_chinese(text)):
+                    raise ValueError("Chinese translation schema is invalid")
+                seen.add(index)
+                container,key,_ = batch[int(index)]
+                container[key] = text
+        return value
+
+    async def localize(self, state):
+        result = await self.chinese(state)
+        if state["input"]["action"] == "localize":
+            result.update(phase="waiting",html="",reply="图片描述和方案已更新为中文。你可以继续聊想法，或确认方案开始生成。")
         return result
 
     async def observe(self, state):
@@ -90,8 +131,10 @@ class Workflow:
         # not repeat all earlier photo-understanding calls.
         batch = todo[:8]
         if batch:
+            await self.emit({"stage":"observing","completed":len(observations),
+                             "total":len(state["photo_ids"]),"batch_size":len(batch)})
             images = [(await self.workspace.call("photo", {"id":x}))["data"] for x in batch]
-            result = await self._call(OBSERVE, {"photo_ids":batch}, images)
+            result = await self.chinese(await self._call(OBSERVE, {"photo_ids":batch}, images))
             records = result.get("observations")
             if not isinstance(records, list) or len(records)!=len(batch) or {int(x["photo_id"]) for x in records} != set(batch):
                 raise ValueError("observations do not match the current batch")
@@ -101,27 +144,38 @@ class Workflow:
         return {**state, "observations":observations}
 
     async def plan(self, state):
+        asked = list(state.get("asked_questions",[]))
+        count = max(int(state.get("question_count",len(asked))),len(asked))
         result = await self._call(PLAN, {
             "title":state["title"],"observations":state["observations"],
             "messages":state["messages"],"previous_proposal":state.get("proposal"),
             "skipped":state["input"]["action"]=="skip",
+            "asked_questions":asked,"question_budget":max(0,3-count),
+            "previous_question":next(iter(state.get("questions",[])),None),
         })
+        questions = result.get("questions", [])
+        if not isinstance(questions,list) or any(not isinstance(x,str) for x in questions):
+            raise ValueError("questions must contain text")
+        result["questions"] = questions[:1] if count < 3 and state["input"]["action"] != "skip" else []
+        result = await self.chinese(result)
         proposal = result.get("proposal")
         if (not isinstance(proposal,dict) or not isinstance(proposal.get("structure"),str)
                 or not isinstance(proposal.get("style"),str) or not proposal["structure"].strip()
                 or not proposal["style"].strip()):
             raise ValueError("proposal is incomplete")
         proposal["used_photo_ids"] = ids(proposal.get("used_photo_ids"), state["photo_ids"])
-        questions = result.get("questions", [])
-        if not isinstance(questions, list) or len(questions)>3 or any(not isinstance(x,str) for x in questions):
-            raise ValueError("at most three text questions are allowed")
-        if state["input"]["action"]=="skip":
-            questions=[]
+        questions = [re.split(r"(?<=[?？])",q.strip(),maxsplit=1)[0]
+                     for q in result.get("questions",[]) if q.strip()][:1]
+        questions = [q for q in questions if q not in asked]
+        reply = result.get("reply") or "我根据照片和你的想法整理了这份方案。你可以继续调整，也可以直接开始生成。"
+        if not isinstance(reply,str):
+            raise ValueError("chat reply must be text")
+        reply = re.sub(r"[^。！？.!?\n]*[?？]","",reply).strip() or "我已经整理好当前方案，你可以继续调整，也可以直接开始生成。"
         # Explicit facts stay tied to user messages, never copied to photo metadata.
-        return {**state, "proposal":proposal, "questions":questions,
+        return {**state, "proposal":proposal, "questions":questions,"reply":reply,
+                "question_count":count+len(questions),"asked_questions":asked+questions,
                 "unknowns":result.get("unknowns",[]),
-                "user_facts":[{"message_id":x["id"],"text":x["content"]}
-                              for x in state["messages"] if x["role"]=="user"],
+                "user_facts":state.get("user_facts",[]),
                 "phase":"waiting", "html":""}
 
     async def generate(self, state):
@@ -136,7 +190,7 @@ class Workflow:
         for attempt in range(2):
             await self.emit({"stage":"generating" if attempt == 0 else "correcting",
                              "attempt":attempt + 1})
-            result = await self._call(GENERATE, data)
+            result = await self._call(GENERATE, data, stage="generating" if attempt == 0 else "correcting")
             try:
                 return self.candidate(state, result, 0)
             except CandidateError as error:
@@ -195,9 +249,9 @@ class Workflow:
         if coverage != {"desktop","mobile"}:
             issues=state["browser"]["diagnostics"] or [{
                 "severity":"blocking","viewport":"mobile","region":"all",
-                "element":"document","description":"Required screenshots missing",
-                "suggestion":"Restore both viewport renders"}]
-            summary="Visual inspection could not cover both viewports"
+                "element":"document","description":"缺少必要的页面截图",
+                "suggestion":"重新检查桌面和手机页面"}]
+            summary="本次未能完整检查桌面和手机页面"
             reviewed=False
         else:
             result=await self._call(REVIEW,{
@@ -205,6 +259,7 @@ class Workflow:
                 "code":state["html"],"screenshots":state["screenshots"],
                 "diagnostics":state["browser"]["diagnostics"],
             },images)
+            result=await self.chinese(result)
             issues=validate_issues(result.get("issues"))
             issues=issues+state["browser"]["diagnostics"]
             summary=result.get("summary","")
@@ -213,7 +268,7 @@ class Workflow:
         report={"rounds":state["repairs"]+1,"issues":issues,"summary":summary,
                 "screenshots":state["screenshots"],"coverage":state["browser"]["coverage"],
                 "browser_ok":not state["browser"]["diagnostics"],"visual_reviewed":reviewed,
-                "limitations":"Only the listed regions and interactions were checked; model review may miss defects.",
+                "limitations":"仅检查报告列出的页面区域和交互；模型仍可能遗漏问题。",
                 "memory_peak_kib":resource.getrusage(resource.RUSAGE_SELF).ru_maxrss}
         await self.emit({"stage":"reviewed",**report})
         return {**state,"report":report,"verified":reviewed and not blocking,
@@ -232,9 +287,11 @@ class Workflow:
 
     def graph(self):
         builder=StateGraph(dict)
-        for name in ("observe","plan","generate","render","review","repair"):
+        for name in ("localize","observe","plan","generate","render","review","repair"):
             builder.add_node(name,getattr(self,name))
-        builder.add_conditional_edges(START,lambda state:
+        builder.add_edge(START,"localize")
+        builder.add_conditional_edges("localize",lambda state:
+            END if state["input"]["action"] == "localize" else
             "generate" if state["input"]["action"] in ("confirm","modify") else "observe")
         builder.add_conditional_edges("observe",lambda state:
             "observe" if len(state["observations"])<len(state["photo_ids"]) else "plan")
@@ -257,7 +314,9 @@ class Workflow:
             ids(proposal.get("used_photo_ids"),state["photo_ids"])
             state["proposal"]=proposal
         # Every new user message is the only source of factual additions.
-        state["user_facts"]=[{"message_id":x["id"],"text":x["content"]}
+        previous_facts={x["message_id"]:x for x in state.get("user_facts",[])}
+        state["user_facts"]=[{"message_id":x["id"],"text":x["content"],
+                             "display_text":previous_facts.get(x["id"],{}).get("display_text",x["content"])}
                              for x in state["messages"] if x["role"]=="user"]
         state.setdefault("observations",[])
         if state["input"]["action"]=="modify" and not state.get("proposal"):
@@ -268,13 +327,14 @@ class Workflow:
             durability="sync")
         # Strip run-specific context and heavy code before saving work facts.
         work_state={key:result[key] for key in
-                    ("observations","proposal","questions","unknowns","user_facts")
+                    ("observations","proposal","questions","unknowns","user_facts","reply","question_count","asked_questions")
                     if key in result}
         waiting=result["phase"]=="waiting"
-        message=(json.dumps({"proposal":result["proposal"],"questions":result["questions"]},
+        message=(json.dumps({"reply":result.get("reply",""),"proposal":result.get("proposal"),"questions":result.get("questions",[])},
                             ensure_ascii=False) if waiting else
                  ("视觉检查通过，作品已保存。" if result["verified"] else
                   "已达到两轮修复上限。候选作品已保存，但未通过视觉检查，请查看报告。"))
+        await self.emit({"stage":"saving"})
         await self.workspace.call("finish",{
             "state":work_state,"report":result.get("report",{}),"html":result.get("html",""),
             "used_photo_ids":result.get("used_photo_ids",[]),

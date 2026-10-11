@@ -327,3 +327,47 @@ func TestCreationFailureReasonPersistsAfterAgentAbort(t *testing.T) {
 		t.Fatal("unknown failure reason leaked")
 	}
 }
+
+func TestCreationDetailRetainsConfirmedProposalWithoutExposingRunInput(t *testing.T) {
+	s, mock := mockCreations(t)
+	mock.ExpectQuery(`SELECT .* FROM "creations" WHERE id = \$1 AND user_id = \$2`).WithArgs("work", int64(7), 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "photo_ids", "state"}).AddRow("work", 7, "[1,2]", `{"proposal":{"used_photo_ids":[1,2]}}`))
+	mock.ExpectQuery(`SELECT .* FROM "creation_messages" WHERE creation_id = \$1`).WithArgs("work").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectQuery(`SELECT .* FROM "creation_versions" WHERE creation_id = \$1`).WithArgs("work").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectQuery(`SELECT .* FROM "creation_runs" WHERE creation_id = \$1`).WithArgs("work", 20).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "action", "status", "input", "credential_hash"}).
+			AddRow("run", "confirm", "failed", `{"message":"private-run-input","proposal":{"structure":"Story","style":"Clean","used_photo_ids":[1]}}`, "private-run-credential"))
+	detail, err := s.Detail(context.Background(), 7, "work")
+	if err != nil {
+		t.Fatal(err)
+	}
+	views := detail["runs"].([]CreationRunView)
+	if len(views) != 1 || views[0].Proposal == nil || len(views[0].Proposal.UsedPhotoIDs) != 1 || views[0].Proposal.UsedPhotoIDs[0] != 1 {
+		t.Fatal("confirmed selection was lost")
+	}
+	encoded := jsonText(detail)
+	if strings.Contains(encoded, "private-run-input") || strings.Contains(encoded, "private-run-credential") {
+		t.Fatal("private run fields exposed")
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCreationChineseUpdateStillRequiresOwnership(t *testing.T) {
+	s, mock := mockCreations(t)
+	mock.ExpectBegin()
+	mock.ExpectExec("SELECT pg_advisory_xact_lock").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(`SELECT .* FROM "creations" WHERE id = \$1 AND user_id = \$2`).WithArgs("other", int64(7), 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectRollback()
+	_, err := s.Run(context.Background(), 7, "other", CreationRunRequest{Action: "localize"})
+	if err != gorm.ErrRecordNotFound {
+		t.Fatalf("unexpected ownership result: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}

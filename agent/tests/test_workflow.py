@@ -22,7 +22,7 @@ class MemoryWorkspace:
         self.finished=None
         self.context={"creation_id":str(user),"thread_id":str(user),
                       "photo_ids":[user],"title":"test",
-                      "state":{"proposal":{"structure":"story","style":"clean",
+                      "state":{"proposal":{"structure":"照片故事","style":"简约",
                                           "used_photo_ids":[user]},"observations":[]},
                       "input":{"action":action},"messages":[]}
     async def call(self,op,payload=None):
@@ -57,21 +57,23 @@ class FakeModel:
             await asyncio.sleep(.005)
             if "Observe these photos" in instruction:
                 self.image_batches.append(len(images))
-                result={"observations":[{"photo_id":x,"observation":"visible landscape",
-                                          "unknowns":["location"]} for x in data["photo_ids"]]}
+                result={"observations":[{"photo_id":x,"observation":"画面中可见风景",
+                                          "unknowns":["地点"]} for x in data["photo_ids"]]}
+            elif "Translate these display texts" in instruction:
+                result={"translations":[{"id":x["id"],"text":"中文描述，保留原有事实和不确定信息。"} for x in data["texts"]]}
             elif "Propose a content structure" in instruction:
-                result={"proposal":{"structure":"story","style":"clean",
+                result={"proposal":{"structure":"照片故事","style":"简约",
                                     "used_photo_ids":[x["photo_id"] for x in data["observations"]]},
-                        "questions":["Where?","When?","What happened?"],"unknowns":["location"]}
+                        "reply":"我已根据照片整理好方案。","questions":["这是在哪里拍的？"],"unknowns":["地点"]}
             elif "visually inspect EVERY" in instruction:
                 self.reviews+=1
                 assert len(images)==2
                 assert all(x.startswith("data:image/png;base64,") for x in images)
                 result={"issues":([{"severity":"blocking","viewport":"mobile",
-                                     "region":"first","element":"h1","description":"overlap",
-                                     "suggestion":"fix layout"}]
+                                     "region":"首屏","element":"h1","description":"文字重叠",
+                                     "suggestion":"调整布局"}]
                                    if self.reviews<=self.blocking_reviews else []),
-                        "summary":"inspected screenshots"}
+                        "summary":"已检查桌面和手机截图"}
             else:
                 selected=data.get("proposal",{}).get("used_photo_ids",data.get("photo_ids"))
                 result={"html":"<main>"+''.join('<img src=\"ss-photo:'+str(x)+'\">' for x in selected)+"</main>",
@@ -182,6 +184,84 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(workspace.finished["html"],"")
         self.assertIn("proposal",workspace.finished["state"])
 
+    async def test_chat_asks_one_question_and_stops_after_three(self):
+        workspace=MemoryWorkspace(1,"answer")
+        model=FakeModel(FairGate(5))
+        original=model.invoke
+        budgets=[]
+        async def converse(instruction,data,images=()):
+            result,metric=await original(instruction,data,images)
+            if "Propose a content structure" in instruction:
+                budgets.append(data["question_budget"])
+                result["questions"]=["想补充第"+str(len(budgets))+"个细节吗？","多余的问题不应展示"]
+                result["reply"]="我已经记下你刚才的回答。"
+            return result,metric
+        model.invoke=converse
+        for turn in range(4):
+            workspace.saved=None
+            workspace.context["messages"].append({"id":str(turn),"role":"user","content":"这是一段新的补充"})
+            await Workflow(workspace,model,FakeBrowser(FairGate(1)),emit).execute()
+            state=workspace.finished["state"]
+            self.assertLessEqual(len(state["questions"]),1)
+            workspace.context["state"]=state
+        self.assertEqual(budgets,[3,2,1,0])
+        self.assertEqual(state["questions"],[])
+        self.assertEqual(state["question_count"],3)
+        self.assertEqual(len(state["asked_questions"]),3)
+
+    async def test_chat_does_not_hide_extra_questions_inside_reply(self):
+        workspace=MemoryWorkspace(1,"answer")
+        model=FakeModel(FairGate(5))
+        original=model.invoke
+        async def bundled(instruction,data,images=()):
+            result,metric=await original(instruction,data,images)
+            if "Propose a content structure" in instruction:
+                result["reply"]="已经整理好方案。在哪里拍的？什么时候拍的？"
+                result["questions"]=["你喜欢什么风格？要不要配音乐？"]
+            return result,metric
+        model.invoke=bundled
+        await Workflow(workspace,model,FakeBrowser(FairGate(1)),emit).execute()
+        state=workspace.finished["state"]
+        self.assertEqual(state["reply"],"已经整理好方案。")
+        self.assertEqual(state["questions"],["你喜欢什么风格？"])
+
+    async def test_localization_preserves_user_messages_ids_and_versions(self):
+        workspace=MemoryWorkspace(1,"localize")
+        workspace.context["state"]["proposal"]["structure"]="A journey"
+        workspace.context["state"]["observations"]=[{"photo_id":1,"observation":"A landscape, location unknown","unknowns":["location"]}]
+        workspace.context["messages"]=[{"id":"fact","role":"user","content":"Bali in 2022"}]
+        workspace.context["html"]="<h1>Previously saved page</h1>"
+        original=copy.deepcopy(workspace.context)
+        events=[]
+        async def capture(event): events.append(event)
+        await Workflow(workspace,FakeModel(FairGate(5)),FakeBrowser(FairGate(1)),capture).execute()
+        state=workspace.finished["state"]
+        self.assertIn("中文",state["observations"][0]["observation"])
+        self.assertEqual(state["observations"][0]["photo_id"],1)
+        self.assertEqual(state["proposal"]["used_photo_ids"],[1])
+        self.assertEqual(state["user_facts"][0]["message_id"],"fact")
+        self.assertEqual(state["user_facts"][0]["text"],"Bali in 2022")
+        self.assertIn("中文",state["user_facts"][0]["display_text"])
+        self.assertEqual(workspace.context,original)
+        self.assertEqual(workspace.finished["html"],"")
+        self.assertIn("localizing",[x["stage"] for x in events])
+        self.assertFalse(any(x["stage"]=="generating" for x in events))
+
+    async def test_phase_progress_is_emitted_before_model_waits(self):
+        workspace=MemoryWorkspace(1,"answer")
+        events=[]
+        async def capture(event):events.append(event)
+        model=FakeModel(FairGate(5))
+        original=model.invoke
+        async def check(instruction,data,images=()):
+            expected="observing" if "Observe these photos" in instruction else "planning"
+            self.assertEqual(events[-1]["stage"],expected)
+            self.assertEqual(events[-1]["status"],"started")
+            return await original(instruction,data,images)
+        model.invoke=check
+        await Workflow(workspace,model,FakeBrowser(FairGate(1)),capture).execute()
+        self.assertEqual(events[-1]["stage"],"waiting")
+
     async def test_completed_checkpoint_replays_without_model_calls(self):
         workspace=MemoryWorkspace(1);model=FakeModel(FairGate(5))
         browser=FakeBrowser(FairGate(1))
@@ -219,7 +299,7 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
         await Workflow(workspace,model,FakeBrowser(FairGate(1)),emit).execute()
         self.assertEqual(model.image_batches,[8,8,1])
         self.assertEqual(len(workspace.finished["state"]["observations"]),17)
-        self.assertEqual(len(workspace.finished["state"]["questions"]),3)
+        self.assertEqual(len(workspace.finished["state"]["questions"]),1)
 
 
 class GateTests(unittest.IsolatedAsyncioTestCase):
