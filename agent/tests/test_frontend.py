@@ -23,23 +23,30 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
             browser=await pw.chromium.launch(headless=True,args=["--disable-dev-shm-usage"])
             context=await browser.new_context(viewport={"width":width,"height":height},has_touch=touch)
             page=await context.new_page()
+            page.set_default_timeout(8000)
             requested=[];submitted=[];current="";run_state=None
-            creations=[];album_fetches=0;stream_attempts=0;run_report="{}"
+            creations=[];album_fetches=0;stream_attempts=0;run_report="{}";chat_turn=0
+            skipped=False;legacy=False;generation_count=0
+            questions=["在哪里拍的？","什么时候拍的？","和谁一起？"]
+            messages=[{"id":"assistant-first","role":"assistant","content":json.dumps({
+                "reply":"我已经整理好一份旅行故事方案。","questions":questions},ensure_ascii=False)}]
             release_failure=asyncio.Event()
             failure_text="模型未保留你确认的选图。自动纠正未成功，请重试生成。"
             def version(id):
                 return {"id":id,"verified":id=="v2","report":json.dumps({
-                    "rounds":1,"issues":[],"summary":"Inspected both viewports","screenshots":[]}),
+                    "rounds":1,"issues":[],"summary":"已检查桌面和手机页面","screenshots":[]}),
                     "used_photo_ids":"[1]","created_at":"2026-10-11T08:00:00Z"}
             def detail():
                 return {"creation":{"id":"work","title":"旅行故事","current_version":current},
-                        "photo_ids":[1,2],"state":{"proposal":{"structure":"A journey",
-                        "style":"Minimal","used_photo_ids":[1,2]},"questions":["在哪里？"],
-                        "unknowns":["地点"],"observations":[],"user_facts":[]},
-                        "messages":[],"runs":([{"id":"run","status":run_state,"report":run_report}] if run_state else []),
+                        "photo_ids":[1,2],"state":{"proposal":{"structure":"按旅程顺序讲述照片里的故事",
+                        "style":"温暖简约","used_photo_ids":[1,2]},"questions":questions,
+                        "unknowns":["地点"],"observations":[{"photo_id":1,"observation":"A landscape" if legacy else "画面中可见山间风景","unknowns":["地点"]}],"user_facts":[]},
+                        "messages":messages,"runs":([{"id":"run","status":run_state,"report":run_report,
+                            "action":submitted[-1].get("action"),"proposal":submitted[-1].get("proposal")}]
+                            if run_state and submitted else []),
                         "versions":([version("v2"),version("v1")] if current else [])}
             async def route_handler(route):
-                nonlocal current,run_state,album_fetches,stream_attempts,run_report
+                nonlocal current,run_state,album_fetches,stream_attempts,run_report,chat_turn,skipped,legacy,generation_count,questions
                 request=route.request;path=urlparse(request.url).path
                 requested.append((request.method,path))
                 value=None
@@ -68,10 +75,26 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
                 elif path=="/api/v1/creations/work":value=detail()
                 elif path=="/api/v1/creations/work/runs":
                     submitted.append(request.post_data_json)
+                    if request.post_data_json["action"]=="confirm":generation_count+=1
+                    if request.post_data_json["message"]:messages.append({"id":"user-"+str(len(submitted)),"role":"user","content":request.post_data_json["message"]})
                     run_state="queued";run_report="{}";value={"id":"run","status":"queued","report":"{}"}
                 elif path.endswith("/events"):
+                    action=submitted[-1].get("action")
+                    if action in ("answer","skip","localize"):
+                        if action=="answer":
+                            chat_turn+=1;questions=["你喜欢什么样的风格？"]
+                            reply="了解了，我记下了你刚才的回答。"
+                        elif action=="skip":
+                            skipped=True;questions=[];reply="好的，先按已有信息继续，方案已经准备好了。"
+                        else:
+                            legacy=False;reply="图片描述已更新为中文。"
+                        messages.append({"id":"assistant-"+str(len(submitted)),"role":"assistant","content":json.dumps({"reply":reply,"questions":questions},ensure_ascii=False)})
+                        run_state="waiting"
+                        await route.fulfill(status=200,content_type="text/event-stream",
+                            body='event: progress\ndata: {"stage":"planning"}\n\nevent: done\ndata: {"status":"waiting"}\n\n')
+                        return
                     stream_attempts+=1
-                    if len(submitted)==1:
+                    if generation_count==1:
                         if stream_attempts==1:
                             run_state="running"
                             await route.fulfill(status=200,content_type="text/event-stream",
@@ -91,9 +114,9 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
                     submitted.append(request.post_data_json)
                     await route.fulfill(status=204);return
                 elif path.endswith("/preview"):
-                    await route.fulfill(content_type="text/html",headers={
+                    await route.fulfill(content_type="text/html; charset=utf-8",headers={
                         "Content-Security-Policy":CSP.replace("frame-src 'none'","frame-src about:")+"; sandbox allow-scripts"},
-                        body='<!doctype html><style>html,body{margin:0;height:100%;overflow:hidden}</style><iframe title="Generated content" sandbox="allow-scripts" style="width:100%;height:100%;border:0" srcdoc="'+html.escape(prepare_html('<h1>Saved story</h1><button id="open" onclick="document.getElementById(\'extra\').hidden=false">Open</button><p id="extra" hidden>Interactive content</p>',{}),quote=True)+'"></iframe>')
+                        body='<!doctype html><style>html,body{margin:0;height:100%;overflow:hidden}</style><iframe title="作品内容" sandbox="allow-scripts" style="width:100%;height:100%;border:0" srcdoc="'+html.escape(prepare_html('<h1>故事已保存</h1><button id="open" onclick="document.getElementById(\'extra\').hidden=false">展开</button><p id="extra" hidden>可交互内容</p>',{}),quote=True)+'"></iframe>')
                     return
                 elif path.startswith("/api/v1/thumbnails/"):
                     await route.fulfill(content_type="image/png",body=base64.b64decode(PNG.split(",")[1]));return
@@ -156,12 +179,48 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
             if width>=768 and not touch:
                 self.assertEqual(await nav.get_attribute("aria-current"),"page")
                 self.assertIn("bg-accent-soft",(await nav.get_attribute("class")).split())
-            await page.get_by_label("内容结构",exact=True).fill("A confirmed journey")
-            await page.get_by_label("使用照片 2",exact=True).uncheck()
+            self.assertEqual(await page.get_by_role("textbox").count(),1)
+            self.assertEqual(await page.get_by_text("在哪里拍的？",exact=False).count(),1)
+            self.assertEqual(await page.get_by_text("什么时候拍的？",exact=False).count(),0)
+            composer=page.get_by_role("textbox",name="给创作助手的消息",exact=True)
+            await composer.fill("这是一次海边旅行")
+            await composer.press("Shift+Enter")
+            self.assertEqual(submitted,[])
+            await composer.fill("这是一次海边旅行")
+            await composer.press("Enter")
+            await page.get_by_text("了解了，我记下了你刚才的回答。",exact=False).wait_for()
+            self.assertEqual(submitted[0]["message"],"这是一次海边旅行")
+            self.assertNotIn("跳过",submitted[0]["message"])
+            self.assertEqual(await page.get_by_role("textbox").count(),1)
+            await page.get_by_role("button",name="先跳过",exact=True).click()
+            await page.get_by_text("好的，先按已有信息继续",exact=False).wait_for()
+            self.assertTrue(skipped)
+            legacy=True
+            await page.reload()
+            await page.get_by_role("button",name="照片 · 2",exact=True).click()
+            photo_dialog=page.get_by_role("dialog",name="创作照片",exact=True)
+            await photo_dialog.get_by_role("button",name="照片信息",exact=True).click()
+            self.assertEqual(await page.get_by_text("A landscape",exact=True).count(),0)
+            await photo_dialog.get_by_role("button",name="更新中文描述",exact=True).click()
+            await page.get_by_text("图片描述已更新为中文。",exact=True).wait_for()
+            self.assertEqual(submitted[-1]["action"],"localize")
+            async def adjust():
+                await page.get_by_role("button",name="调整方案",exact=True).click()
+                edit=page.get_by_role("dialog",name="调整创作方案",exact=True)
+                await edit.get_by_label("内容结构",exact=True).fill("按海边旅程讲述故事")
+                await edit.get_by_role("button",name="保存调整",exact=True).click()
+                await page.get_by_role("button",name="照片 · 2",exact=True).click()
+                await photo_dialog.get_by_role("button",name="选图",exact=True).click()
+                await photo_dialog.get_by_label("使用照片 2",exact=True).uncheck()
+                await photo_dialog.get_by_role("button",name="完成",exact=True).click()
+            await adjust()
             await page.get_by_role("button",name="确认并生成").click()
             status=page.get_by_role("status")
-            await status.get_by_text("正在生成网页，请稍候…",exact=True).wait_for()
+            await status.get_by_text("正在生成网页",exact=True).wait_for()
             self.assertTrue(await page.get_by_role("button",name="取消任务",exact=True).is_visible())
+            bounds=await status.bounding_box()
+            self.assertGreaterEqual(bounds["y"],0)
+            self.assertLessEqual(bounds["y"]+bounds["height"],height)
             await page.screenshot(path=str(artifact/f"generating-{width}.png"))
             release_failure.set()
             alert=page.get_by_role("alert")
@@ -171,21 +230,21 @@ class FrontendTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(await page.get_by_role("button",name="对话",exact=True).get_attribute("aria-pressed"),"true")
             await page.reload()
             await alert.get_by_text(failure_text,exact=True).wait_for()
-            await page.get_by_label("内容结构",exact=True).fill("A confirmed journey")
-            await page.get_by_label("使用照片 2",exact=True).uncheck()
+            await adjust()
             await page.get_by_role("button",name="确认并生成").click()
             await page.wait_for_function("document.querySelector('iframe') !== null")
             if width<768 or touch:
                 await page.get_by_role("button",name="预览",exact=True).click()
-            frame=page.frame_locator('iframe[title="作品沙箱预览"]').frame_locator('iframe[title="Generated content"]')
-            await frame.get_by_role("heading",name="Saved story").wait_for()
-            await frame.get_by_role("button",name="Open",exact=True).click()
-            await frame.get_by_text("Interactive content").wait_for(state="visible")
-            self.assertEqual(submitted[0]["action"],"confirm")
-            self.assertEqual(submitted[0]["proposal"]["used_photo_ids"],[1])
-            self.assertEqual(submitted[0]["proposal"]["structure"],"A confirmed journey")
+            frame=page.frame_locator('iframe[title="作品沙箱预览"]').frame_locator('iframe[title="作品内容"]')
+            await frame.get_by_role("heading",name="故事已保存").wait_for()
+            await frame.get_by_role("button",name="展开",exact=True).click()
+            await frame.get_by_text("可交互内容").wait_for(state="visible")
+            confirmed=[item for item in submitted if item.get("action")=="confirm"]
+            self.assertEqual(confirmed[0]["proposal"]["used_photo_ids"],[1])
+            self.assertEqual(confirmed[0]["proposal"]["structure"],"按海边旅程讲述故事")
             self.assertEqual(await page.locator("iframe").get_attribute("sandbox"),"allow-scripts")
-            await page.get_by_role("combobox").select_option("v1")
+            await page.get_by_role("button",name="版本记录",exact=True).click()
+            await page.get_by_role("combobox",name="查看版本",exact=True).select_option("v1")
             await page.get_by_role("button",name="恢复此版本").click()
             self.assertEqual(submitted[-1]["base_version"],"v2")
             self.assertTrue(any(path.endswith("/v1/restore") for method,path in requested))

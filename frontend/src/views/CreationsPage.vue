@@ -1,212 +1,376 @@
 <template>
-  <div class="p-3 sm:p-5 space-y-4">
-    <div class="flex items-center gap-3">
-      <RouterLink v-if="workId" to="/creations" class="btn-ghost px-2 py-1">← 作品</RouterLink>
-      <h1 class="text-xl font-display">{{ detail?.creation.title || 'AI 网页创作' }}</h1>
-    </div>
-    <p v-if="error || runFailure" role="alert" class="text-danger-ink">{{ error || runFailure }}</p>
-    <div v-if="activeRun || busy" role="status" class="border border-line rounded-xl bg-raised p-3 space-y-1">
-      <p class="text-sm font-medium">{{ activeRun ? stageLabel : '正在提交任务…' }}</p>
-      <p class="text-xs text-ink-3">完成后会自动显示结果。关闭页面不会取消任务。</p>
-    </div>
-    <p v-if="!creationsEnabled">AI 创作尚未启用。</p>
+  <div class="creation-page">
+    <header class="flex items-center gap-3 flex-wrap">
+      <RouterLink v-if="workId" to="/creations" class="btn-ghost px-2.5 py-1.5 text-xs" aria-label="返回作品列表">← 作品</RouterLink>
+      <div class="flex-1 min-w-0">
+        <h1 class="font-display text-xl truncate">{{ detail?.creation.title || 'AI 网页创作' }}</h1>
+        <p v-if="detail" class="text-xs text-ink-3 mt-1">{{ detail.creation.current_version ? '继续对话，让作品更贴近你的想法' : '聊聊照片背后的故事，再一起确认方案' }}</p>
+      </div>
+      <template v-if="detail">
+        <button class="btn-ghost px-3 py-2 text-xs" @click="photosOpen = true">照片 · {{ detail.photo_ids.length }}</button>
+        <button v-if="detail.versions.length" class="btn-ghost px-3 py-2 text-xs" @click="versionsOpen = true">版本记录</button>
+      </template>
+    </header>
+    <p v-if="error || runFailure" role="alert" class="rounded-xl border border-danger-ink/30 bg-raised p-3 text-sm text-danger-ink">{{ error || runFailure }}</p>
+    <p v-if="!creationsEnabled" class="text-ink-2 text-sm">AI 创作尚未启用。</p>
+
     <template v-else-if="!workId">
-      <p class="text-sm text-ink-2">从相册或照片网格选择 1–200 张照片，创作故事页、旅行展示、时间线或画廊。补充信息仅保存在当前作品。</p>
-      <button class="btn-primary px-4 py-2 inline-flex" @click="albumPickerOpen = true">选择相册</button>
-      <div class="grid sm:grid-cols-2 gap-3">
-        <RouterLink v-for="work in works" :key="work.id" :to="'/creations/' + work.id" class="p-4 border border-line rounded-xl bg-raised">
-          <h2>{{ work.title }}</h2><p class="text-xs text-ink-3 mt-2">{{ work.current_version ? '已保存作品' : '等待创作' }}</p>
-        </RouterLink>
-      </div>
+      <section class="creation-intro rounded-2xl border border-line bg-raised p-6 sm:p-8">
+        <p class="text-xs text-accent-strong mb-3">从照片开始，一起创作</p>
+        <h2 class="font-display text-2xl sm:text-3xl text-ink">把照片，讲成故事。</h2>
+        <p class="text-sm text-ink-2 leading-relaxed mt-3 max-w-lg">选一个相册，聊聊你想表达的故事。助手会一步步和你完善想法，制作可以浏览和互动的网页。</p>
+        <div class="flex gap-2 flex-wrap mt-5 text-xs text-ink-3"><span>旅行游记</span><span aria-hidden="true">·</span><span>生活故事</span><span aria-hidden="true">·</span><span>照片画廊</span></div>
+        <button class="btn-primary px-5 py-2.5 mt-6 text-sm" @click="albumPickerOpen = true">选择相册</button>
+        <p class="text-xs text-ink-3 mt-3">每份作品可使用 1–200 张照片，补充的信息仅用于当前作品。</p>
+      </section>
+      <section v-if="works.length" class="space-y-3">
+        <h2 class="text-sm font-medium text-ink-2">我的作品</h2>
+        <div class="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
+          <RouterLink v-for="work in works" :key="work.id" :to="'/creations/' + work.id" class="p-5 border border-line rounded-xl bg-raised hover:border-accent/50 transition-colors">
+            <h3 class="font-medium text-sm truncate">{{ work.title }}</h3>
+            <p class="text-xs text-ink-3 mt-2">{{ work.current_version ? '已保存 · 继续完善' : '草稿 · 继续创作' }}</p>
+          </RouterLink>
+        </div>
+      </section>
     </template>
+
     <template v-else-if="detail">
-      <div v-if="isMobileShell" class="flex gap-2" aria-label="创作面板">
-        <button v-for="item in ['对话', '预览']" :key="item" class="btn-ghost px-4 py-2" :aria-pressed="panel === item" @click="panel = item">{{ item }}</button>
+      <CreationProgress v-if="activeRun" class="creation-live-progress" :style="{ top: topOffset() + 'px' }" :progress="progress" :started-at="startedAt" :reconnecting="reconnecting" @cancel="cancel" />
+      <p v-else-if="busy" role="status" class="text-sm text-ink-2">正在提交，请稍候…</p>
+      <div v-if="isMobileShell" class="panel-switch flex gap-1 p-1 rounded-xl bg-raised border border-line" aria-label="创作面板">
+        <button v-for="item in ['对话', '预览']" :key="item" class="flex-1 py-2 rounded-lg text-sm transition-colors" :class="panel === item ? 'bg-accent-soft text-ink font-medium' : 'text-ink-3'" :aria-pressed="panel === item" @click="panel = item">{{ item }}</button>
       </div>
-      <div class="creation-panels" :class="{ 'creation-mobile': isMobileShell }">
-        <section v-show="!isMobileShell || panel === '对话'" class="space-y-4 min-w-0">
-          <div v-for="message in detail.messages" :key="message.id" class="rounded-xl p-3 border border-line bg-raised">
-            <p class="text-xs text-ink-3 mb-1">{{ message.role === 'user' ? '你' : '创作助手' }}</p>
-            <p class="whitespace-pre-wrap break-words text-sm">{{ readableMessage(message.content) }}</p>
+
+      <div class="creation-workspace" :class="{ 'creation-mobile': isMobileShell }">
+        <section v-show="!isMobileShell || panel === '对话'" class="creation-conversation min-w-0 rounded-2xl border border-line bg-raised" aria-label="创作对话">
+          <div class="px-4 sm:px-5 py-4 border-b border-line">
+            <h2 class="text-sm font-medium">一起创作</h2>
+            <p class="text-xs text-ink-3 mt-1">说说想法，也可以随时调整内容和风格。</p>
           </div>
-          <div v-if="detail.state.questions?.length && !activeRun && !detail.creation.current_version" class="space-y-3">
-            <label v-for="(question, index) in detail.state.questions" :key="question" class="block text-sm">
-              {{ question }}
-              <input v-model="answers[index]" class="creation-input mt-1" placeholder="可留空跳过" />
-            </label>
+          <div class="space-y-5 p-4 sm:p-5">
+            <div v-if="!detail.messages.length" class="chat-row">
+              <span class="chat-avatar" aria-hidden="true">✦</span>
+              <div class="chat-bubble chat-assistant">
+                <p class="text-xs text-ink-3 mb-2">创作助手</p>
+                <p class="text-sm leading-relaxed">想用这组照片讲一个什么样的故事？可以先告诉我一个简单的想法，我们慢慢完善。</p>
+              </div>
+            </div>
+            <div v-for="item in detail.messages.filter(m => m.content.trim())" :key="item.id" class="chat-row" :class="{ 'chat-user-row': item.role === 'user' }">
+              <span v-if="item.role !== 'user'" class="chat-avatar" aria-hidden="true">✦</span>
+              <div class="chat-bubble" :class="item.role === 'user' ? 'chat-user' : 'chat-assistant'">
+                <p class="text-xs text-ink-3 mb-2">{{ item.role === 'user' ? '你' : '创作助手' }}</p>
+                <p class="whitespace-pre-wrap break-words text-sm leading-relaxed">{{ item.role === 'user' ? item.content : assistantText(item.content) }}</p>
+              </div>
+            </div>
+            <div v-if="currentQuestion && !activeRun" class="text-xs text-ink-3">直接在下方回复即可，这个问题也可以跳过。</div>
+
+            <div v-if="proposal && !activeRun && !detail.creation.current_version" class="proposal-card rounded-xl border border-accent/30 p-4 space-y-3">
+              <div class="flex items-center justify-between gap-2">
+                <h3 class="text-sm font-medium">当前方案</h3>
+                <span class="text-xs text-ink-3">{{ proposal.used_photo_ids.length }} 张照片</span>
+              </div>
+              <p class="text-sm text-ink-2 leading-relaxed whitespace-pre-wrap">{{ displayChinese(proposal.structure, '请先更新中文方案，查看具体内容后再确认。') }}</p>
+              <p class="text-xs text-ink-3">风格 · {{ displayChinese(proposal.style, '等待中文更新') }}</p>
+              <div class="flex flex-wrap gap-2">
+                <button v-if="proposalNeedsChinese" class="btn-primary px-4 py-2 text-sm" :disabled="busy" @click="localize">更新中文方案</button>
+                <button v-else class="btn-primary px-4 py-2 text-sm" :disabled="busy || !canConfirm" @click="run('confirm')">确认并生成</button>
+                <button v-if="!proposalNeedsChinese" class="btn-ghost px-3 py-2 text-xs" :disabled="busy" @click="editOpen = true">调整方案</button>
+                <button class="btn-ghost px-3 py-2 text-xs" @click="photosOpen = true">调整选图</button>
+              </div>
+            </div>
+
+            <form class="composer rounded-xl border border-line p-3" @submit.prevent="send">
+              <label for="creation-message" class="sr-only">给创作助手的消息</label>
+              <textarea id="creation-message" ref="composer" v-model="message" rows="3" class="w-full resize-none bg-transparent text-sm text-ink placeholder:text-ink-3 focus:outline-none" :placeholder="detail.creation.current_version ? '告诉我想修改哪里…' : currentQuestion ? '回复助手，或聊聊你想调整的地方…' : '说说你想做什么样的作品…'" :disabled="!!activeRun || busy" @keydown.enter="composerEnter" />
+              <div class="flex items-center gap-2 mt-2">
+                <span class="text-xs text-ink-3 flex-1">回车发送 · ⇧ + 回车换行</span>
+                <button v-if="currentQuestion && !activeRun" type="button" class="btn-ghost px-3 py-2 text-xs" :disabled="busy" @click="run('skip')">先跳过</button>
+                <button type="submit" class="btn-primary px-4 py-2 text-sm" :disabled="busy || !!activeRun || !message.trim()">发送</button>
+              </div>
+            </form>
+            <p class="text-[11px] text-ink-3">助手会区分画面观察和你提供的事实，未知信息不会编造。</p>
           </div>
-          <div v-if="proposal && !activeRun && !detail.creation.current_version" class="space-y-3 border border-line rounded-xl p-3">
-            <h2 class="font-medium">确认内容与风格</h2>
-            <label class="block text-sm">内容结构<textarea v-model="proposal.structure" class="creation-input mt-1" rows="3" /></label>
-            <label class="block text-sm">视觉风格<input v-model="proposal.style" class="creation-input mt-1" /></label>
-            <p class="text-xs text-ink-3">下方勾选将使用的照片，再确认生成。</p>
-            <button class="btn-primary px-4 py-2" :disabled="busy || !proposal.used_photo_ids.length" @click="run('confirm')">确认并生成</button>
-          </div>
-          <label class="block text-sm">创作要求或修改意见
-            <textarea v-model="message" rows="3" class="creation-input mt-1" placeholder="想做什么样的作品？也可以补充照片背后的真实故事。" :disabled="!!activeRun" />
-          </label>
-          <div class="flex flex-wrap gap-2">
-            <button class="btn-primary px-4 py-2" :disabled="busy || !!activeRun" @click="run(detail.creation.current_version ? 'modify' : 'answer')">
-              {{ detail.creation.current_version ? '对话修改' : '发送 / 更新方案' }}
-            </button>
-            <button v-if="!detail.creation.current_version" class="btn-ghost px-4 py-2" :disabled="busy || !!activeRun" @click="run('skip')">跳过问题</button>
-            <button v-if="activeRun" class="btn-ghost px-4 py-2" @click="cancel">取消任务</button>
-          </div>
-          <p class="text-xs text-ink-3">关闭页面不会取消任务，回来后可恢复进度。生成与修改后都会重新截图审查，最多修复两轮。</p>
-          <details>
-            <summary class="cursor-pointer text-sm">图片观察、你提供的事实与未知信息</summary>
-            <h3 class="mt-2 text-sm">图片观察（可能不准确）</h3>
-            <p v-for="observation in detail.state.observations" :key="observation.photo_id" class="text-xs mt-1">#{{ observation.photo_id }}：{{ observation.observation }}</p>
-            <h3 class="mt-2 text-sm">你提供的信息</h3>
-            <p v-for="fact in detail.state.user_facts" :key="fact.message_id" class="text-xs mt-1">{{ fact.text }}</p>
-            <h3 class="mt-2 text-sm">未知信息</h3>
-            <p v-for="unknown in detail.state.unknowns" :key="unknown" class="text-xs mt-1">{{ unknown }}</p>
-          </details>
         </section>
-        <section v-show="!isMobileShell || panel === '预览'" class="min-w-0 space-y-3">
-          <div class="flex items-center gap-2 flex-wrap">
-            <label class="text-sm">版本
-              <select v-model="version" class="creation-input !w-auto ml-2">
-                <option value="">尚无版本</option>
-                <option v-for="item in detail.versions" :key="item.id" :value="item.id">{{ new Date(item.created_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) }} · {{ item.verified ? '检查通过' : '候选 / 未通过' }}</option>
-              </select>
-            </label>
-            <button v-if="version && version !== detail.creation.current_version" :disabled="!!activeRun || busy" class="btn-ghost px-3 py-1" @click="restore">恢复此版本</button>
+
+        <section v-show="!isMobileShell || panel === '预览'" class="creation-preview-panel min-w-0 space-y-3" :style="!isMobileShell ? { top: topOffset() + 'px' } : undefined" aria-label="作品预览">
+          <div class="flex items-center gap-2 px-1">
+            <h2 class="text-sm font-medium flex-1">作品预览</h2>
+            <span v-if="selectedVersion" class="text-xs" :class="selectedVersion.verified ? 'text-accent-strong' : 'text-ink-3'">{{ selectedVersion.verified ? '效果检查通过' : '待完善的候选版本' }}</span>
+            <button v-if="version && version !== detail.creation.current_version" class="btn-ghost px-3 py-1.5 text-xs" :disabled="busy || !!activeRun" @click="restore">恢复此版本</button>
           </div>
           <iframe v-if="version" :key="version" :src="previewURL(workId, version)" sandbox="allow-scripts" referrerpolicy="no-referrer" title="作品沙箱预览" class="creation-preview" />
-          <div v-else class="border border-dashed border-line rounded-xl p-10 text-ink-3 text-center">确认方案后，这里将显示可交互作品。</div>
-          <div v-if="report.rounds" class="border border-line rounded-xl p-3 space-y-2">
-            <h2 class="font-medium">视觉检查 · {{ report.rounds || 0 }} 轮</h2>
-            <p class="text-sm">{{ report.summary }}</p>
-            <p v-for="(issue, index) in report.issues" :key="index" class="text-sm">
-              {{ issue.severity === 'blocking' ? '阻断' : '提示' }} · {{ issue.viewport }} · {{ issue.region }} · {{ issue.element }}：{{ issue.description }}；{{ issue.suggestion }}
-            </p>
-            <div class="grid grid-cols-2 gap-2">
-              <a v-for="shot in report.screenshots" :key="shot.id" :href="screenshotURL(shot.id)" target="_blank" rel="noopener noreferrer" class="text-xs">
-                <img :src="screenshotURL(shot.id)" :alt="shot.viewport + ' ' + shot.kind" loading="lazy" class="w-full border border-line" />
-                {{ shot.viewport }} · {{ shot.kind }} · {{ shot.y ?? 0 }}
-              </a>
-            </div>
-            <p class="text-xs text-ink-3">仅检查报告列出的区域和交互；模型可能遗漏问题。</p>
+          <div v-else class="preview-empty rounded-2xl border border-dashed border-line bg-raised flex flex-col items-center justify-center text-center p-6">
+            <span class="text-3xl text-accent-strong mb-5" aria-hidden="true">✦</span>
+            <h3 class="font-display text-xl text-ink">{{ activeRun ? '你的作品正在成形' : '故事会在这里展开' }}</h3>
+            <p class="text-sm text-ink-3 mt-3 max-w-xs leading-relaxed">{{ activeRun ? '当前阶段会在上方实时更新，完成后自动显示预览。' : '先聊聊想法，确认内容、风格和照片后，就可以生成作品。' }}</p>
           </div>
+          <p v-if="version" class="text-xs text-ink-3 px-1">已自动保存。继续在对话中提出修改，会保留当前版本。</p>
+          <details v-if="report.rounds" class="rounded-xl border border-line bg-raised p-4">
+            <summary class="cursor-pointer text-xs text-ink-2">效果检查 · {{ report.rounds }} 轮 · {{ report.issues?.length || 0 }} 项提示</summary>
+            <div class="space-y-3 pt-3">
+              <p class="text-sm text-ink-2">{{ reportSummary(report) }}</p>
+              <div v-for="(issue, index) in report.issues" :key="index" class="text-xs leading-relaxed border-t border-line pt-2">
+                <p class="text-ink-3 mb-1">{{ issue.severity === 'blocking' ? '需要调整' : '提示' }} · {{ viewportText(issue.viewport) }} · {{ regionText(issue.region) }}</p>
+                <p>{{ displayChinese(issue.description, '此区域有待检查的问题。') }}</p>
+                <p class="text-ink-3 mt-1">{{ displayChinese(issue.suggestion, '请在对话中让助手继续调整这个区域。') }}</p>
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <a v-for="shot in report.screenshots" :key="shot.id" :href="screenshotURL(shot.id)" target="_blank" rel="noopener noreferrer" class="text-xs text-ink-3">
+                  <img :src="screenshotURL(shot.id)" :alt="viewportText(shot.viewport) + ' · ' + regionText(shot.kind)" loading="lazy" class="w-full rounded-lg border border-line mb-1" />
+                  {{ viewportText(shot.viewport) }} · {{ regionText(shot.kind) }} · 页面位置 {{ shot.y ?? 0 }}
+                </a>
+              </div>
+              <p class="text-[11px] text-ink-3">仅检查报告列出的区域和交互；模型仍可能遗漏问题。</p>
+            </div>
+          </details>
         </section>
       </div>
-      <details open class="border-t border-line pt-3">
-        <summary class="cursor-pointer text-sm">选图：使用 {{ usedIDs.length }} 张 / 未使用 {{ detail.photo_ids.length - usedIDs.length }} 张</summary>
-        <div class="grid grid-cols-4 sm:grid-cols-8 gap-2 mt-3">
-          <label v-for="id in detail.photo_ids" :key="id" class="relative text-xs">
-            <img :src="THUMB_BASE + '/' + id + '.webp'" :alt="'照片 ' + id" loading="lazy" class="w-full aspect-square object-cover rounded" :class="{ 'opacity-40': !usedIDs.includes(id) }" />
-            <input v-if="proposal && !activeRun && !detail.creation.current_version" v-model="proposal.used_photo_ids" type="checkbox" :value="id" class="absolute top-1 left-1" :aria-label="'使用照片 ' + id" />
-            <span>{{ usedIDs.includes(id) ? '使用' : '未使用' }} #{{ id }}</span>
-          </label>
+
+      <AppModal :open="photosOpen" title="创作照片" @close="photosOpen = false">
+        <div class="flex gap-2 mb-4">
+          <button v-for="item in ['选图', '照片信息']" :key="item" class="btn-ghost px-3 py-2 text-xs" :aria-pressed="photoPanel === item" :class="{ 'bg-accent-soft': photoPanel === item }" @click="photoPanel = item">{{ item }}</button>
         </div>
-      </details>
+        <template v-if="photoPanel === '选图'">
+          <p class="text-sm text-ink-2 mb-3">使用 {{ usedIDs.length }} 张 · 未使用 {{ detail.photo_ids.length - usedIDs.length }} 张</p>
+          <p v-if="!detail.creation.current_version" class="text-xs text-ink-3 mb-3">{{ proposal ? '勾选要放进作品的照片，确认后会保留你的选择。' : '先聊聊想法，助手整理方案后即可调整选图。' }}</p>
+          <div class="grid grid-cols-3 sm:grid-cols-4 gap-3">
+            <label v-for="id in detail.photo_ids" :key="id" class="relative text-xs">
+              <img :src="THUMB_BASE + '/' + id + '.webp'" :alt="'照片 ' + id" loading="lazy" class="w-full aspect-square object-cover rounded-lg" :class="{ 'opacity-40': !usedIDs.includes(id) }" />
+              <input v-if="proposal && !activeRun && !detail.creation.current_version" v-model="proposal.used_photo_ids" type="checkbox" :value="id" class="absolute top-2 left-2" :aria-label="'使用照片 ' + id" />
+              <span class="block text-ink-3 mt-1">{{ usedIDs.includes(id) ? '已选择' : '未使用' }} · {{ id }}</span>
+            </label>
+          </div>
+        </template>
+        <template v-else>
+          <div v-if="hasEnglish" class="rounded-lg border border-line p-3 mb-4">
+            <p class="text-xs text-ink-3 mb-2">旧作品中的描述可以更新为中文。</p>
+            <button class="btn-primary px-3 py-2 text-xs" :disabled="busy || !!activeRun" @click="localize">更新中文描述</button>
+          </div>
+          <h3 class="text-xs font-medium mb-3">图片观察 · 仅描述画面，可能不准确</h3>
+          <p v-if="!detail.state.observations?.length" class="text-xs text-ink-3">助手尚未查看照片，发送想法后会逐批整理。</p>
+          <div v-for="observation in detail.state.observations" :key="observation.photo_id" class="flex gap-3 mb-4">
+            <img :src="THUMB_BASE + '/' + observation.photo_id + '.webp'" :alt="'照片 ' + observation.photo_id" loading="lazy" class="w-12 h-12 object-cover rounded-lg shrink-0" />
+            <p class="text-xs text-ink-2 leading-relaxed">{{ displayChinese(observation.observation, '此描述需要更新为中文。') }}</p>
+          </div>
+          <h3 class="text-xs font-medium mt-5 mb-2">你提供的信息</h3>
+          <p v-for="fact in detail.state.user_facts" :key="fact.message_id" class="text-xs text-ink-2 mb-2 break-words">{{ displayChinese(fact.display_text || fact.text, '此条信息保留了用户原文，可更新为中文查看。') }}</p>
+          <h3 class="text-xs font-medium mt-5 mb-2">尚未确认的信息</h3>
+          <p v-for="unknown in detail.state.unknowns" :key="unknown" class="text-xs text-ink-3 mb-1">{{ displayChinese(unknown, '尚未确认') }}</p>
+        </template>
+        <template #footer><button class="btn-primary w-full py-2 text-sm" @click="photosOpen = false">完成</button></template>
+      </AppModal>
+
+      <AppModal :open="editOpen" title="调整创作方案" @close="editOpen = false">
+        <div v-if="proposal" class="space-y-4">
+          <label class="block text-sm">内容结构<textarea v-model="proposal.structure" class="creation-input mt-2" rows="5" /></label>
+          <label class="block text-sm">视觉风格<input v-model="proposal.style" class="creation-input mt-2" /></label>
+          <p class="text-xs text-ink-3">也可以直接在聊天中描述想要的调整，让助手帮你完善。</p>
+        </div>
+        <template #footer><button class="btn-primary w-full py-2 text-sm" :disabled="!canConfirm" @click="editOpen = false">保存调整</button></template>
+      </AppModal>
+
+      <AppModal :open="versionsOpen" title="版本记录" @close="versionsOpen = false">
+        <label class="block text-sm">查看版本
+          <select v-model="version" class="creation-input mt-2">
+            <option v-for="item in detail.versions" :key="item.id" :value="item.id">{{ versionDate(item.created_at) }} · {{ item.verified ? '检查通过' : '待完善' }}</option>
+          </select>
+        </label>
+        <p class="text-xs text-ink-3 mt-3">每次生成和修改都会保存版本，你可以查看或恢复。</p>
+        <template #footer>
+          <button v-if="version !== detail.creation.current_version" class="btn-primary w-full py-2 text-sm" :disabled="busy || !!activeRun" @click="restore">恢复此版本</button>
+          <button v-else class="btn-ghost w-full py-2 text-sm" @click="versionsOpen = false">返回预览</button>
+        </template>
+      </AppModal>
     </template>
     <CreationAlbumPicker :open="albumPickerOpen" @close="albumPickerOpen = false" @created="onAlbumCreated" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from 'vue'
+import { computed, inject, nextTick, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import AppModal from '@/components/AppModal.vue'
 import CreationAlbumPicker from '@/components/CreationAlbumPicker.vue'
+import CreationProgress from '@/components/CreationProgress.vue'
 import { THUMB_BASE } from '@/api/client'
 import { creationsEnabled } from '@/stores/creations'
 import { isMobileShell } from '@/stores/device'
+import { topOffsetKey } from '@/lib/chrome'
+import { hostEl, getScrollTop, setScrollTop } from '@/lib/scrollHost'
+import { snapshotProposal, assistantText, displayChinese, needsChinese, reportSummary, viewportText, regionText, type CreationProgress as Progress } from '@/lib/creationChat'
 import { listCreations, getCreation, startCreationRun, cancelCreationRun, restoreCreationVersion, previewURL, parseReport, type Creation, type WorkDetail, type Proposal } from '@/api/creations'
 
 const route = useRoute()
 const router = useRouter()
-const albumPickerOpen = ref(false)
-function onAlbumCreated(id: string) {
-  albumPickerOpen.value = false
-  void router.push('/creations/' + id)
-}
+const topOffset = inject(topOffsetKey, () => 0)
 const workId = computed(() => String(route.params.id || ''))
 const works = ref<Creation[]>([])
 const detail = ref<WorkDetail | null>(null)
 const proposal = ref<Proposal | null>(null)
 const message = ref('')
-const answers = ref<string[]>([])
 const version = ref('')
 const error = ref('')
 const busy = ref(false)
-const stage = ref('')
 const panel = ref('对话')
+const albumPickerOpen = ref(false)
+const photosOpen = ref(false)
+const photoPanel = ref('选图')
+const editOpen = ref(false)
+const versionsOpen = ref(false)
+const composer = ref<HTMLTextAreaElement>()
+const progress = ref<Progress>({ stage: 'queued' })
+const startedAt = ref(Date.now())
+const reconnecting = ref(false)
 let source: EventSource | null = null
+let subscribedRun = ''
 const activeRun = computed(() => detail.value?.runs.find(r => r.status === 'queued' || r.status === 'running'))
+const currentQuestion = computed(() => detail.value?.creation.current_version ? '' : detail.value?.state.questions?.[0] || '')
+const selectedVersion = computed(() => detail.value?.versions.find(v => v.id === version.value))
 const usedIDs = computed(() => {
-  const saved = detail.value?.versions.find(v => v.id === version.value)
-  if (saved) { try { return JSON.parse(saved.used_photo_ids) as number[] } catch { return [] } }
-  return proposal.value?.used_photo_ids || []
+  if (selectedVersion.value) {
+    try { return JSON.parse(selectedVersion.value.used_photo_ids) as number[] } catch { return [] }
+  }
+  return proposal.value?.used_photo_ids || detail.value?.photo_ids || []
 })
-const report = computed(() => parseReport(detail.value?.versions.find(v => v.id === version.value)?.report || detail.value?.runs[0]?.report))
+const canConfirm = computed(() => !!proposal.value?.structure.trim() && !!proposal.value?.style.trim() && !!proposal.value?.used_photo_ids.length)
+const proposalNeedsChinese = computed(() => !!proposal.value && (needsChinese(proposal.value.structure) || needsChinese(proposal.value.style)))
+const hasEnglish = computed(() => proposalNeedsChinese.value || detail.value?.state.observations?.some(o => needsChinese(o.observation)) || detail.value?.state.unknowns?.some(needsChinese) || detail.value?.state.user_facts?.some(f => needsChinese(f.display_text || f.text)))
+const report = computed(() => parseReport(selectedVersion.value?.report || detail.value?.runs[0]?.report))
 const runFailure = computed(() => {
   if (busy.value || activeRun.value || detail.value?.runs[0]?.status !== 'failed') return ''
-  const text = parseReport(detail.value.runs[0].report).error
-  return text && !text.startsWith('Agent execution failed') ? text : '创作任务失败，请重试；已保存的方案和作品会保留。'
+  return displayChinese(parseReport(detail.value.runs[0].report).error, '创作任务失败，请重试；已保存的方案和作品会保留。')
 })
-const stageLabel = computed(() => ({ generating: '正在生成网页，请稍候…', correcting: '正在纠正生成结果的选图与格式…', observing: '理解照片', model: '模型处理中', rendering: '浏览器排队 / 渲染', rendered: '截图已保存', reviewing: '视觉审查', reviewed: '审查完成', repairing: '修复中' }[stage.value] || '任务排队 / 处理中'))
-
-function readableMessage(text: string) {
-  try { const data = JSON.parse(text); return data.proposal ? data.proposal.structure + '\n风格：' + data.proposal.style : text } catch { return text }
-}
+function versionDate(value: string) { return new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) }
 function screenshotURL(id: string) { return '/api/v1/creations/' + workId.value + '/screenshots/' + id }
 function failure(e: unknown) {
   const value = e as { response?: { data?: { error?: string } } }
-  error.value = value.response?.data?.error || '操作失败，请稍后重试'
+  error.value = displayChinese(value.response?.data?.error, '操作失败，请稍后重试')
 }
+function closeStream() { source?.close(); source = null; subscribedRun = ''; reconnecting.value = false }
 async function load() {
   if (!creationsEnabled.value) return
-  error.value = ''
+  const requestedId = workId.value
   try {
-    if (!workId.value) { works.value = await listCreations(); return }
-    const requestedId = workId.value
+    if (!requestedId) { works.value = await listCreations(); return }
     const data = await getCreation(requestedId)
     if (requestedId !== workId.value) return
     detail.value = data
-    proposal.value = data.state.proposal ? structuredClone(data.state.proposal) : null
+    const latest = data.runs[0]
+    const draft = !data.creation.current_version && latest?.action === 'confirm' && latest.proposal ? latest.proposal : data.state.proposal
+    proposal.value = draft ? structuredClone(draft) : null
     if (!version.value || !data.versions.some(v => v.id === version.value)) version.value = data.creation.current_version
-    if (activeRun.value) subscribe(activeRun.value.id)
+    if (activeRun.value) {
+      const createdAt = Date.parse(activeRun.value.created_at || '')
+      if (Number.isFinite(createdAt)) startedAt.value = createdAt
+      subscribe(activeRun.value.id)
+    } else closeStream()
   } catch (e) { failure(e) }
 }
-function subscribe(run: string) {
-  source?.close()
-  source = new EventSource('/api/v1/creations/' + workId.value + '/runs/' + run + '/events')
-  source.addEventListener('progress', (event) => { try { stage.value = JSON.parse((event as MessageEvent).data).stage } catch { /* Ignore a malformed progress event. */ } })
-  source.addEventListener('done', async () => { source?.close(); source = null; version.value = ''; await load() })
+function subscribe(runId: string) {
+  if (source && subscribedRun === runId) return
+  closeStream()
+  subscribedRun = runId
+  const stream = new EventSource('/api/v1/creations/' + workId.value + '/runs/' + runId + '/events')
+  source = stream
+  stream.addEventListener('progress', (event) => {
+    if (source !== stream) return
+    try {
+      const next = JSON.parse((event as MessageEvent).data) as Progress
+      progress.value = progress.value.stage === next.stage ? { ...progress.value, ...next } : next
+      reconnecting.value = false
+    } catch { /* Ignore a malformed progress event. */ }
+  })
+  stream.addEventListener('open', () => { if (source === stream) reconnecting.value = false })
+  stream.addEventListener('error', () => { if (source === stream) reconnecting.value = true })
+  stream.addEventListener('done', async (event) => {
+    if (source !== stream) return
+    const id = workId.value
+    let status = ''
+    try { status = JSON.parse((event as MessageEvent).data).status } catch { /* Reload persisted state when an event has no status. */ }
+    closeStream()
+    version.value = ''
+    await load()
+    if (id !== workId.value) return
+    if (status === 'completed' && detail.value?.creation.current_version && isMobileShell.value) panel.value = '预览'
+    else await revealComposer()
+  })
 }
-async function run(action: string) {
+async function revealComposer() {
+  await nextTick()
+  if (!composer.value || panel.value !== '对话') return
+  const host = hostEl()
+  const bottom = host ? host.getBoundingClientRect().bottom : window.innerHeight
+  const form = composer.value.closest('form')
+  const inset = isMobileShell.value ? parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ss-tabbar-h')) || 0 : 0
+  const delta = (form || composer.value).getBoundingClientRect().bottom + inset - bottom
+  if (delta > 0) setScrollTop(getScrollTop() + delta)
+}
+async function run(action: string, text = '') {
   if (!detail.value || busy.value || activeRun.value) return
-  busy.value = true; error.value = ''; stage.value = 'queued'
+  busy.value = true; error.value = ''; progress.value = { stage: 'queued' }; startedAt.value = Date.now()
+  const requestedId = workId.value
   try {
-    const answerText = detail.value.state.questions?.map((q, i) => q + '：' + (answers.value[i]?.trim() || '跳过')).join('\n') || ''
-    await startCreationRun(workId.value, {
-      action, message: action === 'skip' ? '跳过本轮问题' : [message.value, answerText].filter(Boolean).join('\n'),
+    await startCreationRun(requestedId, {
+      action, message: action === 'skip' ? '这个问题先跳过，按已提供的信息继续。' : text,
       base_version: detail.value.creation.current_version,
-      ...(action === 'confirm' && proposal.value ? { proposal: proposal.value } : {}),
+      ...(action === 'confirm' && proposal.value ? { proposal: snapshotProposal(proposal.value) } : {}),
     })
-    message.value = ''; answers.value = []
+    if (requestedId !== workId.value) return
+    if (text) message.value = ''
     await load()
   } catch (e) { failure(e) } finally { busy.value = false }
 }
+async function send() {
+  if (!message.value.trim()) return
+  await run(detail.value?.creation.current_version ? 'modify' : 'answer', message.value.trim())
+}
+function composerEnter(event: KeyboardEvent) {
+  if (event.isComposing || event.keyCode === 229 || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) return
+  event.preventDefault()
+  void send()
+}
+async function localize() {
+  photosOpen.value = false
+  await run('localize')
+}
 async function cancel() {
   if (!activeRun.value) return
-  try { await cancelCreationRun(workId.value, activeRun.value.id); source?.close(); source = null; await load() } catch (e) { failure(e) }
+  try { await cancelCreationRun(workId.value, activeRun.value.id); closeStream(); await load() } catch (e) { failure(e) }
 }
 async function restore() {
   if (!detail.value) return
-  busy.value = true
-  try { await restoreCreationVersion(workId.value, version.value, detail.value.creation.current_version); await load() } catch (e) { failure(e) } finally { busy.value = false }
+  busy.value = true; error.value = ''
+  try { await restoreCreationVersion(workId.value, version.value, detail.value.creation.current_version); versionsOpen.value = false; await load() } catch (e) { failure(e) } finally { busy.value = false }
 }
-watch([workId, creationsEnabled], () => { source?.close(); source = null; detail.value = null; version.value = ''; void load() }, { immediate: true })
-onUnmounted(() => source?.close())
+function onAlbumCreated(id: string) { albumPickerOpen.value = false; void router.push('/creations/' + id) }
+watch([workId, creationsEnabled], () => {
+  closeStream(); detail.value = null; proposal.value = null; version.value = ''; message.value = ''; error.value = ''
+  progress.value = { stage: 'queued' }; panel.value = '对话'; photosOpen.value = false; editOpen.value = false; versionsOpen.value = false
+  void load()
+}, { immediate: true })
+onUnmounted(closeStream)
 </script>
 
 <style scoped>
-.creation-input { width: 100%; border: 1px solid var(--color-line, #444); border-radius: .5rem; padding: .5rem; background: transparent; }
-.creation-preview { width: 100%; height: 75svh; min-height: 420px; border: 1px solid var(--color-line, #444); border-radius: .75rem; background: white; }
-.creation-panels { display: grid; gap: 1.5rem; }
-@media (min-width: 768px) { .creation-panels { grid-template-columns: minmax(280px, 1fr) minmax(0, 2fr); } }
-.creation-panels.creation-mobile { grid-template-columns: minmax(0, 1fr); }
+.creation-page { padding: 1rem; display: flex; flex-direction: column; gap: 1rem; max-width: 1600px; margin: 0 auto; }
+.creation-live-progress { position: sticky; z-index: 20; align-self: stretch; }
+.creation-workspace { display: grid; gap: 1.25rem; align-items: start; }
+.creation-input { width: 100%; border: 1px solid var(--color-line); border-radius: .65rem; padding: .7rem; background: transparent; font-size: .875rem; }
+.chat-row { display: flex; align-items: flex-start; gap: .65rem; }
+.chat-user-row { justify-content: flex-end; }
+.chat-avatar { width: 1.6rem; height: 1.6rem; border-radius: 50%; flex-shrink: 0; display: grid; place-items: center; background: var(--color-accent-soft); color: var(--color-accent-strong); font-size: .8rem; }
+.chat-bubble { min-width: 0; max-width: 92%; }
+.chat-assistant { flex: 1; }
+.chat-user { padding: .85rem 1rem; border-radius: 1rem 1rem .25rem 1rem; background: var(--color-accent-soft); }
+.composer:focus-within { border-color: var(--color-accent); }
+.creation-preview { width: 100%; height: 66svh; min-height: 420px; border: 1px solid var(--color-line); border-radius: 1rem; background: white; }
+.preview-empty { min-height: 440px; }
+.creation-mobile .preview-empty { min-height: 55svh; }
+@media (min-width: 768px) {
+  .creation-page { padding: 1.5rem; gap: 1.25rem; }
+  .creation-workspace { grid-template-columns: minmax(320px, 0.85fr) minmax(0, 1.6fr); }
+  .creation-preview-panel { position: sticky; }
+}
+.creation-workspace.creation-mobile { grid-template-columns: minmax(0, 1fr); }
+.creation-mobile .creation-preview-panel { position: static; }
 </style>

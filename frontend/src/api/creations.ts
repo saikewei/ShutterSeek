@@ -1,15 +1,18 @@
 import { api } from './client'
 
 export interface Creation { id: string; title: string; current_version: string }
-export interface CreationRun { id: string; status: string; report: string }
+export interface CreationRun { id: string; status: string; report: string; action?: string; created_at?: string; proposal?: Proposal }
 export interface CreationVersion { id: string; verified: boolean; report: string; used_photo_ids: string; created_at: string }
 export interface Proposal { structure: string; style: string; used_photo_ids: number[] }
 export interface WorkState {
   proposal?: Proposal
+  reply?: string
+  question_count?: number
+  asked_questions?: string[]
   questions?: string[]
   unknowns?: string[]
   observations?: Array<{ photo_id: number; observation: string; unknowns: string[] }>
-  user_facts?: Array<{ message_id: string; text: string }>
+  user_facts?: Array<{ message_id: string; text: string; display_text?: string }>
 }
 export interface WorkDetail {
   creation: Creation
