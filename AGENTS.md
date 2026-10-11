@@ -78,7 +78,8 @@ PostgreSQL + pgvector（1024 维）存元数据与向量；FastAPI + ONNX Runtim
   依赖不可用时降级成 `*_ok:false`/0，保证页面能渲染）。
 - 复杂或性能敏感查询用**裸 SQL 写在 service 层**（pgvector、日期聚合、range、`SET LOCAL`）；常规 CRUD 用 GORM。
 - 角色 `admin` / `guest`：guest 的可见性在 **SQL 层**限定 `is_public`（不是 UI 层）；公开路由仅
-  `POST /auth/login`、`POST /invites/redeem`、`GET /invites/validate/:code`，其余经 `AdminOnly()` 守卫。
+  `POST /auth/login`、`POST /invites/redeem`、`GET /invites/validate/:code`，照片浏览、创作和分享要求登录，管理和上传经 `AdminOnly()` 守卫。
+  创作按 `user_id` 隔离；guest 仅使用 SQL 限定的公开相册照片，分享也按查看者的照片权限校验，**禁止匿名分享**。
 - **缩略图也走鉴权**：`GET /api/v1/thumbnails/<id>.webp`（`handler.Thumbnail`），URL 由
   `service.ThumbnailURL(id)` 统一产出，guest 再套 `PhotoInPublicAlbum`。**绝不要**把它改回
   `r.Static`——2026-09-14 之前它挂在根引擎上且另有一个 `/thumbnails` 别名，等于把 7.5 万张缩略图

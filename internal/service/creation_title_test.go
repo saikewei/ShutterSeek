@@ -47,7 +47,7 @@ func TestCreationRenameChangesOnlyOwnedMetadata(t *testing.T) {
 	mock.ExpectExec(`UPDATE "creations" SET "title"=\$1,"updated_at"=\$2 WHERE "id" = \$3`).
 		WithArgs("海边记忆", sqlmock.AnyArg(), "work").WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
-	if err := s.Rename(context.Background(), 7, "work", titleRequest()); err != nil {
+	if err := s.Rename(context.Background(), CreationActor{ID: 7, Role: "admin"}, "work", titleRequest()); err != nil {
 		t.Fatal(err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -60,7 +60,7 @@ func TestCreationRenameRejectsOtherOwnerBeforeWriting(t *testing.T) {
 	mock.ExpectQuery(`SELECT .* FROM "creations" WHERE id = \$1 AND user_id = \$2 .* FOR UPDATE`).
 		WithArgs("other-work", int64(7), 1).WillReturnRows(sqlmock.NewRows([]string{"id"}))
 	mock.ExpectRollback()
-	if err := s.Rename(context.Background(), 7, "other-work", titleRequest()); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := s.Rename(context.Background(), CreationActor{ID: 7, Role: "admin"}, "other-work", titleRequest()); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -73,7 +73,7 @@ func TestCreationRenameRejectsStaleTitleBeforeWriting(t *testing.T) {
 	mock.ExpectQuery(`SELECT .* FROM "creations" WHERE id = \$1 AND user_id = \$2 .* FOR UPDATE`).
 		WithArgs("work", int64(7), 1).WillReturnRows(sqlmock.NewRows([]string{"id", "title"}).AddRow("work", "new name"))
 	mock.ExpectRollback()
-	if err := s.Rename(context.Background(), 7, "work", titleRequest()); !errors.Is(err, ErrCreationConflict) {
+	if err := s.Rename(context.Background(), CreationActor{ID: 7, Role: "admin"}, "work", titleRequest()); !errors.Is(err, ErrCreationConflict) {
 		t.Fatalf("stale title accepted: %v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -88,7 +88,7 @@ func TestCreationRenameRollsBackOnWriteFailure(t *testing.T) {
 	sentinel := errors.New("write unavailable")
 	mock.ExpectExec(`UPDATE "creations"`).WillReturnError(sentinel)
 	mock.ExpectRollback()
-	if err := s.Rename(context.Background(), 7, "work", titleRequest()); !errors.Is(err, sentinel) {
+	if err := s.Rename(context.Background(), CreationActor{ID: 7, Role: "admin"}, "work", titleRequest()); !errors.Is(err, sentinel) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -98,7 +98,7 @@ func TestCreationRenameRollsBackOnWriteFailure(t *testing.T) {
 func TestCreationRenameRejectsInvalidInputWithoutDatabaseWrites(t *testing.T) {
 	for _, req := range []CreationTitleRequest{{Title: "valid"}, {Title: "  ", BaseTitle: titleRequest().BaseTitle}, {Title: strings.Repeat("风", 101), BaseTitle: titleRequest().BaseTitle}} {
 		s, mock := mockCreations(t)
-		if err := s.Rename(context.Background(), 7, "work", req); !errors.Is(err, ErrCreationInvalid) {
+		if err := s.Rename(context.Background(), CreationActor{ID: 7, Role: "admin"}, "work", req); !errors.Is(err, ErrCreationInvalid) {
 			t.Fatalf("invalid name accepted: %v", err)
 		}
 		if err := mock.ExpectationsWereMet(); err != nil {

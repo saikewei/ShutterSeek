@@ -13,7 +13,11 @@ import (
 	"shutterseek/internal/service"
 )
 
-func creationUser(c *gin.Context) int64 { v, _ := c.Get("user_id"); id, _ := v.(int64); return id }
+func creationUser(c *gin.Context) service.CreationActor {
+	v, _ := c.Get("user_id")
+	id, _ := v.(int64)
+	return service.CreationActor{ID: id, Role: c.GetString("role")}
+}
 func creationError(c *gin.Context, err error) {
 	code := http.StatusInternalServerError
 	message := "创作服务暂时不可用"
@@ -29,10 +33,18 @@ func creationError(c *gin.Context, err error) {
 		code = http.StatusConflict
 		message = "已有任务正在执行，或作品内容已更新，请刷新"
 	}
+	if errors.Is(err, service.ErrCreationSharingUnavailable) {
+		code = http.StatusServiceUnavailable
+		message = "分享功能尚未完成数据库配置"
+	}
+	if errors.Is(err, service.ErrCreationPhotoForbidden) {
+		code = http.StatusForbidden
+		message = "作品包含当前无权访问的照片，请使用可访问的照片重新创作"
+	}
 	c.JSON(code, gin.H{"error": message})
 }
 func (h *Handler) CreationCapabilities(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"enabled": h.CreationSvc != nil, "max_photos": 200})
+	c.JSON(http.StatusOK, gin.H{"enabled": h.CreationSvc != nil, "sharing_enabled": h.CreationSvc != nil && h.CreationSvc.SharingEnabled(), "max_photos": 200})
 }
 func (h *Handler) CreationEnabled(c *gin.Context) {
 	if h.CreationSvc == nil {
@@ -222,6 +234,9 @@ func (h *Handler) CreationPreview(c *gin.Context) {
 		creationError(c, err)
 		return
 	}
+	creationPreviewResponse(c, html)
+}
+func creationPreviewResponse(c *gin.Context, html string) {
 	c.Header("Content-Security-Policy", service.CreationCSP)
 	c.Header("Cache-Control", "no-store")
 	c.Header("X-Content-Type-Options", "nosniff")

@@ -16,13 +16,16 @@ type CreationResetRequest struct {
 }
 
 // Reset discards all generated context while retaining the work's photo settings.
-func (s *CreationService) Reset(ctx context.Context, user int64, id string, req CreationResetRequest) error {
+func (s *CreationService) Reset(ctx context.Context, actor CreationActor, id string, req CreationResetRequest) error {
+	if !actor.valid() {
+		return ErrCreationPhotoForbidden
+	}
 	if req.BaseRevision == nil || *req.BaseRevision < 0 {
 		return ErrCreationInvalid
 	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var c model.Creation
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ?", id, user).First(&c).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ?", id, actor.ID).First(&c).Error; err != nil {
 			return err
 		}
 		state := mapText(c.State)
@@ -48,6 +51,11 @@ func (s *CreationService) Reset(ctx context.Context, user int64, id string, req 
 		}
 		if len(selected) == 0 {
 			selected = ids
+		}
+		if actor.Role == "guest" {
+			if err := validateCreationPhotos(ctx, tx, actor, ids); err != nil {
+				return err
+			}
 		}
 		clean, err := creationPhotoSettings(ids, selected, photoRotations(state))
 		if err != nil {

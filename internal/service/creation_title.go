@@ -31,14 +31,17 @@ func normalizedCreationTitle(title string, allowDefault bool) (string, error) {
 }
 
 // Rename changes metadata only, preserving the running job and all photo/version state.
-func (s *CreationService) Rename(ctx context.Context, user int64, id string, req CreationTitleRequest) error {
+func (s *CreationService) Rename(ctx context.Context, actor CreationActor, id string, req CreationTitleRequest) error {
+	if !actor.valid() {
+		return ErrCreationPhotoForbidden
+	}
 	title, err := normalizedCreationTitle(req.Title, false)
 	if err != nil || req.BaseTitle == nil {
 		return ErrCreationInvalid
 	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var c model.Creation
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ?", id, user).First(&c).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ?", id, actor.ID).First(&c).Error; err != nil {
 			return err
 		}
 		if c.Title != *req.BaseTitle {

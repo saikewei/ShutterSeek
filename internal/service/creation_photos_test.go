@@ -41,7 +41,7 @@ func TestCreationPhotoUpdatePreservesFactsAndInvalidatesOnlyChangedPhotos(t *tes
 	mock.ExpectQuery(`SELECT count\(\*\) FROM "photos"`).WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
 	mock.ExpectExec(`UPDATE "creations"`).WithArgs("[1,3]", photoStateArgument{3}, sqlmock.AnyArg(), "work").WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
-	err := s.UpdatePhotos(context.Background(), 7, "work", CreationPhotosRequest{PhotoIDs: []int64{1, 3}, UsedPhotoIDs: []int64{3}, Rotations: map[string]int{"3": 90}, BaseVersion: "v1", BaseRevision: 2})
+	err := s.UpdatePhotos(context.Background(), CreationActor{ID: 7, Role: "admin"}, "work", CreationPhotosRequest{PhotoIDs: []int64{1, 3}, UsedPhotoIDs: []int64{3}, Rotations: map[string]int{"3": 90}, BaseVersion: "v1", BaseRevision: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestCreationPhotoUpdateRejectsStaleEditsBeforeAnyWrite(t *testing.T) {
 	mock.ExpectQuery(`SELECT .* FROM "creations" WHERE id = \$1 AND user_id = \$2`).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "current_version", "state"}).AddRow("work", "v1", `{"photo_revision":2}`))
 	mock.ExpectRollback()
-	err := s.UpdatePhotos(context.Background(), 7, "work", CreationPhotosRequest{PhotoIDs: []int64{1}, UsedPhotoIDs: []int64{1}, BaseVersion: "v1", BaseRevision: 1})
+	err := s.UpdatePhotos(context.Background(), CreationActor{ID: 7, Role: "admin"}, "work", CreationPhotosRequest{PhotoIDs: []int64{1}, UsedPhotoIDs: []int64{1}, BaseVersion: "v1", BaseRevision: 1})
 	if err != ErrCreationConflict {
 		t.Fatalf("stale write allowed: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestCreationPhotoUpdateRejectsActiveRunBeforeAnyWrite(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id", "current_version", "state"}).AddRow("work", "v1", "{}"))
 	mock.ExpectQuery(`SELECT count\(\*\) FROM "creation_runs"`).WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
 	mock.ExpectRollback()
-	err := s.UpdatePhotos(context.Background(), 7, "work", CreationPhotosRequest{PhotoIDs: []int64{1}, UsedPhotoIDs: []int64{1}, BaseVersion: "v1"})
+	err := s.UpdatePhotos(context.Background(), CreationActor{ID: 7, Role: "admin"}, "work", CreationPhotosRequest{PhotoIDs: []int64{1}, UsedPhotoIDs: []int64{1}, BaseVersion: "v1"})
 	if err != ErrCreationConflict {
 		t.Fatalf("active scope changed: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestCreationHistoricalPreviewUsesVersionScopeAndRotation(t *testing.T) {
 	mock.ExpectQuery(`SELECT .* FROM "creation_versions" WHERE id = \$1 AND creation_id = \$2`).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "creation_id", "html", "used_photo_ids", "state"}).
 			AddRow("v1", "work", `<img src="ss-photo:1">`, "[1]", `{"photo_ids":[1],"photo_edits":{"1":90}}`))
-	html, err := s.Preview(context.Background(), 7, "work", "v1")
+	html, err := s.Preview(context.Background(), CreationActor{ID: 7, Role: "admin"}, "work", "v1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +175,7 @@ func TestCreationPhotoContentRequiresWorkOwnershipAndScope(t *testing.T) {
 	s, mock := mockCreations(t)
 	mock.ExpectQuery(`SELECT .* FROM "creations" WHERE id = \$1 AND user_id = \$2`).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "photo_ids"}).AddRow("work", "[1]"))
-	if _, _, err := s.PhotoContent(context.Background(), 7, "work", 2); err == nil {
+	if _, _, err := s.PhotoContent(context.Background(), CreationActor{ID: 7, Role: "admin"}, "work", 2); err == nil {
 		t.Fatal("out-of-scope photo exposed")
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {

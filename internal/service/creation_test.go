@@ -35,7 +35,7 @@ func mockCreations(t *testing.T) (*CreationService, sqlmock.Sqlmock) {
 func TestCreationOwnerIsRequired(t *testing.T) {
 	s, mock := mockCreations(t)
 	mock.ExpectQuery(`SELECT .* FROM "creations" WHERE id = \$1 AND user_id = \$2`).WithArgs("other-work", int64(7), 1).WillReturnRows(sqlmock.NewRows([]string{"id"}))
-	_, err := s.Owned(context.Background(), 7, "other-work")
+	_, err := s.Owned(context.Background(), CreationActor{ID: 7, Role: "admin"}, "other-work")
 	if err != gorm.ErrRecordNotFound {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -59,15 +59,15 @@ func TestCreationPhotoScopeAndCheckpointBoundary(t *testing.T) {
 	s, _ := mockCreations(t)
 	run := model.CreationRun{ID: "run"}
 	creation := model.Creation{PhotoIDs: "[1,2]"}
-	_, err := s.callback(context.Background(), run, creation, "photo", map[string]interface{}{"id": float64(3)})
+	_, err := s.callback(context.Background(), CreationActor{ID: 7, Role: "admin"}, run, creation, "photo", map[string]interface{}{"id": float64(3)})
 	if err == nil {
 		t.Fatal("out-of-scope photo allowed")
 	}
-	_, err = s.callback(context.Background(), run, creation, "checkpoint_put", map[string]interface{}{"image": "data:image/png;base64,secret"})
+	_, err = s.callback(context.Background(), CreationActor{ID: 7, Role: "admin"}, run, creation, "checkpoint_put", map[string]interface{}{"image": "data:image/png;base64,secret"})
 	if err == nil {
 		t.Fatal("image bytes stored in checkpoint")
 	}
-	_, err = s.callback(context.Background(), run, creation, "checkpoint_put", map[string]interface{}{"credential": "secret"})
+	_, err = s.callback(context.Background(), CreationActor{ID: 7, Role: "admin"}, run, creation, "checkpoint_put", map[string]interface{}{"credential": "secret"})
 	if err == nil {
 		t.Fatal("credential stored in checkpoint")
 	}
@@ -96,11 +96,11 @@ func TestCreationVerificationRequiresEvidence(t *testing.T) {
 }
 func TestCreationLimitsBeforeDatabaseAccess(t *testing.T) {
 	s := &CreationService{}
-	_, err := s.Create(context.Background(), 1, CreationRequest{PhotoIDs: make([]int64, 201)})
+	_, err := s.Create(context.Background(), CreationActor{ID: 1, Role: "admin"}, CreationRequest{PhotoIDs: make([]int64, 201)})
 	if err != ErrCreationInvalid {
 		t.Fatal(err)
 	}
-	_, err = s.Run(context.Background(), 1, "work", CreationRunRequest{Action: "execute"})
+	_, err = s.Run(context.Background(), CreationActor{ID: 1, Role: "admin"}, "work", CreationRunRequest{Action: "execute"})
 	if err != ErrCreationInvalid {
 		t.Fatal(err)
 	}
@@ -131,7 +131,7 @@ func TestCreationActiveUserAndGlobalLimits(t *testing.T) {
 				mock.ExpectQuery(`SELECT count\(\*\) FROM "creation_runs"`).WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(test.globalCount))
 			}
 			mock.ExpectRollback()
-			_, err := s.Run(context.Background(), 7, "work", CreationRunRequest{Action: "answer"})
+			_, err := s.Run(context.Background(), CreationActor{ID: 7, Role: "admin"}, "work", CreationRunRequest{Action: "answer"})
 			if err != ErrCreationConflict {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -145,7 +145,7 @@ func TestCreationConfirmedSelectionCannotEscapeScope(t *testing.T) {
 	s, mock := mockCreations(t)
 	expectCreationForRun(mock)
 	mock.ExpectRollback()
-	_, err := s.Run(context.Background(), 7, "work", CreationRunRequest{Action: "confirm", Proposal: &CreationProposal{Structure: "story", Style: "clean", UsedPhotoIDs: []int64{999}}})
+	_, err := s.Run(context.Background(), CreationActor{ID: 7, Role: "admin"}, "work", CreationRunRequest{Action: "confirm", Proposal: &CreationProposal{Structure: "story", Style: "clean", UsedPhotoIDs: []int64{999}}})
 	if err != ErrCreationInvalid {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestCreationScreenshotUsesOwnerAndWorkScope(t *testing.T) {
 	s, mock := mockCreations(t)
 	mock.ExpectQuery(`SELECT .* FROM "creations" WHERE id = \$1 AND user_id = \$2`).WithArgs("work", int64(7), 1).WillReturnRows(sqlmock.NewRows([]string{"id", "user_id"}).AddRow("work", 7))
 	mock.ExpectQuery(`SELECT .* FROM "creation_assets" JOIN creation_runs.*creation_assets.id = \$1 AND creation_runs.creation_id = \$2`).WithArgs("other-asset", "work", 1).WillReturnRows(sqlmock.NewRows([]string{"id"}))
-	if _, err := s.Screenshot(context.Background(), 7, "work", "other-asset"); err != gorm.ErrRecordNotFound {
+	if _, err := s.Screenshot(context.Background(), CreationActor{ID: 7, Role: "admin"}, "work", "other-asset"); err != gorm.ErrRecordNotFound {
 		t.Fatal(err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -172,7 +172,7 @@ func TestCreationCancelRevokesRunAndStopsExecution(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectExec(`UPDATE "creation_runs"`).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
-	if err := s.Cancel(context.Background(), 7, "work", "run"); err != nil {
+	if err := s.Cancel(context.Background(), CreationActor{ID: 7, Role: "admin"}, "work", "run"); err != nil {
 		t.Fatal(err)
 	}
 	if !called {
@@ -204,7 +204,7 @@ func TestCreationRestoreChecksBaseAndRestoresSnapshot(t *testing.T) {
 	mock.ExpectQuery(`SELECT .* FROM "creation_versions" WHERE id = \$1 AND creation_id = \$2`).WithArgs("v1", "work", 1).WillReturnRows(sqlmock.NewRows([]string{"id", "creation_id", "state"}).AddRow("v1", "work", `{"proposal":{"style":"restored"}}`))
 	mock.ExpectExec(`UPDATE "creations"`).WithArgs("v1", `{"proposal":{"style":"restored"}}`, sqlmock.AnyArg(), "work").WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
-	if err := s.Restore(context.Background(), 7, "work", "v1", "v2"); err != nil {
+	if err := s.Restore(context.Background(), CreationActor{ID: 7, Role: "admin"}, "work", "v1", "v2"); err != nil {
 		t.Fatal(err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -234,6 +234,7 @@ func TestCreationContextRPCEncodesPhotosAndMessages(t *testing.T) {
 			mock.ExpectQuery(`SELECT .* FROM "creation_runs" WHERE id = \$1 AND credential_hash = \$2 AND expires_at > \$3 AND status = \$4`).WithArgs("run", credentialHash("test-capability"), sqlmock.AnyArg(), "running", 1).
 				WillReturnRows(sqlmock.NewRows([]string{"id", "creation_id", "user_id", "input"}).
 					AddRow("run", "work", 7, `{"action":"answer","message":"A trip"}`))
+			mock.ExpectQuery(`SELECT "role" FROM "users" WHERE id = \$1`).WithArgs(int64(7), 1).WillReturnRows(sqlmock.NewRows([]string{"role"}).AddRow("admin"))
 			mock.ExpectQuery(`SELECT .* FROM "creations" WHERE id = \$1 AND user_id = \$2`).WithArgs("work", int64(7), 1).
 				WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "title", "photo_ids", "state"}).
 					AddRow("work", 7, "Travel", "[1,2]", `{"observations":[]}`))
@@ -339,7 +340,7 @@ func TestCreationDetailRetainsConfirmedProposalWithoutExposingRunInput(t *testin
 	mock.ExpectQuery(`SELECT .* FROM "creation_runs" WHERE creation_id = \$1`).WithArgs("work", 20).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "action", "status", "input", "credential_hash"}).
 			AddRow("run", "confirm", "failed", `{"message":"private-run-input","proposal":{"structure":"Story","style":"Clean","used_photo_ids":[1]}}`, "private-run-credential"))
-	detail, err := s.Detail(context.Background(), 7, "work")
+	detail, err := s.Detail(context.Background(), CreationActor{ID: 7, Role: "admin"}, "work")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -363,9 +364,26 @@ func TestCreationChineseUpdateStillRequiresOwnership(t *testing.T) {
 	mock.ExpectQuery(`SELECT .* FROM "creations" WHERE id = \$1 AND user_id = \$2`).WithArgs("other", int64(7), 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 	mock.ExpectRollback()
-	_, err := s.Run(context.Background(), 7, "other", CreationRunRequest{Action: "localize"})
+	_, err := s.Run(context.Background(), CreationActor{ID: 7, Role: "admin"}, "other", CreationRunRequest{Action: "localize"})
 	if err != gorm.ErrRecordNotFound {
 		t.Fatalf("unexpected ownership result: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCreationRunPersistsUserChatRole(t *testing.T) {
+	s, mock := mockCreations(t)
+	expectCreationForRun(mock)
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "creation_runs"`).WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "creation_runs"`).WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectExec(`INSERT INTO "creation_runs"`).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`INSERT INTO "creation_messages"`).WithArgs(sqlmock.AnyArg(), "work", "user", "Continue the story", sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	_, err := s.Run(context.Background(), CreationActor{ID: 7, Role: "admin"}, "work", CreationRunRequest{Action: "answer", Message: "Continue the story"})
+	if err != nil {
+		t.Fatal(err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)

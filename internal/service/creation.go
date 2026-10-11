@@ -42,13 +42,14 @@ const CreationCSP = "default-src 'none'; script-src 'unsafe-inline'; style-src '
 const creationHTMLLimit = 512 << 10
 
 type CreationService struct {
-	db         *gorm.DB
-	thumbnails string
-	conn       *grpc.ClientConn
-	mutex      sync.Mutex
-	cancel     map[string]context.CancelFunc
-	slots      chan struct{}
-	stop       context.CancelFunc
+	db             *gorm.DB
+	thumbnails     string
+	conn           *grpc.ClientConn
+	mutex          sync.Mutex
+	cancel         map[string]context.CancelFunc
+	slots          chan struct{}
+	stop           context.CancelFunc
+	sharingEnabled bool
 }
 type CreationRequest struct {
 	Title        string         `json:"title"`
@@ -98,6 +99,7 @@ func StartCreationService(db *gorm.DB, thumbnails, agentAddress, listenAddress s
 		return nil, err
 	}
 	s := &CreationService{db: db, thumbnails: thumbnails, conn: conn, cancel: map[string]context.CancelFunc{}, slots: make(chan struct{}, 5)}
+	s.sharingEnabled = db.Migrator().HasTable(&model.CreationShare{})
 	server := grpc.NewServer(grpc.MaxRecvMsgSize(creationrpc.MaxMessage), grpc.MaxSendMsgSize(creationrpc.MaxMessage))
 	creationrpc.RegisterWorkspace(server, s)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -116,18 +118,30 @@ func (s *CreationService) Close() {
 		}
 	}
 }
-func (s *CreationService) Owned(ctx context.Context, user int64, id string) (model.Creation, error) {
+func (s *CreationService) Owned(ctx context.Context, actor CreationActor, id string) (model.Creation, error) {
 	var c model.Creation
-	err := s.db.WithContext(ctx).Where("id = ? AND user_id = ?", id, user).First(&c).Error
+	if !actor.valid() {
+		return c, ErrCreationPhotoForbidden
+	}
+	err := s.db.WithContext(ctx).Where("id = ? AND user_id = ?", id, actor.ID).First(&c).Error
+	if err == nil {
+		err = authorizeCreationWork(ctx, s.db, actor, c)
+	}
 	return c, err
 }
-func (s *CreationService) List(ctx context.Context, user int64) ([]model.Creation, error) {
+func (s *CreationService) List(ctx context.Context, actor CreationActor) ([]model.Creation, error) {
 	out := []model.Creation{}
-	err := s.db.WithContext(ctx).Where("user_id = ?", user).Order("created_at DESC").Limit(100).Find(&out).Error
+	if !actor.valid() {
+		return out, ErrCreationPhotoForbidden
+	}
+	err := s.db.WithContext(ctx).Where("user_id = ?", actor.ID).Order("created_at DESC").Limit(100).Find(&out).Error
 	return out, err
 }
-func (s *CreationService) Create(ctx context.Context, user int64, req CreationRequest) (model.Creation, error) {
+func (s *CreationService) Create(ctx context.Context, actor CreationActor, req CreationRequest) (model.Creation, error) {
 	var c model.Creation
+	if !actor.valid() {
+		return c, ErrCreationPhotoForbidden
+	}
 	title, err := normalizedCreationTitle(req.Title, true)
 	if err != nil {
 		return c, err
@@ -138,7 +152,11 @@ func (s *CreationService) Create(ctx context.Context, user int64, req CreationRe
 	}
 	ids := req.PhotoIDs
 	if req.AlbumID > 0 {
-		if err := s.db.WithContext(ctx).Table("album_photos").Where("album_id = ?", req.AlbumID).Order("photo_id").Limit(201).Pluck("photo_id", &ids).Error; err != nil {
+		q := s.db.WithContext(ctx).Table("album_photos").Where("album_photos.album_id = ?", req.AlbumID)
+		if actor.Role == "guest" {
+			q = q.Joins("JOIN albums ON albums.id = album_photos.album_id").Where("albums.is_public = true")
+		}
+		if err := q.Order("album_photos.photo_id").Limit(201).Pluck("album_photos.photo_id", &ids).Error; err != nil {
 			return c, err
 		}
 	}
@@ -152,32 +170,26 @@ func (s *CreationService) Create(ctx context.Context, user int64, req CreationRe
 		}
 		seen[id] = true
 	}
-	var count int64
-	if err := s.db.WithContext(ctx).Model(&model.Photo{}).Where("id IN ?", ids).Count(&count).Error; err != nil {
+	if err := validateCreationPhotos(ctx, s.db, actor, ids); err != nil {
 		return c, err
 	}
-	if count != int64(len(ids)) {
-		return c, ErrCreationInvalid
+	selected := req.UsedPhotoIDs
+	if selected == nil {
+		selected = ids
 	}
-	state := "{}"
-	if req.UsedPhotoIDs != nil || req.Rotations != nil {
-		selected := req.UsedPhotoIDs
-		if selected == nil {
-			selected = ids
-		}
-		settings, err := creationPhotoSettings(ids, selected, req.Rotations)
-		if err != nil {
-			return c, err
-		}
-		settings["photo_revision"] = 0
-		state = jsonText(settings)
+	settings, err := creationPhotoSettings(ids, selected, req.Rotations)
+	if err != nil {
+		return c, err
 	}
+	settings["photo_revision"] = 0
+	settings["photo_history"] = mergeCreationPhotos(ids)
+	state := jsonText(settings)
 	now := time.Now()
-	c = model.Creation{ID: uuid.NewString(), UserID: user, Title: req.Title, PhotoIDs: jsonText(ids), State: state, CreatedAt: now, UpdatedAt: now}
+	c = model.Creation{ID: uuid.NewString(), UserID: actor.ID, Title: req.Title, PhotoIDs: jsonText(ids), State: state, CreatedAt: now, UpdatedAt: now}
 	return c, s.db.WithContext(ctx).Create(&c).Error
 }
-func (s *CreationService) Detail(ctx context.Context, user int64, id string) (map[string]interface{}, error) {
-	c, err := s.Owned(ctx, user, id)
+func (s *CreationService) Detail(ctx context.Context, actor CreationActor, id string) (map[string]interface{}, error) {
+	c, err := s.Owned(ctx, actor, id)
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +221,10 @@ func (s *CreationService) Detail(ctx context.Context, user int64, id string) (ma
 	}
 	return map[string]interface{}{"creation": c, "photo_ids": ids, "state": mapText(c.State), "messages": messages, "versions": versions, "runs": views}, nil
 }
-func (s *CreationService) Run(ctx context.Context, user int64, id string, req CreationRunRequest) (model.CreationRun, error) {
+func (s *CreationService) Run(ctx context.Context, actor CreationActor, id string, req CreationRunRequest) (model.CreationRun, error) {
+	if !actor.valid() {
+		return model.CreationRun{}, ErrCreationPhotoForbidden
+	}
 	var run model.CreationRun
 	if req.Action != "answer" && req.Action != "skip" && req.Action != "confirm" && req.Action != "modify" && req.Action != "localize" {
 		return run, ErrCreationInvalid
@@ -222,7 +237,10 @@ func (s *CreationService) Run(ctx context.Context, user int64, id string, req Cr
 			return err
 		}
 		var c model.Creation
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ?", id, user).First(&c).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ?", id, actor.ID).First(&c).Error; err != nil {
+			return err
+		}
+		if err := authorizeCreationWork(ctx, tx, actor, c); err != nil {
 			return err
 		}
 		if c.CurrentVersion != req.BaseVersion {
@@ -259,7 +277,7 @@ func (s *CreationService) Run(ctx context.Context, user int64, id string, req Cr
 			return ErrCreationInvalid
 		}
 		var count int64
-		if err := tx.Model(&model.CreationRun{}).Where("(user_id = ? OR creation_id = ?) AND status IN ?", user, id, []string{"queued", "running"}).Count(&count).Error; err != nil {
+		if err := tx.Model(&model.CreationRun{}).Where("(user_id = ? OR creation_id = ?) AND status IN ?", actor.ID, id, []string{"queued", "running"}).Count(&count).Error; err != nil {
 			return err
 		}
 		if count > 0 {
@@ -272,7 +290,7 @@ func (s *CreationService) Run(ctx context.Context, user int64, id string, req Cr
 			return ErrCreationConflict
 		}
 		now := time.Now()
-		run = model.CreationRun{ID: uuid.NewString(), CreationID: id, UserID: user, BaseVersion: req.BaseVersion, Action: req.Action, Input: jsonText(req), Status: "queued", ExpiresAt: now, Report: "{}", CreatedAt: now, UpdatedAt: now}
+		run = model.CreationRun{ID: uuid.NewString(), CreationID: id, UserID: actor.ID, BaseVersion: req.BaseVersion, Action: req.Action, Input: jsonText(req), Status: "queued", ExpiresAt: now, Report: "{}", CreatedAt: now, UpdatedAt: now}
 		if err := tx.Create(&run).Error; err != nil {
 			return err
 		}
@@ -280,13 +298,21 @@ func (s *CreationService) Run(ctx context.Context, user int64, id string, req Cr
 	})
 	return run, err
 }
-func (s *CreationService) RunOwned(ctx context.Context, user int64, creation, runID string) (model.CreationRun, error) {
+func (s *CreationService) RunOwned(ctx context.Context, actor CreationActor, creation, runID string) (model.CreationRun, error) {
 	var r model.CreationRun
-	err := s.db.WithContext(ctx).Where("id = ? AND creation_id = ? AND user_id = ?", runID, creation, user).First(&r).Error
+	if !actor.valid() {
+		return r, ErrCreationPhotoForbidden
+	}
+	if actor.Role == "guest" {
+		if _, err := s.Owned(ctx, actor, creation); err != nil {
+			return r, err
+		}
+	}
+	err := s.db.WithContext(ctx).Where("id = ? AND creation_id = ? AND user_id = ?", runID, creation, actor.ID).First(&r).Error
 	return r, err
 }
-func (s *CreationService) Cancel(ctx context.Context, user int64, creation, runID string) error {
-	if _, err := s.RunOwned(ctx, user, creation, runID); err != nil {
+func (s *CreationService) Cancel(ctx context.Context, actor CreationActor, creation, runID string) error {
+	if _, err := s.RunOwned(ctx, actor, creation, runID); err != nil {
 		return err
 	}
 	s.mutex.Lock()
@@ -296,8 +322,8 @@ func (s *CreationService) Cancel(ctx context.Context, user int64, creation, runI
 	s.mutex.Unlock()
 	return s.db.WithContext(ctx).Model(&model.CreationRun{}).Where("id = ? AND status IN ?", runID, []string{"queued", "running"}).Updates(map[string]interface{}{"status": "cancelled", "credential_hash": "", "updated_at": time.Now()}).Error
 }
-func (s *CreationService) Events(ctx context.Context, user int64, creation, runID string, after int64) ([]model.CreationEvent, string, error) {
-	r, err := s.RunOwned(ctx, user, creation, runID)
+func (s *CreationService) Events(ctx context.Context, actor CreationActor, creation, runID string, after int64) ([]model.CreationEvent, string, error) {
+	r, err := s.RunOwned(ctx, actor, creation, runID)
 	if err != nil {
 		return nil, "", err
 	}
@@ -305,10 +331,16 @@ func (s *CreationService) Events(ctx context.Context, user int64, creation, runI
 	err = s.db.WithContext(ctx).Where("run_id = ? AND id > ?", runID, after).Order("id").Limit(100).Find(&events).Error
 	return events, r.Status, err
 }
-func (s *CreationService) Restore(ctx context.Context, user int64, id, version, base string) error {
+func (s *CreationService) Restore(ctx context.Context, actor CreationActor, id, version, base string) error {
+	if !actor.valid() {
+		return ErrCreationPhotoForbidden
+	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var c model.Creation
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ?", id, user).First(&c).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ?", id, actor.ID).First(&c).Error; err != nil {
+			return err
+		}
+		if err := authorizeCreationWork(ctx, tx, actor, c); err != nil {
 			return err
 		}
 		if c.CurrentVersion != base {
@@ -333,6 +365,12 @@ func (s *CreationService) Restore(ctx context.Context, user int64, id, version, 
 		}
 		updates := map[string]interface{}{"current_version": version, "state": v.State, "updated_at": time.Now()}
 		if len(scope) > 0 {
+			if actor.Role == "guest" {
+				if err := validateCreationPhotos(ctx, tx, actor, scope); err != nil {
+					return err
+				}
+			}
+			restored["photo_history"] = mergeCreationPhotos(creationPhotoHistory(c), scope)
 			restored["photo_ids"] = scope
 			restored["photo_revision"] = photoRevision(mapText(c.State)) + 1
 			restored["photos_changed"] = false
@@ -346,8 +384,8 @@ func (s *CreationService) Restore(ctx context.Context, user int64, id, version, 
 var photoPlaceholder = regexp.MustCompile(`ss-photo:([0-9]+)`)
 
 // Preview embeds only the authorized work's thumbnails; generated code has no network access.
-func (s *CreationService) Preview(ctx context.Context, user int64, id, version string) (string, error) {
-	c, err := s.Owned(ctx, user, id)
+func (s *CreationService) Preview(ctx context.Context, actor CreationActor, id, version string) (string, error) {
+	c, err := s.Owned(ctx, actor, id)
 	if err != nil {
 		return "", err
 	}
@@ -358,10 +396,23 @@ func (s *CreationService) Preview(ctx context.Context, user int64, id, version s
 	if err = s.db.WithContext(ctx).Where("id = ? AND creation_id = ?", version, id).First(&v).Error; err != nil {
 		return "", err
 	}
+	if actor.Role == "guest" {
+		var used []int64
+		_ = json.Unmarshal([]byte(v.UsedPhotoIDs), &used)
+		if len(used) == 0 {
+			used = creationPhotoHistory(c)
+		}
+		if err := validateCreationPhotos(ctx, s.db, actor, used); err != nil {
+			return "", err
+		}
+	}
+	return s.renderCreationVersion(v, c.PhotoIDs)
+}
+func (s *CreationService) renderCreationVersion(v model.CreationVersion, fallbackPhotoIDs string) (string, error) {
 	var ids []int64
 	_ = json.Unmarshal([]byte(v.UsedPhotoIDs), &ids)
 	if len(ids) == 0 {
-		_ = json.Unmarshal([]byte(c.PhotoIDs), &ids)
+		_ = json.Unmarshal([]byte(fallbackPhotoIDs), &ids)
 	}
 	rotations := photoRotations(mapText(v.State))
 	assets := map[string]string{}
@@ -418,8 +469,8 @@ func (s *CreationService) thumbnail(id int64) ([]byte, error) {
 	}
 	return b, err
 }
-func (s *CreationService) Screenshot(ctx context.Context, user int64, id, assetID string) ([]byte, error) {
-	if _, err := s.Owned(ctx, user, id); err != nil {
+func (s *CreationService) Screenshot(ctx context.Context, actor CreationActor, id, assetID string) ([]byte, error) {
+	if _, err := s.Owned(ctx, actor, id); err != nil {
 		return nil, err
 	}
 	var a model.CreationAsset
@@ -559,15 +610,20 @@ func (s *CreationService) Call(ctx context.Context, in *structpb.Struct) (*struc
 	if token == "" || s.db.WithContext(ctx).Where("id = ? AND credential_hash = ? AND expires_at > ? AND status = ?", runID, credentialHash(token), time.Now(), "running").First(&r).Error != nil {
 		return nil, status.Error(codes.PermissionDenied, "invalid run credential")
 	}
-	var c model.Creation
-	if err := s.db.WithContext(ctx).Where("id = ? AND user_id = ?", r.CreationID, r.UserID).First(&c).Error; err != nil {
+	var owner model.User
+	if err := s.db.WithContext(ctx).Select("role").Where("id = ?", r.UserID).First(&owner).Error; err != nil {
+		return nil, status.Error(codes.PermissionDenied, "owner unavailable")
+	}
+	actor := CreationActor{ID: r.UserID, Role: owner.Role}
+	c, err := s.Owned(ctx, actor, r.CreationID)
+	if err != nil {
 		return nil, status.Error(codes.PermissionDenied, "work unavailable")
 	}
 	payload, _ := data["payload"].(map[string]interface{})
 	if payload == nil {
 		payload = map[string]interface{}{}
 	}
-	out, err := s.callback(ctx, r, c, op, payload)
+	out, err := s.callback(ctx, actor, r, c, op, payload)
 	if err != nil {
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
@@ -583,13 +639,15 @@ func (s *CreationService) Call(ctx context.Context, in *structpb.Struct) (*struc
 	log.Printf("creation: callback serialization failed run=%s op=%s error_type=%T", r.ID, op, err)
 	return nil, status.Error(codes.Internal, "workspace response serialization failed")
 }
-func (s *CreationService) callback(ctx context.Context, r model.CreationRun, c model.Creation, op string, p map[string]interface{}) (map[string]interface{}, error) {
+func (s *CreationService) callback(ctx context.Context, actor CreationActor, r model.CreationRun, c model.Creation, op string, p map[string]interface{}) (map[string]interface{}, error) {
 	out := map[string]interface{}{}
 	switch op {
 	case "context":
 		var ids []int64
 		_ = json.Unmarshal([]byte(c.PhotoIDs), &ids)
-		out = map[string]interface{}{"creation_id": c.ID, "thread_id": c.ID, "photo_ids": ids, "state": mapText(c.State), "input": mapText(r.Input), "title": c.Title, "base_version": r.BaseVersion}
+		state := mapText(c.State)
+		delete(state, "photo_history")
+		out = map[string]interface{}{"creation_id": c.ID, "thread_id": c.ID, "photo_ids": ids, "state": state, "input": mapText(r.Input), "title": c.Title, "base_version": r.BaseVersion}
 		messages := []model.CreationMessage{}
 		if err := s.db.WithContext(ctx).Where("creation_id = ?", c.ID).Order("created_at DESC").Limit(40).Find(&messages).Error; err != nil {
 			return nil, err
@@ -707,12 +765,16 @@ func (s *CreationService) callback(ctx context.Context, r model.CreationRun, c m
 				return nil, ErrCreationInvalid
 			}
 		}
+		state["photo_history"] = creationPhotoHistory(c)
 		if html != "" {
 			sealPhotoSnapshot(state, c, usedIDs)
 		}
 		err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			var current model.Creation
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", c.ID).First(&current).Error; err != nil {
+				return err
+			}
+			if err := authorizeCreationWork(ctx, tx, actor, current); err != nil {
 				return err
 			}
 			if current.CurrentVersion != r.BaseVersion {

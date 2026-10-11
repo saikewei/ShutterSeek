@@ -57,7 +57,7 @@ func TestCreationResetPreservesOnlyPhotosSelectionAndRotation(t *testing.T) {
 	mock.ExpectExec(`UPDATE "creations" SET "current_version"=\$1,"state"=\$2,"updated_at"=\$3 WHERE "id" = \$4`).
 		WithArgs("", resetStateArgument{}, sqlmock.AnyArg(), "work").WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
-	if err := s.Reset(context.Background(), 7, "work", resetRequest()); err != nil {
+	if err := s.Reset(context.Background(), CreationActor{ID: 7, Role: "admin"}, "work", resetRequest()); err != nil {
 		t.Fatal(err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -72,7 +72,7 @@ func TestCreationResetPreservesLegacyConfirmedSelection(t *testing.T) {
 	mock.ExpectExec(`UPDATE "creations"`).WithArgs("", resetStateArgument{}, sqlmock.AnyArg(), "work").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
-	if err := s.Reset(context.Background(), 7, "work", resetRequest()); err != nil {
+	if err := s.Reset(context.Background(), CreationActor{ID: 7, Role: "admin"}, "work", resetRequest()); err != nil {
 		t.Fatal(err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -85,7 +85,7 @@ func TestCreationResetRejectsOtherOwnerBeforeDeleting(t *testing.T) {
 	mock.ExpectQuery(`SELECT .* FROM "creations" WHERE id = \$1 AND user_id = \$2 .* FOR UPDATE`).
 		WithArgs("other-work", int64(7), 1).WillReturnRows(sqlmock.NewRows([]string{"id"}))
 	mock.ExpectRollback()
-	if err := s.Reset(context.Background(), 7, "other-work", resetRequest()); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := s.Reset(context.Background(), CreationActor{ID: 7, Role: "admin"}, "other-work", resetRequest()); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -108,7 +108,7 @@ func TestCreationResetRejectsStaleAndActiveWorkBeforeDeleting(t *testing.T) {
 					WithArgs("work", "queued", "running").WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
 			}
 			mock.ExpectRollback()
-			if err := s.Reset(context.Background(), 7, "work", req); !errors.Is(err, ErrCreationConflict) {
+			if err := s.Reset(context.Background(), CreationActor{ID: 7, Role: "admin"}, "work", req); !errors.Is(err, ErrCreationConflict) {
 				t.Fatalf("unsafe reset allowed: %v", err)
 			}
 			if err := mock.ExpectationsWereMet(); err != nil {
@@ -125,7 +125,7 @@ func TestCreationResetRollsBackHistoryDeletionOnFailure(t *testing.T) {
 	sentinel := errors.New("write unavailable")
 	mock.ExpectExec(`UPDATE "creations"`).WillReturnError(sentinel)
 	mock.ExpectRollback()
-	if err := s.Reset(context.Background(), 7, "work", resetRequest()); !errors.Is(err, sentinel) {
+	if err := s.Reset(context.Background(), CreationActor{ID: 7, Role: "admin"}, "work", resetRequest()); !errors.Is(err, sentinel) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -135,7 +135,7 @@ func TestCreationResetRollsBackHistoryDeletionOnFailure(t *testing.T) {
 func TestCreationResetRequiresExplicitRevision(t *testing.T) {
 	for _, req := range []CreationResetRequest{{}, {BaseRevision: func() *int { n := -1; return &n }()}} {
 		s, mock := mockCreations(t)
-		if err := s.Reset(context.Background(), 7, "work", req); !errors.Is(err, ErrCreationInvalid) {
+		if err := s.Reset(context.Background(), CreationActor{ID: 7, Role: "admin"}, "work", req); !errors.Is(err, ErrCreationInvalid) {
 			t.Fatalf("missing guard accepted: %v", err)
 		}
 		if err := mock.ExpectationsWereMet(); err != nil {

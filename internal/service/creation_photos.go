@@ -67,7 +67,10 @@ func photoRotations(state map[string]interface{}) map[string]int {
 }
 
 // UpdatePhotos changes only work-local references and transforms.
-func (s *CreationService) UpdatePhotos(ctx context.Context, user int64, id string, req CreationPhotosRequest) error {
+func (s *CreationService) UpdatePhotos(ctx context.Context, actor CreationActor, id string, req CreationPhotosRequest) error {
+	if !actor.valid() {
+		return ErrCreationPhotoForbidden
+	}
 	settings, err := creationPhotoSettings(req.PhotoIDs, req.UsedPhotoIDs, req.Rotations)
 	if err != nil {
 		return err
@@ -85,7 +88,10 @@ func (s *CreationService) UpdatePhotos(ctx context.Context, user int64, id strin
 	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var c model.Creation
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ?", id, user).First(&c).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ?", id, actor.ID).First(&c).Error; err != nil {
+			return err
+		}
+		if err := authorizeCreationWork(ctx, tx, actor, c); err != nil {
 			return err
 		}
 		state := mapText(c.State)
@@ -99,13 +105,10 @@ func (s *CreationService) UpdatePhotos(ctx context.Context, user int64, id strin
 		if active > 0 {
 			return ErrCreationConflict
 		}
-		var count int64
-		if err := tx.Model(&model.Photo{}).Where("id IN ?", req.PhotoIDs).Count(&count).Error; err != nil {
+		if err := validateCreationPhotos(ctx, tx, actor, req.PhotoIDs); err != nil {
 			return err
 		}
-		if count != int64(len(req.PhotoIDs)) {
-			return ErrCreationInvalid
-		}
+		state["photo_history"] = mergeCreationPhotos(creationPhotoHistory(c), req.PhotoIDs)
 		previous := photoRotations(state)
 		scope := map[int64]bool{}
 		for _, pid := range req.PhotoIDs {
@@ -142,8 +145,8 @@ func (s *CreationService) UpdatePhotos(ctx context.Context, user int64, id strin
 		return tx.Model(&c).Updates(map[string]interface{}{"photo_ids": jsonText(req.PhotoIDs), "state": jsonText(state), "updated_at": time.Now()}).Error
 	})
 }
-func (s *CreationService) PhotoContent(ctx context.Context, user int64, id string, photo int64) ([]byte, string, error) {
-	c, err := s.Owned(ctx, user, id)
+func (s *CreationService) PhotoContent(ctx context.Context, actor CreationActor, id string, photo int64) ([]byte, string, error) {
+	c, err := s.Owned(ctx, actor, id)
 	if err != nil {
 		return nil, "", err
 	}
@@ -214,6 +217,7 @@ func sealPhotoSnapshot(state map[string]interface{}, c model.Creation, selected 
 	state["photo_edits"] = photoRotations(mapText(c.State))
 	state["photo_revision"] = photoRevision(mapText(c.State))
 	state["photos_changed"] = false
+	state["photo_history"] = creationPhotoHistory(c)
 }
 
 func creationAssetDimensions(b []byte) (int, int) {
