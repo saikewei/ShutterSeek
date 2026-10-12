@@ -12,7 +12,7 @@ REVISION = "a" * 40
 
 
 class DeploymentTests(unittest.TestCase):
-    def exercise(self, enabled=True, key=True, failure=False):
+    def exercise(self, enabled=True, key=True, failure=False, logs=True):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             release = root / "release"
@@ -35,6 +35,9 @@ elif "config" in args and "--quiet" not in args:
         print("      SHUTTERSEEK_CREATIONS_MODEL_KEY: test-only-model-key")
     else:
         print('      SHUTTERSEEK_CREATIONS_MODEL_KEY: ""')
+elif "logs" in args and os.environ["FAKE_VISIBLE_LOGS"] == "true":
+    print("event=agent_ready")
+    print("event=heartbeat active_runs=0")
 elif "up" in args and os.environ["FAKE_FAILURE"] == "true":
     sys.exit(42)
 """)
@@ -44,6 +47,7 @@ elif "up" in args and os.environ["FAKE_FAILURE"] == "true":
                        FAKE_ENABLED="true" if enabled else "false",
                        FAKE_KEY="true" if key else "false",
                        FAKE_FAILURE="true" if failure else "false",
+                       FAKE_VISIBLE_LOGS="true" if logs else "false",
                        FAKE_LOG=str(root / "calls"))
             result = subprocess.run(["sh", str(release / "scripts/deploy.sh")], env=env, capture_output=True, text=True)
             if not (root / "calls").exists():
@@ -81,3 +85,9 @@ elif "up" in args and os.environ["FAKE_FAILURE"] == "true":
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(marker)
         self.assertNotIn("healthy", result.stdout)
+
+    def test_missing_stdout_logs_prevent_success_marker(self):
+        result, calls, marker = self.exercise(logs=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Agent startup log unavailable", result.stderr)
+        self.assertFalse(marker)
