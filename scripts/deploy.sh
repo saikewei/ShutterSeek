@@ -30,5 +30,16 @@ compose config --quiet
 compose pull $services
 compose up --detach --wait --wait-timeout 240 $services
 compose ps
+if [ "$enabled" = true ]; then
+  agent_logs=$(compose logs --no-color --since 5m agent)
+  printf '%s\n' "$agent_logs" | grep -q 'event=agent_ready' || {
+    echo "Agent startup log unavailable" >&2; exit 1;
+  }
+  printf '%s\n' "$agent_logs" | grep -q 'event=heartbeat' || {
+    echo "Agent heartbeat log unavailable" >&2; exit 1;
+  }
+  printf '%s\n' "$agent_logs" | grep -E 'event=agent_ready|event=heartbeat' | tail -n 3
+  unset agent_logs
+fi
 printf '%s\n' "$DEPLOY_SHA" > "$release_dir/deployed-revision"
 echo "Release $DEPLOY_SHA healthy"

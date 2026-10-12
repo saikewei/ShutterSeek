@@ -6,4 +6,5 @@ RUN pip install --no-cache-dir -r requirements.txt && playwright install --with-
 RUN useradd --create-home --uid 10001 agent
 COPY . .
 USER agent
-CMD ["python", "server.py"]
+ENV PYTHONUNBUFFERED=1
+CMD ["python", "-u", "server.py"]

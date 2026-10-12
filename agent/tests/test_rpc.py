@@ -154,3 +154,42 @@ class RPCTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(.005)
         self.assertNotIn("1",self.agent.tasks)
         self.assertIsNone(self.workspaces["1"].finished)
+
+    async def test_normal_execution_logs_lifecycle_and_stages_without_contents(self):
+        with self.assertLogs("shutterseek.agent", level="INFO") as logs:
+            async for item in self.execute(encode({"run_id": "1", "credential": "key-1"})):
+                pass
+        output = "\n".join(logs.output)
+        for expected in ("event=run_started", "stage=generating",
+                         "stage=rendered", "stage=reviewed", "event=run_finished", "outcome=completed"):
+            self.assertIn(expected, output)
+        for forbidden in ("key-1", "data:image", "user_facts", "<html"):
+            self.assertNotIn(forbidden, output)
+        self.assertEqual(self.agent.status, {})
+
+    async def test_cancellation_logs_final_status_and_clears_heartbeat_state(self):
+        started = asyncio.Event()
+        async def stalled(*args, **kwargs):
+            started.set()
+            await asyncio.Future()
+        self.agent.model.invoke = stalled
+        with self.assertLogs("shutterseek.agent", level="INFO") as logs:
+            stream = self.execute(encode({"run_id": "1", "credential": "key-1"}))
+            async def consume():
+                async for item in stream:
+                    pass
+            reader = asyncio.create_task(consume())
+            await started.wait()
+            await self.cancel(encode({"run_id": "1", "credential": "key-1"}))
+            stream.cancel()
+            await asyncio.wait_for(asyncio.gather(reader, return_exceptions=True), 5)
+            for _ in range(100):
+                if not self.agent.status:
+                    break
+                await asyncio.sleep(.005)
+        output = "\n".join(logs.output)
+        self.assertIn("event=cancel_requested", output)
+        self.assertIn("outcome=cancelled", output)
+        self.assertNotIn("key-1", output)
+        self.assertEqual(self.agent.tasks, {})
+        self.assertEqual(self.agent.status, {})
