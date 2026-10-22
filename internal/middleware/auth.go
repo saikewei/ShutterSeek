@@ -11,8 +11,8 @@ import (
 // CookieName is the HttpOnly cookie that carries the JWT.
 const CookieName = "shutterseek_token"
 
-// CookieSecure controls the cookie's Secure flag. Set true when serving over
-// HTTPS (required for the cookie to be sent over HTTPS).
+// CookieSecure controls the cookie's Secure flag. The app itself serves plain
+// HTTP behind the nginx TLS edge, so this is set from SHUTTERSEEK_COOKIE_SECURE.
 var CookieSecure = false
 
 // AuthRequired validates the JWT cookie and injects user info into the context.
@@ -61,5 +61,5 @@ func SetTokenCookie(c *gin.Context, token string) {
 
 // ClearTokenCookie removes the JWT cookie.
 func ClearTokenCookie(c *gin.Context) {
-	c.SetCookie(CookieName, "", -1, "/api", "", false, true)
+	c.SetCookie(CookieName, "", -1, "/api", "", CookieSecure, true)
 }

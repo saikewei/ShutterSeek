@@ -51,6 +51,7 @@ ShutterSeek/
 │   ├── importer/           # 照片元数据导入
 │   ├── thumbgen/           # 缩略图生成
 │   └── embimport/          # 向量导入
+├── nginx/                  # nginx + acme.sh 边缘（TLS 终止、证书、扩展反代）
 ├── Dockerfile              # 多阶段构建
 ├── docker-compose.yml      # 生产部署
 └── config.yaml             # 应用配置（不含密钥）
@@ -68,18 +69,42 @@ ShutterSeek/
 | `SHUTTERSEEK_REDIS_HOST` | Redis 地址 |
 | `SHUTTERSEEK_REDIS_PASSWORD` | Redis 密码 |
 | `SHUTTERSEEK_THUMBNAILS_DIR` | 缩略图目录 |
+| `SHUTTERSEEK_COOKIE_SECURE` | nginx 终止 TLS 时设为 true |
+| `SHUTTERSEEK_TRUSTED_PROXIES` | 允许提供 X-Forwarded-* 的代理网段 |
 
 开发环境将变量写入 `.env.local`（已 gitignore），生产环境通过 Docker Compose 注入。
 
 ## 部署
 
 ```bash
-# 构建并推送镜像 (GitHub Actions 自动执行)
-docker build -t ghcr.io/shutterseek/shutterseek:latest .
-
-# NAS 上启动
+# 生产由 CI 构建四个镜像：shutterseek / embedding / agent / nginx
+# NAS 上 nginx 对外暴露 8443，应用只在内部 8080
 docker compose up -d
 ```
+
+## HTTPS / nginx 边缘
+
+- 应用本身只监听 HTTP 8080；`shutterseek-nginx` 在 8443 终止 TLS，并反代到 `shutterseek:8080`。
+- 证书由 nginx 镜像内的 `acme.sh` 通过阿里云 DNS-01 申请和续期，不再依赖应用内置 certmagic。
+- 持久化目录默认在 `/volume1/docker/ShutterSeek/nginx/`：
+  - `acme/`：acme.sh 账户与续期状态
+  - `certs/`：`fullchain.pem` / `privkey.pem`
+  - `locations/`：按路径增加的其他 web 服务（`location` 片段）
+  - `servers/`：额外的 `server {}` 虚拟主机
+- 手工检查/续期：`docker exec shutterseek-nginx /usr/local/bin/renew-certs.sh`
+- 增加新服务后重载：`docker exec shutterseek-nginx nginx -s reload`
+- 更多示例见 [nginx/README.md](nginx/README.md)。
+
+关键环境变量（生产 `.env`）：
+
+| 变量 | 说明 |
+|------|------|
+| `SHUTTERSEEK_DOMAIN` | 证书域名，例如 `nas.saikewei.tech` |
+| `SHUTTERSEEK_HTTPS_PORT` | nginx 对外端口，默认 8443 |
+| `SHUTTERSEEK_NGINX_DIR` | nginx 持久化目录，默认 `/volume1/docker/ShutterSeek/nginx` |
+| `ALIYUN_ACCESS_KEY_ID` / `ALIYUN_ACCESS_KEY_SECRET` | 阿里云 DNS API 凭证 |
+| `ACME_EMAIL` | ACME 账户邮箱 |
+| `ACME_SERVER` | `letsencrypt`；联调用 `letsencrypt_test` |
 
 ## 数据库
 
@@ -136,7 +161,7 @@ python3 -m venv /tmp/shutterseek-agent-venv
 真实模型离线验收可运行 `python agent/tests/live_review.py`，不连接数据库，不创建作品；
 它会产生受控模型调用费用，报告与截图存放在被忽略的 tmp/ 下。
 
-部署由 main 的 CI 完成：Go、前端、Python 与浏览器测试 → 三镜像独立缓存构建 → 容器内运行时验收 → GHCR 与可选 ACR 发布 → 上传该提交的冻结 Compose 配置 → 拉取同一 SHA 的镜像 → 等待所有启用服务健康。
+部署由 main 的 CI 完成：Go、前端、Python 与浏览器测试 → 四镜像独立缓存构建（app / embedding / agent / nginx）→ 容器内运行时验收 → GHCR 与可选 ACR 发布 → 上传该提交的冻结 Compose 配置 → 拉取同一 SHA 的镜像 → 等待所有启用服务健康。
 Agent 镜像以生产非 root 用户、禁网及相同资源限制运行真实浏览器截图验收；健康检查验证 Agent gRPC 及 Go 鉴权回调。
 生产配置保存在 NAS 的 .env；启用创作前须配置 SHUTTERSEEK_CREATIONS_ENABLED=true 与模型密钥，并手动完成 SQL。
 CI 缺少模型配置时会在拉取和重建之前终止。所有生产部署串行，失败的健康检查会使流水线失败，不会误报部署成功。

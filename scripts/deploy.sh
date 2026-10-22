@@ -20,9 +20,9 @@ if [ "$enabled" = true ]; then
   configured=$(printf '%s\n' "$configuration" | awk '$1=="SHUTTERSEEK_CREATIONS_MODEL_KEY:" {value=$0; sub(/^[^:]*:[[:space:]]*/,"",value); gsub(/["\047]/,"",value); if (length(value)>0 && value!="null") print "yes"; exit}')
   [ "$configured" = yes ] || { echo "Production creation model configuration is missing" >&2; exit 1; }
   export COMPOSE_PROFILES=creations
-  services="shutterseek embedding agent"
+  services="shutterseek embedding agent nginx"
 else
-  services="shutterseek embedding"
+  services="shutterseek embedding nginx"
 fi
 unset configuration
 compose config --quiet
