@@ -58,7 +58,7 @@ PostgreSQL + pgvector（1024 维）存元数据与向量；FastAPI + ONNX Runtim
     `remote set-url origin ssh://git@ssh.github.com:443/saikewei/ShutterSeek.git`、`git push origin <branch>`，收尾删临时文件。
     容器内 `git fetch` 不可用，远端状态用 `gh api /repos/saikewei/ShutterSeek/git/ref/heads/<branch>` 核对，
     必要时 `git update-ref` 同步本地跟踪引用。
-- CI（`.github/workflows/deploy.yml`）：push `main` → Go / 前端 / Python 与浏览器验收 → 构建四镜像（app / embedding / agent / nginx，GHA 独立层缓存）→ 镜像内运行时验收 → 推 GHCR + 阿里云 ACR →
+- CI（`.github/workflows/deploy.yml`）：push `main` → Go / 前端 / Python 与浏览器验收 → 构建三镜像（app / embedding / agent，GHA 独立层缓存）→ 镜像内运行时验收 → 推 GHCR + 阿里云 ACR →
   Tailscale → 上传该 SHA 的冻结部署配置 → NAS 拉取同一 SHA 的镜像并等待全部启用服务健康；创作开启时自动部署 Agent。
 
 ## 4. 验收命令（改完必须跑）
@@ -86,10 +86,11 @@ PostgreSQL + pgvector（1024 维）存元数据与向量；FastAPI + ONNX Runtim
   对任何能访问端口的人开放（按 id 递增即可全量爬取）。
 - JWT 存 HttpOnly cookie `shutterseek_token`（`path=/api`、30 天）；撤销靠比较 `iat` 与 `users.updated_at`（1s 容差）。
   启动必需 `SHUTTERSEEK_JWT_SECRET`；库里没有 admin 时才用 `SHUTTERSEEK_ADMIN_PASSWORD` 播种初始管理员。
-- **TLS 只在 nginx 边缘终止**：应用只监听 8080 明文；`shutterseek-nginx` 在 8443 用 acme.sh
-  (Let's Encrypt DNS-01 / 阿里云 DNS) 的证书反代到 `shutterseek:8080`。应用侧由
-  `SHUTTERSEEK_COOKIE_SECURE=true` 置 cookie `Secure`，`SHUTTERSEEK_TRUSTED_PROXIES` 只信任边缘网段。
-  **不要**再把 certmagic/TLS 监听加回应用。
+- **TLS 只在项目外的 nginx 边缘终止**：应用只监听 8080 明文，并发布到宿主机
+  `127.0.0.1:${SHUTTERSEEK_APP_PORT:-8080}`；外部 nginx（不在本仓库/Compose 中）负责 8443、
+  证书与续期，并反代到这个 loopback 端口。应用侧由 `SHUTTERSEEK_COOKIE_SECURE=true` 置
+  cookie `Secure`，`SHUTTERSEEK_TRUSTED_PROXIES` 默认只信任 `127.0.0.1`。
+  **不要**再把 certmagic/TLS 监听或 nginx 服务加回应用。
 - 缓存 key / TTL / 失效（**只有第一页进缓存**）：`cache:first_page:`(60s)、`cache:total_photos`(5m)、`cache:photo_dates:`(5m)、
   `cache:albums:`(60s)、`cache:album_dates:`、`cache:album_photos:`、`cache:qvec:v1:`(7d)、`cache:admin_stats:v1`(60s)。
   guest 的数据**一律加 `guest:` 前缀**，绝不跨角色共享。
@@ -125,8 +126,8 @@ PostgreSQL + pgvector（1024 维）存元数据与向量；FastAPI + ONNX Runtim
   （compose 网络内为 `redis:6379`）；凭据在 `.env.local`。
 - 三个进程与端口：后端 `:8080`（`air` 热重载）、文本向量 sidecar `:8000`（`./embed/run_dev.sh`）、
   Vite `:5173`（把 `/api`、`/models` 代理到 8080；已配 `--host 0.0.0.0`）。
-- **dev 不运行 nginx 边缘**：8080/5173 是明文 HTTP，`SHUTTERSEEK_COOKIE_SECURE` 必须为 false；
-  生产由 `shutterseek-nginx` 终止 TLS 并把该变量设为 true，别拿 dev 的登录 cookie 行为判断生产。
+- **dev 不运行外部 nginx 边缘**：8080/5173 是明文 HTTP，`SHUTTERSEEK_COOKIE_SECURE` 必须为 false；
+  生产由项目外的 nginx 终止 TLS 并把该变量设为 true，别拿 dev 的登录 cookie 行为判断生产。
   **手机上看 dev 效果**：优先转发 **8080** —— 后端自己就带 `frontend/dist`，页面/API/缩略图同源，
   和生产拓扑一致；手机同 WiFi 开 `http://<Mac 的局域网 IP>:8080`（非安全源：剪贴板会退到 `execCommand` 兜底）。
   要热更新才用 5173。**5173 上的缩略图不可信**：Vite 的 http 代理会稳定弄坏一部分缩略图响应

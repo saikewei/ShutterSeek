@@ -4,8 +4,10 @@ services:
     image: ${IMAGE_REGISTRY:-ghcr.io/saikewei}/shutterseek:${IMAGE_TAG:-latest}
     container_name: shutterseek
     restart: unless-stopped
-    expose:
-      - "8080"
+    # The external TLS edge runs on the host network and proxies to this
+    # loopback-only port. The app is deliberately not reachable from the LAN.
+    ports:
+      - "127.0.0.1:${SHUTTERSEEK_APP_PORT:-8080}:8080"
     volumes:
       - /volume1/Main/Photos:/photos:ro
       - /volume1/Main/Photos/uploads:/photos_uploads
@@ -23,10 +25,10 @@ services:
       SHUTTERSEEK_MODELS_DIR: /models_vision
       SHUTTERSEEK_JWT_SECRET: ${JWT_SECRET}
       SHUTTERSEEK_ADMIN_PASSWORD: ${ADMIN_PASSWORD}
-      # TLS terminates in the nginx edge container; the app serves plain HTTP.
+      # TLS terminates in the external nginx edge; the app serves plain HTTP.
       SHUTTERSEEK_COOKIE_SECURE: "true"
-      # Only the edge network may supply X-Forwarded-* headers.
-      SHUTTERSEEK_TRUSTED_PROXIES: ${SHUTTERSEEK_TRUSTED_PROXIES:-172.31.0.0/24}
+      # Only the host-loopback edge may supply X-Forwarded-* headers.
+      SHUTTERSEEK_TRUSTED_PROXIES: ${SHUTTERSEEK_TRUSTED_PROXIES:-127.0.0.1}
       # Creation workspace and text embedding sidecar
       SHUTTERSEEK_CREATIONS_ENABLED: ${SHUTTERSEEK_CREATIONS_ENABLED:-false}
       SHUTTERSEEK_AGENT_ADDRESS: agent:50051
@@ -45,44 +47,6 @@ services:
     networks:
       - default
       - shutterseek-internal
-      - shutterseek-proxy
-
-  nginx:
-    image: ${IMAGE_REGISTRY:-ghcr.io/saikewei}/shutterseek-nginx:${IMAGE_TAG:-latest}
-    container_name: shutterseek-nginx
-    restart: unless-stopped
-    ports:
-      - "${SHUTTERSEEK_HTTPS_PORT:-8443}:8443"
-    environment:
-      ACME_DOMAIN: ${SHUTTERSEEK_DOMAIN:-nas.saikewei.tech}
-      ACME_EMAIL: ${ACME_EMAIL:-saikewei27@gmail.com}
-      ACME_SERVER: ${ACME_SERVER:-letsencrypt}
-      ACME_RENEW_INTERVAL: ${ACME_RENEW_INTERVAL:-43200}
-      APP_UPSTREAM: "shutterseek:8080"
-      Ali_Key: ${ALIYUN_ACCESS_KEY_ID}
-      Ali_Secret: ${ALIYUN_ACCESS_KEY_SECRET}
-      TZ: Asia/Shanghai
-    volumes:
-      - ${SHUTTERSEEK_NGINX_DIR:-/volume1/docker/ShutterSeek/nginx}/acme:/acme.sh
-      - ${SHUTTERSEEK_NGINX_DIR:-/volume1/docker/ShutterSeek/nginx}/certs:/etc/nginx/certs
-      - ${SHUTTERSEEK_NGINX_DIR:-/volume1/docker/ShutterSeek/nginx}/locations:/etc/nginx/extra/locations:ro
-      - ${SHUTTERSEEK_NGINX_DIR:-/volume1/docker/ShutterSeek/nginx}/servers:/etc/nginx/extra/servers:ro
-    depends_on:
-      shutterseek:
-        condition: service_healthy
-    healthcheck:
-      test:
-        - CMD-SHELL
-        - 'wget -q --no-check-certificate -O /dev/null https://127.0.0.1:8443/nginx-health || exit 1'
-      interval: 15s
-      timeout: 5s
-      # First start may need to issue a certificate through Aliyun DNS.
-      start_period: 120s
-      retries: 5
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    networks:
-      - shutterseek-proxy
 
   embedding:
     image: ${IMAGE_REGISTRY:-ghcr.io/saikewei}/shutterseek-embedding:${IMAGE_TAG:-latest}
@@ -142,11 +106,5 @@ networks:
     external: true
   shutterseek-internal:
     internal: true
-  shutterseek-proxy:
-    name: shutterseek-proxy
-    driver: bridge
-    ipam:
-      config:
-        - subnet: 172.31.0.0/24
   agent-egress:
     driver: bridge

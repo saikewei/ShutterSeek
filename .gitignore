@@ -52,7 +52,3 @@ core
 
 # brainstorming visual companion sessions
 .superpowers/
-
-# nginx runtime state and certificates (never commit)
-nginx/acme/
-nginx/certs/
