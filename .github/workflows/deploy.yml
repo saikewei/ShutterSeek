@@ -117,12 +117,25 @@ jobs:
           cache-from: type=gha,scope=agent
           cache-to: type=gha,mode=max,scope=agent
 
+      - name: Build nginx edge image
+        uses: docker/build-push-action@v6
+        with:
+          context: nginx
+          file: nginx/Dockerfile
+          load: true
+          tags: |
+            ${{ env.GHCR_PREFIX }}/shutterseek-nginx:latest
+            ${{ env.GHCR_PREFIX }}/shutterseek-nginx:${{ github.sha }}
+          cache-from: type=gha,scope=nginx
+          cache-to: type=gha,mode=max,scope=nginx
+
       - name: Test packaged runtime images
         timeout-minutes: 5
         run: |
           docker run --rm --network none --entrypoint sh "$GHCR_PREFIX/shutterseek:$DEPLOY_SHA" -c 'test -x /app/server && test -s /app/frontend/dist/index.html && command -v cwebp && command -v curl'
           docker run --rm --network none --entrypoint python "$GHCR_PREFIX/shutterseek-embedding:$DEPLOY_SHA" -c 'import onnxruntime; import engine; print("Embedding runtime imports passed")'
           docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges:true --memory 1536m --cpus 2 --shm-size 256m --entrypoint python "$GHCR_PREFIX/shutterseek-agent:$DEPLOY_SHA" -c 'import os, asyncio, image_smoke; assert os.geteuid() == 10001; asyncio.run(image_smoke.main())'
+          docker run --rm --network none --entrypoint sh "$GHCR_PREFIX/shutterseek-nginx:$DEPLOY_SHA" -c 'nginx -v && acme.sh --help >/dev/null && test -x /usr/local/bin/entrypoint.sh && test -x /usr/local/bin/renew-certs.sh'
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -135,7 +148,7 @@ jobs:
         timeout-minutes: 40
         run: |
           set -eu
-          for image in shutterseek shutterseek-embedding shutterseek-agent; do
+          for image in shutterseek shutterseek-embedding shutterseek-agent shutterseek-nginx; do
             timeout 600 docker push "$GHCR_PREFIX/$image:$DEPLOY_SHA"
             timeout 600 docker push "$GHCR_PREFIX/$image:latest"
           done
@@ -164,7 +177,7 @@ jobs:
             return 1
           }
           # Revision tags keep all three services on the same tested release.
-          for image in shutterseek shutterseek-embedding shutterseek-agent; do
+          for image in shutterseek shutterseek-embedding shutterseek-agent shutterseek-nginx; do
             for tag in "$DEPLOY_SHA" latest; do
               docker tag "$GHCR_PREFIX/$image:$DEPLOY_SHA" "$ACR_PREFIX/$image:$tag"
               push_with_retry "$ACR_PREFIX/$image:$tag"

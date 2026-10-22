@@ -7,13 +7,11 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
-	"github.com/caddyserver/certmagic"
 	"github.com/gin-gonic/gin"
-	libdnsalidns "github.com/libdns/alidns"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
@@ -69,6 +67,11 @@ func main() {
 	if jwtSecret == "" {
 		log.Fatal("SHUTTERSEEK_JWT_SECRET is required")
 	}
+	// TLS terminates in the nginx edge container. The app itself only serves
+	// plain HTTP, so the Secure cookie flag must be selected explicitly.
+	middleware.CookieSecure = os.Getenv("SHUTTERSEEK_COOKIE_SECURE") == "true"
+	log.Printf("✓ Secure cookies: %t", middleware.CookieSecure)
+
 	authSvc := service.NewAuthService(gormDB, jwtSecret)
 
 	// Seed initial admin if none exists
@@ -121,26 +124,29 @@ func main() {
 	}
 	r := router.Setup(h, cfg.Thumbnail.OutputDir, cfg.Model.Dir)
 
-	// ── Server (HTTP or HTTPS via Let's Encrypt DNS-01) ──
-	tlsEnabled := os.Getenv("SHUTTERSEEK_TLS_ENABLED") == "true"
-	srv := &http.Server{Handler: r}
-
-	if tlsEnabled {
-		setupTLS(srv, r)
+	// Only the nginx edge is allowed to supply client/proxy headers. Without
+	// this, any client could spoof X-Forwarded-For.
+	if raw := strings.TrimSpace(os.Getenv("SHUTTERSEEK_TRUSTED_PROXIES")); raw != "" {
+		proxies := strings.Split(raw, ",")
+		for i := range proxies {
+			proxies[i] = strings.TrimSpace(proxies[i])
+		}
+		if err := r.SetTrustedProxies(proxies); err != nil {
+			log.Printf("⚠ invalid SHUTTERSEEK_TRUSTED_PROXIES: %v (disabling proxy trust)", err)
+			_ = r.SetTrustedProxies(nil)
+		} else {
+			log.Printf("✓ Trusted proxies: %s", raw)
+		}
 	} else {
-		srv.Addr = fmt.Sprintf(":%d", cfg.Server.Port)
+		_ = r.SetTrustedProxies(nil)
 	}
 
+	// Server (TLS is terminated by nginx).
+	srv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.Server.Port), Handler: r}
+
 	go func() {
-		var err error
-		if tlsEnabled {
-			log.Printf("🚀 HTTPS server ready on %s", srv.Addr)
-			err = srv.ListenAndServeTLS("", "")
-		} else {
-			log.Printf("🚀 Server listening on :%d", cfg.Server.Port)
-			err = srv.ListenAndServe()
-		}
-		if err != nil && err != http.ErrServerClosed {
+		log.Printf("🚀 Server listening on :%d (TLS terminated by nginx)", cfg.Server.Port)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("server: %v", err)
 		}
 	}()
@@ -158,51 +164,4 @@ func main() {
 	}
 	uploadSvc.Stop() // 清掉未落地的缓存失效请求并停掉后台 ticker
 	log.Println("Server stopped")
-}
-
-// setupTLS configures certmagic with the Alibaba Cloud DNS-01 solver and
-// binds srv to the HTTPS port. Certificates are issued and auto-renewed.
-func setupTLS(srv *http.Server, handler http.Handler) {
-	domain := os.Getenv("SHUTTERSEEK_TLS_DOMAIN")
-	if domain == "" {
-		log.Fatal("SHUTTERSEEK_TLS_DOMAIN is required when SHUTTERSEEK_TLS_ENABLED=true")
-	}
-	tlsPort := 8443
-	if p := os.Getenv("SHUTTERSEEK_TLS_PORT"); p != "" {
-		if n, err := strconv.Atoi(p); err == nil && n > 0 {
-			tlsPort = n
-		}
-	}
-	certDir := os.Getenv("SHUTTERSEEK_CERT_DIR")
-	if certDir == "" {
-		log.Fatal("SHUTTERSEEK_CERT_DIR is required when TLS is enabled")
-	}
-	aliKey := os.Getenv("ALIYUN_ACCESS_KEY_ID")
-	aliSecret := os.Getenv("ALIYUN_ACCESS_KEY_SECRET")
-	if aliKey == "" || aliSecret == "" {
-		log.Fatal("ALIYUN_ACCESS_KEY_ID and ALIYUN_ACCESS_KEY_SECRET are required for the DNS-01 challenge")
-	}
-
-	certmagic.Default.Storage = &certmagic.FileStorage{Path: certDir}
-	certmagic.DefaultACME.DNS01Solver = &certmagic.DNS01Solver{
-		DNSManager: certmagic.DNSManager{
-			DNSProvider: &libdnsalidns.Provider{
-				CredentialInfo: libdnsalidns.CredentialInfo{
-					AccessKeyID:     aliKey,
-					AccessKeySecret: aliSecret,
-				},
-			},
-		},
-	}
-
-	cm := certmagic.NewDefault()
-	if err := cm.ManageAsync(context.Background(), []string{domain}); err != nil {
-		log.Fatalf("certmagic manage: %v", err)
-	}
-
-	srv.Addr = fmt.Sprintf(":%d", tlsPort)
-	srv.Handler = handler
-	srv.TLSConfig = cm.TLSConfig()
-	middleware.CookieSecure = true
-	log.Printf("✓ TLS enabled — domain %s, certs dir %s", domain, certDir)
 }
