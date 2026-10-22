@@ -61,18 +61,16 @@ elif "up" in args and os.environ["FAKE_FAILURE"] == "true":
         self.assertEqual(result.returncode, 0, result.stderr)
         up = next(call for call in calls if "up" in call["args"] and "--help" not in call["args"])
         self.assertIn("agent", up["args"])
-        self.assertIn("nginx", up["args"])
         self.assertIn("--wait", up["args"])
         self.assertIn("--wait-timeout", up["args"])
         self.assertEqual(up["tag"], REVISION)
         self.assertTrue(marker)
 
-    def test_disabled_feature_deploys_app_embedding_and_nginx(self):
+    def test_disabled_feature_deploys_only_app_and_embedding(self):
         result, calls, marker = self.exercise(enabled=False, key=False)
         self.assertEqual(result.returncode, 0, result.stderr)
         up = next(call for call in calls if "up" in call["args"] and "--help" not in call["args"])
         self.assertNotIn("agent", up["args"])
-        self.assertIn("nginx", up["args"])
         self.assertTrue(marker)
 
     def test_missing_configuration_stops_before_any_pull_or_restart(self):
