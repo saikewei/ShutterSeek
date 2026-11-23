@@ -212,3 +212,81 @@ func TestSearch_GuestOnlyPublicAlbums(t *testing.T) {
 		}
 	}
 }
+
+func TestSearch_DateRangeAndScopeMeta(t *testing.T) {
+	db := setupSearchDB(t)
+	svc := NewSearchService(db, &stubEmbedder{vec: vec1024()}, 200)
+
+	// Narrow public month: 2020-06.
+	from, to, err := ParseSearchDateRange("2020-06-01", "2020-06-30")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var expected int64
+	if err := db.Raw(`SELECT COUNT(*) FROM photo_embeddings pe
+		JOIN photos p ON p.id = pe.photo_id
+		WHERE p.taken_at >= ? AND p.taken_at < ?
+		  AND p.id IN (SELECT ap.photo_id FROM album_photos ap JOIN albums a ON a.id = ap.album_id WHERE a.is_public = true)`,
+		*from, *to).Scan(&expected).Error; err != nil {
+		t.Fatal(err)
+	}
+	res, err := svc.Query(context.Background(), SearchQuery{
+		Query:     "summer test",
+		Role:      "guest",
+		From:      from,
+		To:        to,
+		Limit:     30,
+		Diversify: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := min(int64(30), expected)
+	if int64(len(res.Items)) != want {
+		t.Fatalf("returned %d items, want %d (scope_total=%d strategy=%s)", len(res.Items), want, res.Meta.ScopeTotal, res.Meta.Strategy)
+	}
+	for _, it := range res.Items {
+		if it.TakenAt.Before(*from) || !it.TakenAt.Before(*to) {
+			t.Fatalf("photo %d taken_at %v outside [%v, %v)", it.ID, it.TakenAt, *from, *to)
+		}
+	}
+	t.Logf("public 2020-06: strategy=%s scope_total=%d items=%d ms=%d", res.Meta.Strategy, res.Meta.ScopeTotal, len(res.Items), res.Meta.ElapsedMS)
+
+	// Empty date range should report scope_total=0 and visible date bounds.
+	emptyFrom, emptyTo, err := ParseSearchDateRange("1990-01-01", "1990-12-31")
+	if err != nil {
+		t.Fatal(err)
+	}
+	emptyRes, err := svc.Query(context.Background(), SearchQuery{
+		Query: "empty range",
+		Role:  "guest",
+		From:  emptyFrom,
+		To:    emptyTo,
+		Limit: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(emptyRes.Items) != 0 || emptyRes.Meta.Strategy != SearchStrategyEmptyScope || emptyRes.Meta.ScopeTotal != 0 {
+		t.Fatalf("unexpected empty range result: len=%d meta=%+v", len(emptyRes.Items), emptyRes.Meta)
+	}
+	if emptyRes.Meta.VisibleDateMin == "" || emptyRes.Meta.VisibleDateMax == "" {
+		t.Fatalf("expected visible date bounds on empty scope, got %+v", emptyRes.Meta)
+	}
+	t.Logf("empty range meta: %+v", emptyRes.Meta)
+
+	// Empty query with date range should perform time sampling.
+	sampleRes, err := svc.Query(context.Background(), SearchQuery{
+		Query: "",
+		Role:  "guest",
+		From:  from,
+		To:    to,
+		Limit: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sampleRes.Meta.Strategy != SearchStrategyTimeSample || len(sampleRes.Items) == 0 {
+		t.Fatalf("unexpected time sample result: len=%d meta=%+v", len(sampleRes.Items), sampleRes.Meta)
+	}
+}
